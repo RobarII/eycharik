@@ -1,0 +1,29 @@
+[
+  {
+    "id": "1001",
+    "name": "Анна Смирнова",
+    "role": "Инженер-технолог",
+    "department": "Производство",
+    "recruiter_id": "rec-1",
+    "started_at": "2026-10-20",
+    "audience": ["all", "dept:production"]
+  },
+  {
+    "id": "1002",
+    "name": "Пётр Кузнецов",
+    "role": "Менеджер по продажам",
+    "department": "Коммерческий блок",
+    "recruiter_id": "rec-1",
+    "started_at": "2026-10-22",
+    "audience": ["all", "dept:sales"]
+  },
+  {
+    "id": "1003",
+    "name": "Мария Волкова",
+    "role": "HR-партнёр",
+    "department": "HR",
+    "recruiter_id": "hr-1",
+    "started_at": "2026-10-23",
+    "audience": ["all", "hr_only"]
+  }
+]

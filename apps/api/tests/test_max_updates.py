@@ -94,3 +94,20 @@ def test_missing_button_payload_keeps_the_event() -> None:
     assert update is not None
     assert update.event.kind is EventKind.BUTTON_PRESSED
     assert update.event.button_id is None
+
+
+def test_bot_started_becomes_an_employee_created_event() -> None:
+    inbound = parse_update(
+        {
+            "update_type": "bot_started",
+            "timestamp": 1_700_000_000_000,
+            "chat_id": 4242,
+            "user": {"user_id": 77},
+        },
+        received_at=datetime(2026, 10, 23, tzinfo=UTC),
+    )
+
+    assert inbound is not None
+    assert inbound.chat_id == 4242
+    assert inbound.user_id == 77
+    assert inbound.event.kind.value == "employee_created"

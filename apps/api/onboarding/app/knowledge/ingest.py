@@ -40,6 +40,7 @@ class CorpusError(ValueError):
 @dataclass(frozen=True, slots=True)
 class LoadedDocument:
     document: Document
+    doc_type: str
     checksum: str
     status: str
     path: Path
@@ -112,6 +113,7 @@ def read_document(path: Path, schema: dict[str, Any]) -> LoadedDocument:
     )
     return LoadedDocument(
         document=document,
+        doc_type=str(meta["type"]),
         checksum=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         status=str(meta["status"]),
         path=path,

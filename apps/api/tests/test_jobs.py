@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+
+from onboarding.app.audit import NullAudit
+from onboarding.app.clock import FrozenClock
+from onboarding.app.worker.jobs import JobPayloadError, JobRunner
+from onboarding.ports import ClaimedJob
+
+NOW = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)
+
+
+class StubService:
+    def __init__(self) -> None:
+        self.started: list[tuple[str, int]] = []
+        self.handled: list[tuple[str, int, str]] = []
+
+    async def start(self, employee_id: object, chat_id: object) -> None:
+        self.started.append((str(employee_id), int(chat_id)))  # type: ignore[arg-type]
+
+    async def handle(self, employee_id: object, chat_id: object, event: object) -> None:
+        self.handled.append((str(employee_id), int(chat_id), event.kind.value))  # type: ignore[attr-defined,arg-type]
+
+
+class RecordingQueue:
+    def __init__(self) -> None:
+        self.completed: list[int] = []
+        self.failed: list[tuple[int, str]] = []
+
+    async def claim(self) -> tuple[ClaimedJob, ...]:
+        return ()
+
+    async def complete(self, job: ClaimedJob) -> None:
+        self.completed.append(job.id)
+
+    async def fail(self, job: ClaimedJob, error: Exception) -> None:
+        self.failed.append((job.id, type(error).__name__))
+
+
+def build() -> tuple[JobRunner, StubService, RecordingQueue]:
+    service = StubService()
+    queue = RecordingQueue()
+    runner = JobRunner(
+        queue=queue,  # type: ignore[arg-type]
+        service=service,  # type: ignore[arg-type]
+        clock=FrozenClock(NOW),
+        audit=NullAudit(),
+    )
+    return runner, service, queue
+
+
+async def test_start_job_starts_a_run() -> None:
+    runner, service, _ = build()
+
+    await runner._dispatch("start", {"employee_id": "1001", "chat_id": 42})
+
+    assert service.started == [("1001", 42)]
+
+
+async def test_message_job_restores_the_event() -> None:
+    runner, service, _ = build()
+
+    await runner._dispatch(
+        "message",
+        {
+            "employee_id": "1001",
+            "chat_id": 42,
+            "event": {
+                "kind": "message_received",
+                "at": "2026-10-23T09:00:00+00:00",
+                "text": "привет",
+            },
+        },
+    )
+
+    assert service.handled == [("1001", 42, "message_received")]
+
+
+async def test_timeout_job_uses_the_job_clock() -> None:
+    runner, service, _ = build()
+
+    await runner._dispatch("timeout", {"employee_id": "1001", "chat_id": 42})
+
+    assert service.handled == [("1001", 42, "timeout")]
+
+
+async def test_unknown_kind_is_rejected() -> None:
+    runner, _, _ = build()
+
+    with pytest.raises(JobPayloadError, match="unknown job kind"):
+        await runner._dispatch("teleport", {"employee_id": "1001", "chat_id": 42})
+
+
+async def test_missing_employee_is_rejected() -> None:
+    runner, _, _ = build()
+
+    with pytest.raises(JobPayloadError, match="employee_id"):
+        await runner._dispatch("start", {"chat_id": 42})
+
+
+async def test_invalid_timestamp_is_rejected() -> None:
+    runner, _, _ = build()
+
+    with pytest.raises(ValueError, match="Invalid isoformat"):
+        await runner._dispatch(
+            "message",
+            {
+                "employee_id": "1001",
+                "chat_id": 42,
+                "event": {"kind": "message_received", "at": "yesterday"},
+            },
+        )

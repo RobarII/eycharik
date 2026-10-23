@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moshackathon.local/contracts/channel-profile.schema.json",
+  "title": "ChannelProfile",
+  "description": "What one messenger can carry. A profile is data (apps/api/channel-profiles/<channel>.yaml); no code branches on a channel name to decide a limit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "channel",
+    "max_text_chars",
+    "markup",
+    "messages_per_second"
+  ],
+  "properties": {
+    "channel": {
+      "enum": ["max", "telegram", "vk"],
+      "description": "Must equal the file stem and the Channel value in the code."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One sentence: which API this profile describes."
+    },
+    "max_text_chars": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 4000,
+      "description": "Longest text one message may carry. Never above the domain cap, so a scenario step is renderable everywhere."
+    },
+    "max_keyboard_rows": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 30,
+      "default": 3
+    },
+    "max_buttons_per_row": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 3
+    },
+    "callback_payload_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1024,
+      "description": "Longest button id a callback may carry. A scenario button id must fit every enabled profile."
+    },
+    "keyboard_scope": {
+      "enum": ["message", "dialog"],
+      "default": "message",
+      "description": "message: the keyboard belongs to one message (MAX, Telegram). dialog: the keyboard persists for the conversation (VK)."
+    },
+    "supports_image": {
+      "type": "boolean",
+      "default": true
+    },
+    "supports_edit": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether a sent message can be rewritten in place; used by the cabinet reply flow."
+    },
+    "markup": {
+      "enum": ["none", "markdown", "markdownv2", "html"],
+      "default": "none",
+      "description": "The dialect the renderer must escape the domain text into. Domain text is never written in a channel dialect."
+    },
+    "messages_per_second": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "Global pacing for one bot on this channel."
+    },
+    "per_chat_per_second": {
+      "type": ["number", "null"],
+      "exclusiveMinimum": 0,
+      "maximum": 100,
+      "description": "Pacing inside one conversation, or null when the channel has no such rule."
+    }
+  }
+}

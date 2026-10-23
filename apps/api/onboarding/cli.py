@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 
 from onboarding.app.channels.max.client import MaxClient, Subscription
+from onboarding.app.channels.telegram.client import TelegramClient
 from onboarding.app.clock import SystemClock
 from onboarding.app.container import Container, build_container
 from onboarding.app.db.directory import SqlDirectory
@@ -98,6 +99,14 @@ def main(argv: list[str] | None = None) -> int:
         help="comma-separated MAX update types",
     )
 
+    webhook_parser = sub.add_parser(
+        "webhook", help="point a messenger at this deployment's inbound route"
+    )
+    webhook_parser.add_argument("--channel", required=True, choices=["telegram", "vk"])
+    webhook_parser.add_argument(
+        "--url", required=True, help="public HTTPS URL, e.g. https://host/webhook/telegram"
+    )
+
     extract_parser = sub.add_parser(
         "extract", help="read one file and report what the pipeline would do with it"
     )
@@ -110,17 +119,16 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     settings = Settings()
-    if args.command == "ingest":
-        return asyncio.run(_ingest(settings, args))
-    if args.command == "seed":
-        return asyncio.run(_seed(settings, args.file))
-    if args.command == "subscribe":
-        return asyncio.run(_subscribe(settings, args))
-    if args.command == "demo":
-        return asyncio.run(_demo(settings, reset=args.reset, assume_yes=args.yes))
-    if args.command == "extract":
-        return asyncio.run(_extract(settings, args))
-    return _check(settings)
+    commands = {
+        "ingest": lambda: asyncio.run(_ingest(settings, args)),
+        "seed": lambda: asyncio.run(_seed(settings, args.file)),
+        "subscribe": lambda: asyncio.run(_subscribe(settings, args)),
+        "webhook": lambda: asyncio.run(_webhook(settings, args)),
+        "demo": lambda: asyncio.run(_demo(settings, reset=args.reset, assume_yes=args.yes)),
+        "extract": lambda: asyncio.run(_extract(settings, args)),
+    }
+    command = commands.get(args.command)
+    return _check(settings) if command is None else command()
 
 
 async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
@@ -151,8 +159,6 @@ async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
 
 
 async def _subscribe(settings: Settings, args: argparse.Namespace) -> int:
-    if settings.max_webhook_secret is None:
-        raise SystemExit("MAX_WEBHOOK_SECRET is not set")
     container = build_container(settings)
     try:
         sender = container.senders.get(Channel.MAX)
@@ -171,6 +177,30 @@ async def _subscribe(settings: Settings, args: argparse.Namespace) -> int:
     finally:
         await container.aclose()
     print(f"subscribed {args.url}")
+    return 0
+
+
+async def _webhook(settings: Settings, args: argparse.Namespace) -> int:
+    """Register the inbound route. Telegram can do it over the API; VK asks the operator."""
+    channel = Channel(args.channel)
+    if channel not in settings.channels:
+        raise SystemExit(f"{channel.value} is not enabled: add it to CHANNELS")
+    if channel is Channel.VK:
+        print(f"Set the callback URL to {args.url} in the community settings.")
+        print("It must equal VK_CONFIRMATION_CODE, and VK_WEBHOOK_SECRET must match too.")
+        return 0
+    container = build_container(settings)
+    try:
+        sender = container.senders.get(Channel.TELEGRAM)
+        if not isinstance(sender, TelegramClient):
+            raise SystemExit("the Telegram channel is not configured")
+        secret = settings.telegram_webhook_secret
+        if not secret.get_secret_value():
+            raise SystemExit("TELEGRAM_WEBHOOK_SECRET is not set")
+        await sender.set_webhook(args.url, secret)
+    finally:
+        await container.aclose()
+    print(f"webhook registered: {args.url}")
     return 0
 
 

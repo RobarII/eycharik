@@ -22,7 +22,7 @@ Source: <https://core.telegram.org/bots/api> and <https://core.telegram.org/bots
 |---|---|---|
 | `POST` | `sendMessage` | send a message, optional `reply_markup` |
 | `POST` | `editMessageText` | rewrite a sent message |
-| `POST` | `setWebhook` | registration, by hand or from a script |
+| `POST` | `setWebhook` | registration, `onboarding.cli webhook --channel telegram` |
 
 `sendMessage`: `chat_id`, `text` 1–4096 characters after entity parsing, `parse_mode`
 (`MarkdownV2` or `HTML`), `reply_markup` with `inline_keyboard`, `reply_to_message_id`.

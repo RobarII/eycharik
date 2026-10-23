@@ -44,12 +44,10 @@ and proves it works.
 
 3. Register the webhook.
 
-   Telegram:
+   Telegram: the CLI calls `setWebhook` with the token and the secret from the environment.
 
    ```bash
-   curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-     -d "url=https://$HOST/webhook/telegram" \
-     -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+   uv run python -m onboarding.cli webhook --channel telegram --url "https://$HOST/webhook/telegram"
    ```
 
    VK: in the community settings, set the callback URL to `https://$HOST/webhook/vk`, paste the

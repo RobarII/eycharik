@@ -24,8 +24,12 @@ and proves it works.
    ```
 
    For VK: `CHANNELS=max,vk`, `VK_ACCESS_TOKEN`, `VK_WEBHOOK_SECRET`, `VK_CONFIRMATION_CODE`. VK
-   needs all three; a missing confirmation code leaves the channel unconfigured and its webhook
-   answers `503`.
+   needs all three.
+
+   A channel in `CHANNELS` without a webhook secret (and, for VK, without a confirmation code) is
+   not registered at all: its route answers `404`, so an unfinished setup cannot accept deliveries.
+   `503` from a registered route means the process lost the secret at runtime — check the
+   environment, not the messenger.
 
 2. Link the test account to an employee. Nothing else lets a stranger in:
 

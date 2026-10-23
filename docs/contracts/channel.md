@@ -63,12 +63,19 @@ class Messaging(Protocol):
     channel: Channel
 
     async def send(self, message: OutboundMessage) -> str: ...
-    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None: ...
+    async def edit(
+        self, address: Address, message_id: str, text: str, keyboard: Keyboard = ()
+    ) -> None: ...
 ```
 
-`OutboundMessage` carries the domain message only: `address`, `text`, `image` (a name resolved by the
-adapter), `keyboard` (`tuple[tuple[Button, ...], ...]`), `reply_to`. The adapter renders it; the
-outbox never stores a wire payload.
+`OutboundMessage` carries the domain message only: `address`, `text`, `keyboard`
+(`tuple[tuple[Button, ...], ...]`), `reply_to`. The adapter renders it; the outbox never stores a
+wire payload. `channel` is the only messenger fact a `Messaging` exposes: the dispatch routes on it
+and never inspects the adapter.
+
+`Sender` is the narrower port the domain is given: `send` and `edit` with an explicit `Address`,
+no channel attribute. Actions and the cabinet write through a `Sender`, so a unit test hands them
+the outbox and never a messenger.
 
 Failures are two:
 
@@ -94,7 +101,8 @@ The adapter then:
 
 - escapes the text into `profile.markup` (`none` means no escaping and no formatting);
 - maps `Button.id` to the channel's callback field;
-- resolves `image` by name through its own asset directory and upload flow;
+- resolves a scenario image by name through its own asset directory and upload flow (MAX today;
+  Telegram and VK send text and keyboards until a message carries an image);
 - applies `profile.messages_per_second` and `profile.per_chat_per_second`.
 
 ## Delivery
@@ -110,7 +118,8 @@ Pending rows are grouped by channel and delivered concurrently, so a 2 msg/s mes
 1. `docs/contracts/<channel>-api.md` — the facts the adapter relies on, each with a source URL.
 2. `apps/api/channel-profiles/<channel>.yaml`, passing `channel-profile.schema.json`.
 3. `apps/api/onboarding/app/channels/<channel>/{client,ingress,render}.py`.
-4. A settings block: token, secret, base URL. Every secret is a `SecretStr` and appears in no log.
+4. A settings block and an entry in `CHANNELS`: token, secret, base URL. Every secret is a
+   `SecretStr` and appears in no log. `docs/runbooks/channels.md` is how an operator turns it on.
 5. Entries in the composition root: the `Ingress` in `ingress`, the `Messaging` in `senders`.
 6. Contract tests: `tests/test_channel_contract.py` covers the adapter by parameter; payload
    fixtures live in `tests/fixtures/channels/<channel>/` and are captured, not invented.

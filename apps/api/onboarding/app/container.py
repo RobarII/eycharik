@@ -153,7 +153,7 @@ def build_container(settings: Settings) -> Container:
     enabled = set(settings.channels)
     senders: dict[Channel, Messaging] = {}
     ingress: dict[Channel, Ingress] = {}
-    if Channel.MAX in enabled:
+    if Channel.MAX in enabled and settings.max_webhook_secret.get_secret_value():
         senders[Channel.MAX] = MaxClient(
             base_url=settings.max_base_url,
             token=settings.max_bot_token,
@@ -161,7 +161,7 @@ def build_container(settings: Settings) -> Container:
             messages_per_second=profiles[Channel.MAX].messages_per_second,
         )
         ingress[Channel.MAX] = MaxIngress(settings.max_webhook_secret)
-    if Channel.TELEGRAM in enabled:
+    if Channel.TELEGRAM in enabled and settings.telegram_webhook_secret.get_secret_value():
         senders[Channel.TELEGRAM] = TelegramClient(
             base_url=settings.telegram_base_url,
             token=settings.telegram_bot_token,
@@ -169,7 +169,11 @@ def build_container(settings: Settings) -> Container:
             profile=profiles[Channel.TELEGRAM],
         )
         ingress[Channel.TELEGRAM] = TelegramIngress(settings.telegram_webhook_secret)
-    if Channel.VK in enabled:
+    if (
+        Channel.VK in enabled
+        and settings.vk_webhook_secret.get_secret_value()
+        and settings.vk_confirmation_code.get_secret_value()
+    ):
         senders[Channel.VK] = VkClient(
             base_url=settings.vk_base_url,
             api_version=settings.vk_api_version,

@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval eval-retrieval run worker up down logs migrate ingest seed fmt docs
+.PHONY: install check lint types test eval eval-retrieval run worker up down logs migrate ingest seed fmt docs admin-dev admin-build admin-check
 
 install:
 	uv sync
@@ -56,3 +56,12 @@ seed:
 
 docs:
 	$(PY) python scripts/check_docs.py
+
+admin-dev:
+	cd apps/admin && npm run dev
+
+admin-build:
+	cd apps/admin && npm run build
+
+admin-check:
+	cd apps/admin && npm run typecheck

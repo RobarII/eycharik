@@ -1,4 +1,4 @@
-# Local and demo topology. One image, four roles.
+# Local and demo topology. One backend image, four roles, plus the static cabinet.
 name: onboarding
 
 services:
@@ -56,6 +56,14 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+    restart: unless-stopped
+
+  admin:
+    build: apps/admin
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
     restart: unless-stopped
 
   tunnel:

@@ -11,7 +11,17 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import and_, desc, func, literal_column, or_, select, text, tuple_
+from sqlalchemy import (
+    and_,
+    case,
+    desc,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+    tuple_,
+)
 
 from onboarding.app.db.models import AuditRow, DocumentRow, EmployeeRow, QuestionRow, RunRow
 from onboarding.app.db.session import Database
@@ -473,12 +483,16 @@ def _after_question(cursor: QuestionCursor) -> Any:
     """Rows that sort after the cursor: unanswered first, then newest asked, then highest id.
 
     Postgres compares row values in one direction only, and this order mixes directions, so the
-    predicate is spelled out instead of using a row-value comparison.
+    predicate is spelled out instead of using a row-value comparison. ``answered`` is a boolean
+    column, and SQLAlchemy refuses an ordering comparison against a Python ``bool``, so the order
+    is spelled as a rank: unanswered is 0, answered is 1.
     """
+    rank = case((QuestionRow.answered.is_(False), 0), else_=1)
+    position = 0 if not cursor.answered else 1
     return or_(
-        QuestionRow.answered > cursor.answered,
+        rank > position,
         and_(
-            QuestionRow.answered == cursor.answered,
+            rank == position,
             or_(
                 QuestionRow.asked_at < cursor.asked_at,
                 and_(

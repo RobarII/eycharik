@@ -38,9 +38,11 @@ from onboarding.app.knowledge.embedding import HashingEmbedder
 from onboarding.app.knowledge.pipeline import ingest
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.scenarios import ScenarioCatalog
+from onboarding.app.scheduler.main import tick_once
 from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionContext, ActionExecutor
 from onboarding.app.worker.answerer import Answerer
+from onboarding.app.worker.jobs import JobRunner
 from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import (
     Action,
@@ -480,3 +482,28 @@ async def test_analytics_and_digest_follow_the_risk_audit(database: Database) ->
         recruiter_id=None, department="ИТ", since=datetime(2026, 10, 1, tzinfo=UTC)
     )
     assert len(by_department) == 2
+
+
+async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
+    messaging = RecordingMessaging()
+    service = build_service(database, messaging=messaging, knowledge=FakeKnowledgeBase())
+    await service.start(EMPLOYEE, ChatId(1))
+    async with database.session() as session:
+        await session.execute(text("UPDATE runs SET reminder_at = now() - interval '1 minute'"))
+    direct = RecordingMessaging()
+    runner = JobRunner(
+        queue=JobQueue(database),
+        service=service,
+        clock=FrozenClock(NOW),
+        audit=DatabaseAuditLog(database),
+    )
+
+    queued, handled, delivered = await tick_once(
+        scheduler=ReminderScheduler(database),
+        runner=runner,
+        dispatcher=MessageDispatcher(database, direct),
+    )
+
+    assert (queued, handled, delivered) == (1, 1, 0)
+    assert messaging.sent[-1].chat_id == ChatId(1)
+    assert messaging.sent[-1].text.startswith("Напоминаем:")

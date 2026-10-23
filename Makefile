@@ -33,6 +33,9 @@ eval-retrieval:
 run:
 	$(PY) uvicorn onboarding.api.app:create_app --factory --reload --port 8000
 
+cron:                              # one cron-style pass over reminders and the outbox
+	PYTHONPATH=apps/api uv run python -m onboarding.app.scheduler --max-jobs 200
+
 worker:
 	$(PY) python -m onboarding.app.worker.main
 

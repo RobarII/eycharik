@@ -15,8 +15,8 @@ from this table. If a question is not answered here, the answer does not exist y
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
 | What exactly does the model see? | [prompts/answer/v2.md](prompts/answer/v2.md) (current), [v1](prompts/answer/v1.md) (superseded) |
 | How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
-| What does the assistant answer, and what does it refuse? | [product/risk-radar.md](product/risk-radar.md) | sentiment, risk rules, escalation, digest |
-| [product/answer-policy.md](product/answer-policy.md) |
+| What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
+| How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
 | What does the sentiment layer return? | [contracts/sentiment.schema.json](contracts/sentiment.schema.json) |
 | What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
 | How do I demo this in five minutes? | [product/demo-script.md](product/demo-script.md) |
@@ -32,6 +32,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is the latency gate 8 s? | [decisions/0009-latency-budget.md](decisions/0009-latency-budget.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
+| How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
 | How is answer quality measured? | [evals/README.md](evals/README.md) |

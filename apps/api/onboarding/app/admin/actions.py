@@ -46,6 +46,7 @@ class Resolution:
 class Offboarding:
     employee_id: str
     questions_deleted: int
+    messages_deleted: int
     runs_closed: int
     audit_redacted: int
 
@@ -135,6 +136,7 @@ class EmployeeOffboarder:
                 return Offboarding(
                     employee_id=employee_id,
                     questions_deleted=0,
+                    messages_deleted=0,
                     runs_closed=0,
                     audit_redacted=0,
                 )
@@ -147,8 +149,28 @@ class EmployeeOffboarder:
                 .where(RunRow.employee_id == employee_id, RunRow.status == "active")
                 .values(status="completed")
             )
+            # A queued reminder or reply must not reach a person who has already left. The outbox
+            # has no employee id, so collect every chat the employee ever used before the run and
+            # question rows that carry them disappear.
+            chats = set(
+                await session.scalars(
+                    select(RunRow.chat_id).where(RunRow.employee_id == employee_id)
+                )
+            )
+            chats |= set(
+                await session.scalars(
+                    select(QuestionRow.chat_id).where(QuestionRow.employee_id == employee_id)
+                )
+            )
             deleted = await session.execute(
                 delete(QuestionRow).where(QuestionRow.employee_id == employee_id)
+            )
+            messages = (
+                await session.execute(
+                    delete(MessageRow).where(MessageRow.chat_id.in_(sorted(chats)))
+                )
+                if chats
+                else None
             )
             audits = (
                 await session.scalars(
@@ -163,6 +185,9 @@ class EmployeeOffboarder:
                     redacted += 1
 
             questions_deleted = int(cast(CursorResult[Any], deleted).rowcount or 0)
+            messages_deleted = (
+                int(cast(CursorResult[Any], messages).rowcount or 0) if messages else 0
+            )
             runs_closed = int(cast(CursorResult[Any], closed).rowcount or 0)
             session.add(
                 AuditRow(
@@ -171,6 +196,7 @@ class EmployeeOffboarder:
                         "employee_id": employee_id,
                         "by": actor,
                         "questions_deleted": questions_deleted,
+                        "messages_deleted": messages_deleted,
                         "runs_closed": runs_closed,
                     },
                 )
@@ -178,6 +204,7 @@ class EmployeeOffboarder:
             return Offboarding(
                 employee_id=employee_id,
                 questions_deleted=questions_deleted,
+                messages_deleted=messages_deleted,
                 runs_closed=runs_closed,
                 audit_redacted=redacted,
             )

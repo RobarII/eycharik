@@ -34,7 +34,7 @@ recruiter's employee is not disclosed.
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
 | `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
-| `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript |
+| `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
 | `GET` | `/admin/api/knowledge` | active knowledge documents, newest first |
@@ -131,14 +131,16 @@ materialised table. `unanswered_questions` is a live queue size; `resolved_quest
 a recruiter sent inside the window. A wrong number must be traceable to events.
 
 `DELETE /admin/api/employees/{employee_id}` is HR-only; a recruiter or manager answers `403`. It
-marks the employee `left`, completes their active runs, deletes their question rows, and strips the
-employee's own words from their audit rows. The employee row and the audit skeleton stay so counts
-remain traceable. A repeated call answers `200` with zero counts. The response is:
+marks the employee `left`, completes their active runs, deletes their question rows, deletes every
+outbox message for their chat (pending reminders and replies included), and strips the employee's
+own words from their audit rows. The employee row and the audit skeleton stay so counts remain
+traceable. A repeated call answers `200` with zero counts. The response is:
 
 ```json
 {
   "employee_id": "1001",
   "questions_deleted": 4,
+  "messages_deleted": 2,
   "runs_closed": 1,
   "audit_redacted": 6
 }

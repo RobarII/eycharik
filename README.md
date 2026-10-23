@@ -65,8 +65,9 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 - **Recruiter cabinet**: runs, per-employee detail with the audit timeline, question queue scoped by
   recruiter, manager (by department), or HR; a reply closes the question and leaves through the
   outbox; HR can offboard an employee; knowledge upload for HR with frontmatter validation.
-- **Retention**: expired questions and personal audit fields are purged hourly by the worker;
-  `DATA_RETENTION_DAYS` is the policy knob; offboarding is immediate and audited.
+- **Retention**: expired questions, uploads, outbox messages, and personal audit fields are purged
+  hourly by the worker; `DATA_RETENTION_DAYS` is the policy knob; offboarding is immediate and
+  audited. A claimed outbox row holds a lease, so a crashed worker loses no message.
 - **Scheduler**: a cron entrypoint that shares the worker's building blocks, so reminders and the
   outbox are drained even when only a periodic job is running.
 
@@ -92,9 +93,6 @@ Known gaps, stated so nobody assumes otherwise:
   attach them.
 - The retention window is a placeholder until the company's data protection policy confirms it.
   The mechanism is tested; the legal number is not ours.
-- The automated retention pass covers questions, audit fragments, and uploaded files, not the
-  `messages` outbox. Outbound text, including a recruiter's reply, lives there until delivered.
-  Extending the pass to the outbox is the next retention task.
 - One worker replica: the MAX pacing state is in-process. More replicas need a shared limiter.
 - The production model vendor must satisfy 152-ФЗ. The architecture keeps the provider behind a
   port; `docs/decisions/0010-one-model-vendor.md` records the current choice and what changes for

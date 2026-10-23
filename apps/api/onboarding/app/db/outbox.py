@@ -19,6 +19,11 @@ from onboarding.ports import Messaging, OutboundMessage
 
 MAX_ATTEMPTS = 5
 BACKOFF_SECONDS = 5
+# A claimed row keeps its lease for this long. A worker that dies after the claim but before the
+# send leaves ``status='sending'``; when the lease expires the row returns to ``pending`` and is
+# retried. Delivery is already at least once, so a lease that expires during a slow request costs
+# a duplicate, never a lost message.
+LEASE_SECONDS = 120
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,10 +64,23 @@ class MessageDispatcher:
         self._batch = batch
 
     async def run_once(self) -> int:
+        await self._reclaim_expired_leases()
         pending = await self._claim()
         for message in pending:
             await self._deliver(message)
         return len(pending)
+
+    async def _reclaim_expired_leases(self) -> None:
+        """Return rows abandoned mid-send to the queue; the lease is in ``available_at``."""
+        async with self._database.session() as session:
+            await session.execute(
+                update(MessageRow)
+                .where(
+                    MessageRow.status == "sending",
+                    MessageRow.available_at <= func.now(),
+                )
+                .values(status="pending")
+            )
 
     async def _claim(self) -> tuple[PendingMessage, ...]:
         claimable = (
@@ -76,7 +94,10 @@ class MessageDispatcher:
             rows = await session.scalars(
                 update(MessageRow)
                 .where(MessageRow.id.in_(claimable))
-                .values(status="sending")
+                .values(
+                    status="sending",
+                    available_at=func.now() + timedelta(seconds=LEASE_SECONDS),
+                )
                 .returning(MessageRow)
             )
             return tuple(

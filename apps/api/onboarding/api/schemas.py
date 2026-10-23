@@ -68,6 +68,7 @@ class OffboardedEmployee(BaseModel):
 
     employee_id: str
     questions_deleted: int
+    messages_deleted: int
     runs_closed: int
     audit_redacted: int
 

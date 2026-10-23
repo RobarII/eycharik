@@ -211,6 +211,7 @@ async def offboard_employee(
     return OffboardedEmployee(
         employee_id=result.employee_id,
         questions_deleted=result.questions_deleted,
+        messages_deleted=result.messages_deleted,
         runs_closed=result.runs_closed,
         audit_redacted=result.audit_redacted,
     )

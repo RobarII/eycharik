@@ -85,6 +85,7 @@ from .fakes import (
     ScriptedLLM,
     scored_chunk,
 )
+from .test_jobs import StubExtractor
 
 pytestmark = pytest.mark.integration
 
@@ -235,6 +236,29 @@ async def test_outbox_and_dispatcher_deliver_a_message(database: Database) -> No
     delivered = await MessageDispatcher(database, direct).run_once()
     assert delivered == 1
     assert direct.sent[0].text == "привет"
+
+
+async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Database) -> None:
+    direct = RecordingMessaging()
+    abandoned = datetime.now(UTC) - timedelta(minutes=5)
+    async with database.session() as session:
+        session.add(
+            MessageRow(
+                chat_id=7,
+                text="после падения воркера",
+                status="sending",
+                available_at=abandoned,
+            )
+        )
+
+    delivered = await MessageDispatcher(database, direct).run_once()
+
+    assert delivered == 1
+    assert direct.sent[0].text == "после падения воркера"
+    async with database.session() as session:
+        row = await session.scalar(select(MessageRow))
+        assert row is not None
+        assert row.status == "sent"
 
 
 async def test_scheduler_enqueues_a_due_reminder(database: Database) -> None:
@@ -525,6 +549,7 @@ async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
         service=service,
         clock=FrozenClock(NOW),
         audit=DatabaseAuditLog(database),
+        extractor=StubExtractor(),  # type: ignore[arg-type]
     )
 
     queued, handled, delivered = await tick_once(
@@ -704,6 +729,8 @@ async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Data
     )
     await service.start(EMPLOYEE, ChatId(1))
     await seed_question(database)
+    async with database.session() as session:
+        session.add(MessageRow(chat_id=1, text="Напоминание, которое уже не нужно"))
 
     app = admin_app()
     async with (
@@ -724,6 +751,7 @@ async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Data
             body = removed.json()
             assert body["employee_id"] == str(EMPLOYEE)
             assert body["questions_deleted"] == 1
+            assert body["messages_deleted"] == 1
             assert body["runs_closed"] == 1
 
             again = await http.delete(
@@ -731,6 +759,7 @@ async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Data
             )
             assert again.status_code == 200
             assert again.json()["questions_deleted"] == 0
+            assert again.json()["messages_deleted"] == 0
 
     async with database.session() as session:
         employee = await session.get(EmployeeRow, str(EMPLOYEE))
@@ -741,6 +770,7 @@ async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Data
         assert run is not None
         assert run.status == "completed"
         assert await session.scalar(select(func.count()).select_from(QuestionRow)) == 0
+        assert await session.scalar(select(func.count()).select_from(MessageRow)) == 0
 
     assert await SqlDirectory(database).profile(EMPLOYEE) is None
 
@@ -797,6 +827,32 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
                 content=b"fresh",
             )
         )
+        session.add_all(
+            [
+                MessageRow(
+                    chat_id=1,
+                    text="старое доставленное",
+                    status="sent",
+                    created_at=old,
+                    sent_at=old,
+                ),
+                MessageRow(
+                    chat_id=1,
+                    text="старое в очереди",
+                    status="pending",
+                    created_at=old,
+                    available_at=old,
+                ),
+                MessageRow(
+                    chat_id=1,
+                    text="старое зависшее",
+                    status="sending",
+                    created_at=old,
+                    available_at=old,
+                ),
+                MessageRow(chat_id=1, text="свежее в очереди", status="pending"),
+            ]
+        )
 
     result = await RetentionPurger(
         database, FrozenClock(NOW), days=365
@@ -804,6 +860,7 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
 
     assert result.questions_deleted == 1
     assert result.files_deleted == 1
+    assert result.messages_deleted == 3
     assert result.audit_redacted == 1
     async with database.session() as session:
         names = list(await session.scalars(select(FileRow.filename)))
@@ -811,6 +868,8 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
     async with database.session() as session:
         texts = list(await session.scalars(select(QuestionRow.text)))
         assert texts == ["свежий вопрос"]
+        queued = list(await session.scalars(select(MessageRow.text)))
+        assert queued == ["свежее в очереди"]
         audit = await session.scalar(
             select(AuditRow).where(AuditRow.name == "risk_assessed")
         )
@@ -819,9 +878,10 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
         assert audit.fields["redacted"] is True
         assert audit.fields["level"] == "high"
         purged = await session.scalar(
-            select(func.count()).select_from(AuditRow).where(AuditRow.name == "retention_purged")
+            select(AuditRow).where(AuditRow.name == "retention_purged")
         )
-        assert purged == 1
+        assert purged is not None
+        assert purged.fields["messages_deleted"] == 3
 
 
 async def test_question_resolver_uses_the_scope_and_the_outbox(database: Database) -> None:

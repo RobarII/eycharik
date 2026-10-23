@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     llm_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.2
+    llm_max_tokens: int = 700
     llm_timeout_s: float = 8.0
     llm_max_retries: int = 1
     llm_breaker_threshold: int = 3
@@ -74,6 +75,8 @@ class Settings(BaseSettings):
             raise ValueError("EMBED_DIM must be at least 8")
         if self.llm_timeout_s <= 0:
             raise ValueError("LLM_TIMEOUT_S must be positive")
+        if self.llm_max_tokens <= 0:
+            raise ValueError("LLM_MAX_TOKENS must be positive")
         if self.recall_limit < self.rerank_limit:
             raise ValueError("RECALL_LIMIT must be at least RERANK_LIMIT")
         if any(char in name for name in self.llm_extra_headers for char in "\r\n"):

@@ -54,6 +54,11 @@ def test_bad_extra_headers_are_rejected(raw: str) -> None:
         _ = Settings(_env_file=None, llm_extra_headers_raw=raw).llm_extra_headers
 
 
+def test_max_tokens_must_be_positive() -> None:
+    with pytest.raises(ValidationError, match="LLM_MAX_TOKENS"):
+        Settings(_env_file=None, llm_max_tokens=0)
+
+
 def test_production_requires_secrets() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, environment="production")

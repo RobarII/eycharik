@@ -10,6 +10,7 @@ from datetime import date
 
 from onboarding.app.audit import NullAudit
 from onboarding.app.copy import Copy
+from onboarding.app.llm.gateway import LLMResponseError
 from onboarding.app.llm.output import AnswerFormatError, parse_answer
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
@@ -115,12 +116,13 @@ class Answerer:
                 CompletionRequest(
                     messages=(Message(role="system", content=rendered),),
                     temperature=prompt.temperature,
+                    max_tokens=self._settings.llm_max_tokens,
                     prompt_name=PROMPT_NAME,
                     prompt_version=PROMPT_VERSION,
                     timeout_s=self._settings.llm_timeout_s,
                 )
             )
-        except LLMUnavailableError:
+        except (LLMUnavailableError, LLMResponseError):
             await self._audit.record(
                 "answer_unavailable",
                 retrieved=len(retrieved),

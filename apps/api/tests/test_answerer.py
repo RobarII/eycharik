@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from onboarding.app.copy import load_copy
+from onboarding.app.llm.gateway import LLMResponseError
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.app.worker.answerer import PROMPT_NAME, PROMPT_VERSION, Answerer
@@ -136,6 +137,15 @@ async def test_model_escalation_is_respected() -> None:
 
 async def test_provider_outage_escalates_as_unavailable() -> None:
     answerer, _, _, _ = build([LLMUnavailableError("down")], (scored_chunk(),))
+
+    outcome = await answerer.answer("Сколько дней отпуска?", profile(), ON_DATE)
+
+    assert outcome.escalated
+    assert outcome.reason == EscalationReason.UNAVAILABLE.value
+
+
+async def test_malformed_provider_response_escalates_as_unavailable() -> None:
+    answerer, _, _, _ = build([LLMResponseError("empty")], (scored_chunk(),))
 
     outcome = await answerer.answer("Сколько дней отпуска?", profile(), ON_DATE)
 

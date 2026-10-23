@@ -66,3 +66,11 @@ The classifier sees personal text, so:
 | classifier says `low` but crisis words are present | keyword floor raises the level |
 | confidence below `0.5` | capped at `medium`, goes to the digest |
 | repeated escalation for one run | worker sends at most one message per level per run |
+
+## Which classifier
+
+Two providers implement the same port. The versioned chat prompt is the default; the keyword
+classifier is the fallback and the offline baseline. A third option, TypeSafe Jev, ships behind
+`SENTIMENT_PROVIDER=jev` with its own rubric and the same strict parsing; it is not the default
+because its quality on Russian answers is not measured yet (ADR 0011). Whatever the provider, the
+level, tags-to-signal mapping, and escalation stay in `core/risk.py`, where a test can pin them.

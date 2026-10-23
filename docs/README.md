@@ -15,6 +15,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
 | What exactly does the model see? | [prompts/answer/v3.md](prompts/answer/v3.md) (current), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
 | How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
+| What is the Jev classifier pilot? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md), rubric [prompts/sentiment-jev/v1.yaml](prompts/sentiment-jev/v1.yaml) |
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
 | What does the sentiment layer return? | [contracts/sentiment.schema.json](contracts/sentiment.schema.json) |
@@ -31,6 +32,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why a hosted reranker? | [decisions/0008-hosted-rerank.md](decisions/0008-hosted-rerank.md) |
 | Why is the latency gate 8 s? | [decisions/0009-latency-budget.md](decisions/0009-latency-budget.md) |
 | Why one vendor for answers, embeddings, and rerank? | [decisions/0010-one-model-vendor.md](decisions/0010-one-model-vendor.md) |
+| Why is Jev behind a flag? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |

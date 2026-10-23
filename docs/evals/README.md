@@ -42,6 +42,22 @@ Escalation cases use `expect_escalation: true` and `expect_reason`.
 3. A case names documents, not chunks: chunk ids change when chunking changes.
 4. The set grows; cases are never deleted to make the gate pass.
 
+## Sentiment set
+
+`docs/evals/sentiment.yaml` is the risk radar's own set: a free-text answer, its tone, and the tags
+a recruiter would route. It answers a different question than the golden set ("did the model hear
+the problem?" rather than "did it cite the right document?").
+
+```bash
+make eval-sentiment                      # the configured prompt classifier
+make eval-sentiment PROVIDER=keyword     # deterministic baseline, no key
+make eval-sentiment PROVIDER=jev         # TypeSafe Jev, needs JEV_API_KEY
+```
+
+Metrics: `sentiment_accuracy`, `tag_precision`, `tag_recall`, `fallback_rate`, `p95_latency_ms`.
+There is no gate yet: the set is the pilot's yardstick, and a gate needs a stable baseline across
+models. A missed crisis becomes a case here before it becomes a prompt edit.
+
 ## Reporting
 
 A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the model,

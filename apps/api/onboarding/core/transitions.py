@@ -68,6 +68,16 @@ def start(
     return _enter(scenario, state, now)
 
 
+def replay(scenario: Scenario, state: StepState, now: datetime) -> Transition:
+    """Re-emit the step a run is sitting on, without consuming an event.
+
+    A person may come back to the same run from another linked messenger and press start there.
+    Nothing about their progress changes; they simply need the question they are on to arrive
+    where they are now.
+    """
+    return _enter(scenario, state, now)
+
+
 def advance(scenario: Scenario, state: StepState, event: Event) -> Transition:
     """Apply one event to one run."""
     if state.scenario_id != scenario.id or state.scenario_version != scenario.version:

@@ -240,6 +240,21 @@ async def test_a_stale_delivery_schedules_reminders_from_processing_time() -> No
     assert stored.reminder.due_at == NOW + timedelta(hours=48)
 
 
+async def test_a_start_in_another_messenger_resumes_the_run_there() -> None:
+    service, runs, messaging, audit, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    elsewhere = Address(channel=Channel.TELEGRAM, chat_id=ChatId(555))
+
+    result = await service.start(EMPLOYEE, elsewhere)
+
+    assert result.handled
+    stored = next(iter(runs.runs.values()))
+    assert stored.address == elsewhere
+    assert stored.state.step_id == "welcome"
+    assert messaging.sent[-1].address == elsewhere
+    assert audit.events[-1][1]["resumed"] is True
+
+
 async def test_an_answer_from_another_messenger_moves_the_run() -> None:
     service, runs, messaging, audit, _ = build()
     await service.start(EMPLOYEE, ADDRESS)

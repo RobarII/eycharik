@@ -28,7 +28,7 @@ from onboarding.core.models import (
     Transition,
 )
 from onboarding.core.risk import assess, keyword_signal, scale_signal
-from onboarding.core.transitions import advance, start
+from onboarding.core.transitions import advance, replay, start
 from onboarding.ports import (
     AuditLog,
     Clock,
@@ -78,9 +78,14 @@ class OnboardingService:
         return self._catalog.active(chosen)
 
     async def start(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
-        if await self._runs.find_active_by_employee(employee_id) is not None:
-            await self._audit.record("run_already_active", employee_id=str(employee_id))
-            return ServiceResult(handled=False)
+        stored = await self._runs.find_active_by_employee(employee_id)
+        if stored is not None:
+            if stored.address == address:
+                await self._audit.record("run_already_active", employee_id=str(employee_id))
+                return ServiceResult(handled=False)
+            # A start in another messenger is a request to continue there, not a reset: the run
+            # keeps its progress, moves its address, and re-asks whatever the person is on.
+            return await self._resume(stored, address)
 
         profile = await self._directory.profile(employee_id)
         if profile is None:
@@ -101,6 +106,31 @@ class OnboardingService:
             employee_id=str(employee_id),
             scenario=scenario.id,
             version=scenario.version,
+        )
+        await self._act(transition.actions, address, employee_id, now.date(), question=None)
+        return ServiceResult(handled=True)
+
+    async def _resume(self, stored: StoredRun, address: Address) -> ServiceResult:
+        scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
+        employee_id = stored.state.employee_id
+        now = self._now()
+        transition = replay(scenario, stored.state, now)
+        await self._runs.save(
+            StoredRun(
+                state=transition.state,
+                reminder=transition.reminder,
+                address=address,
+                active=True,
+            )
+        )
+        await self._audit.record(
+            "channel_changed",
+            employee_id=str(employee_id),
+            previous_channel=stored.address.channel.value,
+            previous_chat_id=int(stored.address.chat_id),
+            channel=address.channel.value,
+            chat_id=int(address.chat_id),
+            resumed=True,
         )
         await self._act(transition.actions, address, employee_id, now.date(), question=None)
         return ServiceResult(handled=True)

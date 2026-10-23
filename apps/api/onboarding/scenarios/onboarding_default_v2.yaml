@@ -1,0 +1,328 @@
+# Version 2 follows the client's timeline from the brief: from the day before the first working
+# day to the end of probation. Version 1 stays deployed, so a live run keeps its own script.
+id: onboarding_default
+version: 2
+title: Адаптация в «Группе ПОЛИПЛАСТИК»
+start: welcome
+
+steps:
+  - id: welcome
+    kind: wait
+    title: Знакомство
+    message: >-
+      Здравствуйте! Меня зовут Корсик, я помощник по адаптации в «Группе ПОЛИПЛАСТИК».
+      Я подскажу, что и когда нужно сделать, напомню о документах и отвечу на вопросы о компании.
+      Как вам удобнее общаться?
+    expects: button
+    keyboard:
+      - - id: tone_you
+          text: На «ты»
+        - id: tone_formal
+          text: На «вы»
+    routes:
+      tone_you: documents_checklist
+      tone_formal: documents_checklist
+    timeout:
+      after_hours: 48
+      action: remind
+
+  - id: documents_checklist
+    kind: wait
+    title: Документы
+    message: >-
+      До первого рабочего дня осталось собрать документы: паспорт, СНИЛС, ИНН, диплом,
+      фотография, реквизиты счёта. Пришлите их файлами в этот чат или напишите, если что-то
+      уже передали рекрутёру.
+    expects: message
+    routes:
+      default: day_before
+    timeout:
+      after_hours: 48
+      action: remind
+
+  - id: day_before
+    kind: wait
+    title: Готовность к первому дню
+    message: >-
+      Завтра первый рабочий день. Всё готово — пропуск, документы, дорога до офиса?
+    expects: button
+    keyboard:
+      - - id: ready
+          text: Да, всё готово
+        - id: not_ready
+          text: Есть вопросы
+    routes:
+      ready: first_day
+      not_ready: first_day
+    timeout:
+      after_hours: 24
+      action: remind
+
+  - id: first_day
+    kind: send
+    title: Первый день
+    message: >-
+      С первым рабочим днём! Сегодня: получить пропуск и ноутбук, познакомиться с наставником,
+      проверить доступы к почте, порталу и 1С. Я рядом, если что-то не открывается.
+    next: access_check
+
+  - id: access_check
+    kind: wait
+    title: Проверка доступов
+    message: >-
+      Проверьте, пожалуйста, доступы: почта, корпоративный портал, 1С, файловое хранилище.
+      Всё открывается?
+    expects: button
+    keyboard:
+      - - id: access_ok
+          text: Да, всё есть
+        - id: access_problem
+          text: Нет, есть проблема
+    routes:
+      access_ok: territory_map
+      access_problem: access_help
+    timeout:
+      after_hours: 3
+      action: remind
+
+  - id: access_help
+    kind: wait
+    title: Проблема с доступами
+    message: >-
+      Напишите, пожалуйста, что именно не открывается и какую ошибку видите. Я передам заявку
+      в ИТ-поддержку и вернусь с ответом.
+    expects: message
+    routes:
+      default: territory_map
+    timeout:
+      after_hours: 3
+      action: escalate
+      next: territory_map
+
+  - id: territory_map
+    kind: send
+    title: Территория
+    message: >-
+      Карта территории и схема этажа — в корпоративном портале, раздел «Офис и территория».
+      На проходной назовите своё подразделение, охрана выдаст разовый пропуск.
+    next: lunch
+
+  - id: lunch
+    kind: send
+    title: Обед
+    message: >-
+      Перерыв с 13:00 до 13:45. Столовая на первом этаже, рядом есть кофейня и магазин.
+      Наставник обычно обедает с командой — можно присоединиться.
+    next: contacts
+
+  - id: contacts
+    kind: send
+    title: Контакты
+    message: >-
+      Телефонный справочник и контакты подразделений — на портале, раздел «Контакты».
+      Важно: для работы используйте только корпоративную сеть и рабочую почту.
+    next: presentation
+
+  - id: presentation
+    kind: send
+    title: О компании
+    message: >-
+      Коротко о нас: «Группа ПОЛИПЛАСТИК» — производитель полимерных трубопроводных систем.
+      Презентация компании и миссия — на портале, раздел «О компании».
+    next: first_day_end
+
+  - id: first_day_end
+    kind: send
+    title: Итог первого дня
+    message: >-
+      Первый день закончен. Не нужно всё запоминать сразу: завтра познакомимся с планом
+      адаптации от руководителя и проверим, как идут дела.
+    next: day_three_plan
+
+  - id: day_three_plan
+    kind: send
+    title: План адаптации
+    message: >-
+      Третий день: руководитель покажет план адаптации на испытательный срок — задачи,
+      ожидаемые результаты и точки проверки. Если плана нет, напишите здесь.
+    next: day_three_survey
+
+  - id: day_three_survey
+    kind: survey
+    title: Опрос третьего дня
+    message: >-
+      Три коротких вопроса о начале работы. Отвечайте честно — это помогает нам вовремя
+      подключиться, если что-то идёт не так.
+    questions:
+      - id: tasks_clear
+        kind: choice
+        prompt: Понятны ли задачи на первую неделю?
+        options:
+          - id: "yes"
+            text: Да, понятны
+          - id: "partly"
+            text: Частично
+          - id: "no"
+            text: Нет
+      - id: first_days_score
+        kind: scale
+        prompt: Оцените первые дни от 1 до 10
+        low_threshold: 8
+        reason_prompt: Что повлияло на оценку? Напишите пару слов.
+      - id: what_helps
+        kind: open
+        prompt: Что помогло бы вам быстрее освоиться?
+    next: week_two_plan
+    timeout:
+      after_hours: 24
+      action: remind
+
+  - id: week_two_plan
+    kind: send
+    title: Вторая неделя
+    message: >-
+      Прошло две недели. Проверим, как идут дела: задачи, информация, руководитель, команда,
+      ИТ и поддержка HR. Это займёт минуту.
+    next: week_two_survey
+
+  - id: week_two_survey
+    kind: survey
+    title: Опрос двух недель
+    message: >-
+      Девять коротких оценок от 1 до 10. Если оценка ниже 8, я спрошу, что можно улучшить.
+    questions:
+      - id: tasks_clear
+        kind: scale
+        prompt: Задачи понятны?
+        low_threshold: 8
+        reason_prompt: Что стоит уточнить в задачах?
+      - id: info_access
+        kind: scale
+        prompt: Хватает информации для работы?
+        low_threshold: 8
+        reason_prompt: Какой информации не хватает?
+      - id: manager_available
+        kind: scale
+        prompt: Руководитель доступен для вопросов?
+        low_threshold: 8
+        reason_prompt: Что мешает общению с руководителем?
+      - id: feedback
+        kind: scale
+        prompt: Получаете обратную связь по работе?
+        low_threshold: 8
+        reason_prompt: Какой обратной связи не хватает?
+      - id: colleagues
+        kind: scale
+        prompt: Команда помогает освоиться?
+        low_threshold: 8
+        reason_prompt: Что происходит в команде?
+      - id: it_support
+        kind: scale
+        prompt: ИТ-поддержка решает вопросы?
+        low_threshold: 8
+        reason_prompt: Что не работает или долго решается?
+      - id: access_speed
+        kind: scale
+        prompt: Доступы выдали вовремя?
+        low_threshold: 8
+        reason_prompt: Каких доступов не хватает?
+      - id: hr_support
+        kind: scale
+        prompt: Поддержка HR достаточна?
+        low_threshold: 8
+        reason_prompt: Что HR стоит улучшить?
+      - id: overall
+        kind: scale
+        prompt: Общая оценка адаптации
+        low_threshold: 8
+        reason_prompt: Что больше всего мешает?
+    next: month_two_plan
+    timeout:
+      after_hours: 48
+      action: remind
+
+  - id: month_two_plan
+    kind: send
+    title: Второй месяц
+    message: >-
+      Поздравляем с первым месяцем работы! Самое время сверить прогресс с планом адаптации
+      и обсудить с руководителем, что уже получается, а где нужна помощь.
+    next: month_two_survey
+
+  - id: month_two_survey
+    kind: survey
+    title: Опрос второго месяца
+    message: >-
+      Три вопроса о том, как проходит адаптация сейчас.
+    questions:
+      - id: mood
+        kind: scale
+        prompt: Настроение на работе от 1 до 10
+        low_threshold: 8
+        reason_prompt: Что влияет на настроение?
+      - id: who_helps
+        kind: open
+        prompt: Кто помогает вам больше всего?
+      - id: speed_up
+        kind: open
+        prompt: Что ускорило бы вашу адаптацию?
+      - id: remote_work
+        kind: open
+        prompt: Удобен ли вам гибридный формат работы?
+    next: probation_reminder
+    timeout:
+      after_hours: 48
+      action: remind
+
+  - id: probation_reminder
+    kind: send
+    title: Испытательный срок
+    message: >-
+      Испытательный срок подходит к концу. Скоро встреча с рекрутёром: обсудим результаты,
+      обратную связь и планы. Ниже — короткий опрос и финальная проверка адаптации.
+    next: probation_survey
+
+  - id: probation_survey
+    kind: survey
+    title: Итоги испытательного срока
+    message: >-
+      Финальный опрос. Спасибо, что отвечаете честно: эти ответы помогают делать адаптацию
+      следующих коллег лучше.
+    questions:
+      - id: probation_result
+        kind: choice
+        prompt: Понятны ли итоги испытательного срока?
+        options:
+          - id: "yes"
+            text: Да
+          - id: "partly"
+            text: Частично
+          - id: "no"
+            text: Нет
+      - id: stay_intent
+        kind: choice
+        prompt: Хотите продолжать работу в компании?
+        options:
+          - id: "yes"
+            text: Да
+          - id: "unsure"
+            text: Пока не уверен
+          - id: "no"
+            text: Нет
+      - id: advice
+        kind: open
+        prompt: Что бы вы посоветовали новому сотруднику на вашем месте?
+      - id: overall
+        kind: scale
+        prompt: Общая удовлетворённость работой от 1 до 10
+        low_threshold: 8
+        reason_prompt: Что повлияло на оценку?
+    next: done
+    timeout:
+      after_hours: 72
+      action: remind
+
+  - id: done
+    kind: terminal
+    title: Завершение
+    outcome: completed

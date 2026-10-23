@@ -24,6 +24,21 @@ Timeout actions are `remind` (send a nudge, keep the run) or `escalate` (hand th
 recruiter, optionally continue with `next`). Documents uses `escalate` with `next` so a newcomer who
 never sends files still gets to the week-one check and a human sees the stall.
 
+## Deployed scenarios
+
+| Scenario | Version | Shape |
+|---|---|---|
+| `onboarding_default` | 1 | five-step demo: welcome, first day, team, documents, week one |
+| `onboarding_default` | 2 | the client timeline: day before, day one, day three, two weeks, month two, end of probation |
+| `onboarding_plant` | 1 | the plant variant: same timeline, own transport copy, no remote-work question |
+
+Version 1 stays deployed after version 2 ships: a run is pinned to the version it started with, so
+editing content never rewrites someone's script mid-onboarding.
+
+The timeline is relative, not absolute. The client's spreadsheet names clock times ("day one,
+12:00"); a scenario names delays ("three hours after the previous step"). Absolute times would
+need a per-site working calendar, which the pilot does not have yet.
+
 ## Surveys
 
 A `survey` step asks its `questions` one at a time and stores every answer in the run. Three

@@ -137,9 +137,13 @@ Metrics:
 | `false_alarm_rate` | share of calm cases that still escalate |
 | `fallback_rate`, `format_error_rate` | how often the classifier degraded to keywords or a broken answer |
 | `p50/p95/p99_latency_ms` | per-call latency; p95 alone hides whether the median is already slow |
+| `cost_rub_total`, `cost_rub_per_1k_calls` | what the run spent, summed from the classifier's own usage; a price nobody measured is a guess |
 
 `--repeat N` calls the provider N times per case and lists the cases whose verdict changed. A gate
 cannot be tighter than that instability.
+
+The Markdown header names what ran: the model, the prompt version, or the rubric selector
+(`sentiment-jev@1`). A table without that line is not comparable with anything.
 
 Each run writes two files: the Markdown table and a JSONL artifact with one line per call. The
 artifact is what makes a comparison honest:

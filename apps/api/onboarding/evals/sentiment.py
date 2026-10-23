@@ -131,6 +131,8 @@ class Report:
     model: str = ""
     rubric: str = ""
     prompt_version: int | None = None
+    input_tokens: int = 0
+    cost_rub: float = 0.0
 
     @property
     def cases(self) -> tuple[Case, ...]:
@@ -267,6 +269,11 @@ class Report:
     @property
     def format_error_rate(self) -> float:
         return _ratio(self.format_errors, len(self.results))
+
+    @property
+    def cost_per_1k_calls(self) -> float:
+        """What a thousand labels would cost at this run's measured spend, not at a sticker."""
+        return self.cost_rub / len(self.results) * 1000 if self.results else 0.0
 
     @property
     def p50_latency_ms(self) -> float:
@@ -449,14 +456,27 @@ def _duplicate_texts(cases: list[Case]) -> set[str]:
 
 
 class CountingAudit:
-    """Count what the classifier did to itself, so a fallback is visible in the report."""
+    """Count what the classifier did to itself, so a fallback is visible in the report.
+
+    It also sums the spend the classifier reported, because a classifier that is better but
+    unaffordable is not an improvement, and a price nobody measured is a guess.
+    """
 
     def __init__(self) -> None:
         self.fallbacks = 0
         self.format_errors = 0
         self.reasons: Counter[str] = Counter()
+        self.input_tokens = 0
+        self.cost_rub = 0.0
 
     async def record(self, name: str, **fields: Any) -> None:
+        if name == "sentiment_classified":
+            tokens = fields.get("input_tokens")
+            cost = fields.get("cost_rub")
+            if isinstance(tokens, int) and not isinstance(tokens, bool):
+                self.input_tokens += tokens
+            if isinstance(cost, int | float) and not isinstance(cost, bool):
+                self.cost_rub += float(cost)
         if name == "sentiment_fallback":
             self.fallbacks += 1
             reason = fields.get("reason")
@@ -499,6 +519,8 @@ async def evaluate(
         model=identity.model if identity else "",
         rubric=identity.rubric if identity else "",
         prompt_version=identity.prompt_version if identity else None,
+        input_tokens=audit.input_tokens,
+        cost_rub=audit.cost_rub,
     )
 
 
@@ -544,6 +566,14 @@ def render_markdown(
         f"| `false_alarm_rate` | {report.false_alarm_rate:.3f} | — |",
         f"| `fallback_rate` | {report.fallback_rate:.3f} | — |",
         f"| `format_error_rate` | {report.format_error_rate:.3f} | — |",
+        "",
+        "## Cost",
+        "",
+        "| metric | value |",
+        "|---|---|",
+        f"| `cost_rub_total` | {report.cost_rub:.4f} |",
+        f"| `cost_rub_per_1k_calls` | {report.cost_per_1k_calls:.4f} |",
+        f"| `input_tokens_total` | {report.input_tokens} |",
         "",
         "## Latency",
         "",
@@ -766,6 +796,8 @@ def load_artifact(path: Path) -> Report:
         model=str(header.get("model") or ""),
         rubric=str(header.get("rubric") or ""),
         prompt_version=header.get("prompt_version"),
+        input_tokens=int(header.get("input_tokens", 0)),
+        cost_rub=float(header.get("cost_rub", 0.0)),
     )
 
 
@@ -780,6 +812,8 @@ def render_artifact(report: Report, *, command: str) -> str:
         "prompt_version": report.prompt_version,
         "rubric": report.rubric or None,
         "model": report.model or None,
+        "input_tokens": report.input_tokens,
+        "cost_rub": round(report.cost_rub, 6),
         "command": command,
         "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "cases": len(report.cases),

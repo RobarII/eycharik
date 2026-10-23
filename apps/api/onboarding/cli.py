@@ -145,9 +145,9 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
         now = SystemClock().now()
 
         for employee_id, name, chat_id, target in (
-            ("1001", "Анна Смирнова", ChatId(1001), "meet_the_team"),
-            ("1002", "Пётр Кузнецов", ChatId(1002), None),
-            ("1003", "Мария Волкова", ChatId(1003), "first_day_checklist"),
+            ("1001", "Анна Смирнова", ChatId(1001), "access_check"),
+            ("1002", "Пётр Кузнецов", ChatId(1002), "day_three_survey"),
+            ("1003", "Мария Волкова", ChatId(1003), "documents_checklist"),
         ):
             employee = EmployeeId(employee_id)
             if await DatabaseRunRepository(container.database).find_active_by_employee(employee):
@@ -189,9 +189,35 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
             now=now,
             expect_reason="restricted",
         )
+        for employee_id, level, step_id, tags, reasons in (
+            (
+                "1002",
+                "high",
+                "day_three_survey",
+                ["manager", "access"],
+                ["руководитель не отвечает третий день", "нет доступа к 1С"],
+            ),
+            (
+                "1001",
+                "medium",
+                "day_three_survey",
+                ["workload"],
+                ["много задач сразу, не хватает времени на обучение"],
+            ),
+        ):
+            await container.audit.record(
+                "risk_assessed",
+                employee_id=employee_id,
+                step=step_id,
+                level=level,
+                score=3 if level == "high" else 1,
+                tags=tags,
+                reasons=reasons,
+            )
     finally:
         await container.aclose()
-    print("demo data is ready: 3 employees, one completed run, three questions in the queue")
+    print("demo data is ready: 3 employees, three questions in the queue, two risk signals")
+    print("open the cabinet and the risk page: #/risk")
     return 0
 
 
@@ -256,7 +282,11 @@ async def _drive(
         if step.expects is Expects.FILE:
             event = Event(kind=EventKind.FILE_RECEIVED, at=now, file_id="demo-file")
         elif step.expects is Expects.BUTTON:
-            event = Event(kind=EventKind.BUTTON_PRESSED, at=now, button_id="checklist_done")
+            if not step.keyboard:
+                raise SystemExit(f"demo step {step.id} expects a button but offers none")
+            event = Event(
+                kind=EventKind.BUTTON_PRESSED, at=now, button_id=step.keyboard[0][0].id
+            )
         else:
             event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text="готово")
         await service.handle(employee, chat_id, event)

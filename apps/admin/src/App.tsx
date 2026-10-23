@@ -4,13 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchRuns, getToken, setToken } from "./api";
 import { TokenGate } from "./components/TokenGate";
 import { QuestionsPage } from "./pages/QuestionsPage";
+import { RiskPage } from "./pages/RiskPage";
 import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 
 type Route =
   | { name: "runs" }
   | { name: "run"; id: string }
-  | { name: "questions" };
+  | { name: "questions" }
+  | { name: "risk" };
 
 function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
@@ -19,6 +21,7 @@ function parseRoute(hash: string): Route {
     return id ? { name: "run", id } : { name: "runs" };
   }
   if (path === "questions") return { name: "questions" };
+  if (path === "risk") return { name: "risk" };
   return { name: "runs" };
 }
 
@@ -57,7 +60,7 @@ export function App() {
 
   if (!token) return <TokenGate onSubmit={login} />;
 
-  const active = route.name === "questions" ? "questions" : "runs";
+  const active = route.name === "runs" || route.name === "run" ? "runs" : route.name;
 
   return (
     <div className="shell">
@@ -89,6 +92,14 @@ export function App() {
           >
             Вопросы
           </button>
+          <button
+            type="button"
+            className={active === "risk" ? "nav-link nav-link-on" : "nav-link"}
+            aria-current={active === "risk" ? "page" : undefined}
+            onClick={() => navigate("risk")}
+          >
+            Риски
+          </button>
         </nav>
         <button type="button" className="link-button" onClick={logout}>
           Выйти
@@ -106,6 +117,7 @@ export function App() {
             onUnauthorized={logout}
           />
         ) : null}
+        {route.name === "risk" ? <RiskPage onUnauthorized={logout} /> : null}
         {route.name === "questions" ? (
           <QuestionsPage
             onOpenRun={(id) => navigate(`run/${id}`)}

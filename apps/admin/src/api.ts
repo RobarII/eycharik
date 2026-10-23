@@ -1,4 +1,11 @@
-import type { ListResponse, Question, RunDetail, RunSummary } from "./types";
+import type {
+  AnalyticsOverview,
+  DigestResponse,
+  ListResponse,
+  Question,
+  RunDetail,
+  RunSummary,
+} from "./types";
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 const KEY = "onboarding.admin.token";
@@ -45,4 +52,12 @@ export function fetchQuestions(
   limit = 50,
 ): Promise<ListResponse<Question>> {
   return get(`/admin/api/questions?status=${status}&limit=${limit}`);
+}
+
+export function fetchOverview(): Promise<AnalyticsOverview> {
+  return get("/admin/api/analytics/overview");
+}
+
+export function fetchDigest(days = 7): Promise<DigestResponse> {
+  return get(`/admin/api/digest/weekly?days=${days}`);
 }

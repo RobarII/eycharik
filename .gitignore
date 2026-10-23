@@ -27,3 +27,6 @@ node_modules/
 work/
 *.log
 *.sqlite3
+
+# TypeScript incremental build info
+apps/admin/tsconfig.tsbuildinfo

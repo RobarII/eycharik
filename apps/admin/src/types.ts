@@ -39,3 +39,35 @@ export interface RunDetail extends RunSummary {
 export interface ListResponse<T> {
   items: T[];
 }
+
+
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+export interface AnalyticsOverview {
+  active_runs: number;
+  completed_runs: number;
+  high_risk: number;
+  medium_risk: number;
+  unanswered_questions: number;
+  top_tags: TagCount[];
+  since: string;
+}
+
+export interface DigestItem {
+  employee_id: string;
+  employee_name: string;
+  department: string;
+  step_id: string;
+  level: "high" | "medium";
+  reasons: string[];
+  tags: string[];
+  at: string;
+}
+
+export interface DigestResponse {
+  items: DigestItem[];
+  since: string;
+}

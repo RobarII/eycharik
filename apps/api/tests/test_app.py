@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from onboarding.api.app import create_app
+from onboarding.app.observability import metrics
 from onboarding.app.settings import Settings
 
 
@@ -50,3 +51,32 @@ def test_admin_rejects_an_unknown_token() -> None:
         )
 
     assert response.status_code == 401
+
+
+def test_metrics_endpoint_exposes_http_series() -> None:
+    metrics.reset()
+    with client() as http:
+        http.get("/healthz")
+        response = http.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert 'onboarding_http_requests_total{method="GET",route="/healthz",status="200"} 1' in (
+        response.text
+    )
+
+
+def test_every_response_carries_a_request_id() -> None:
+    with client() as http:
+        response = http.get("/healthz", headers={"X-Request-ID": "trace-42"})
+
+    assert response.headers["X-Request-ID"] == "trace-42"
+
+
+def test_unknown_paths_do_not_become_metric_labels() -> None:
+    metrics.reset()
+    with client() as http:
+        http.get("/there-is-no-such-route")
+        http.get("/metrics")
+
+    assert 'route="unmatched"' in http.get("/metrics").text

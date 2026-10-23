@@ -8,6 +8,7 @@ import pytest
 
 from onboarding.app.copy import load_copy
 from onboarding.app.llm.gateway import LLMResponseError
+from onboarding.app.observability import metrics
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.app.worker.answerer import PROMPT_NAME, PROMPT_VERSION, Answerer
@@ -242,3 +243,19 @@ async def test_a_reranker_outage_keeps_the_retrieval_order() -> None:
     prompt = llm.requests[0].messages[0].content
     assert prompt.index('id="hr/a#0"') < prompt.index('id="hr/b#0"')
     assert "rerank_failed" in audit.names()
+
+
+async def test_answer_records_stage_and_outcome_metrics() -> None:
+    metrics.reset()
+    answerer, _, _, _ = build([answer_json()], (scored_chunk(),))
+
+    await answerer.answer("Сколько дней отпуска?", profile(), ON_DATE)
+
+    rendered = metrics.render()
+    assert 'onboarding_answer_stage_seconds_count{stage="retrieval"} 1' in rendered
+    assert 'onboarding_answer_stage_seconds_count{stage="rerank"} 1' in rendered
+    assert 'onboarding_answer_stage_seconds_count{stage="generate"} 1' in rendered
+    assert 'onboarding_answer_total{escalated="false",reason="answered"} 1' in rendered
+    assert 'onboarding_answer_citations_count 1' in rendered
+    assert "onboarding_answer_cost_rub_total" in rendered
+    assert 'onboarding_llm_tokens_total{direction="input"}' in rendered

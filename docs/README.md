@@ -39,6 +39,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |
+| What metrics exist and what should alert? | [runbooks/observability.md](runbooks/observability.md) |
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
 | How is answer quality measured? | [evals/README.md](evals/README.md) |

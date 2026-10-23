@@ -8,11 +8,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import date
+from time import perf_counter
 
 from onboarding.app.audit import NullAudit
 from onboarding.app.copy import Copy
 from onboarding.app.llm.gateway import LLMResponseError
 from onboarding.app.llm.output import AnswerFormatError, parse_answer
+from onboarding.app.observability import metrics
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.core.grounding import judge
@@ -83,6 +85,8 @@ class Answerer:
         if not normalized:
             return self._escalate(EscalationReason.NO_SOURCES, ())
 
+        timings: dict[str, float] = {}
+        started = perf_counter()
         try:
             retrieved = await self._knowledge.search(
                 SearchQuery(
@@ -93,12 +97,20 @@ class Answerer:
                 )
             )
         except KnowledgeUnavailableError:
-            return self._escalate(EscalationReason.UNAVAILABLE, ())
+            timings["retrieval"] = perf_counter() - started
+            return self._report(self._escalate(EscalationReason.UNAVAILABLE, ()), timings)
+        timings["retrieval"] = perf_counter() - started
         if not retrieved:
-            return self._escalate(EscalationReason.NO_SOURCES, ())
+            return self._report(self._escalate(EscalationReason.NO_SOURCES, ()), timings)
 
+        started = perf_counter()
         retrieved = await self._rerank(normalized, retrieved)
-        return await self._generate(normalized, profile, on_date, retrieved)
+        timings["rerank"] = perf_counter() - started
+
+        started = perf_counter()
+        outcome = await self._generate(normalized, profile, on_date, retrieved)
+        timings["generate"] = perf_counter() - started
+        return self._report(outcome, timings)
 
     async def _rerank(
         self, question: str, retrieved: tuple[ScoredChunk, ...]
@@ -214,6 +226,47 @@ class Answerer:
             retrieved=retrieved,
             completion=completion,
         )
+
+    def _report(self, outcome: AnswerOutcome, timings: dict[str, float]) -> AnswerOutcome:
+        """Record one answer without touching what the employee receives."""
+        for stage, seconds in timings.items():
+            metrics.observe(
+                "onboarding_answer_stage_seconds",
+                seconds,
+                labels={"stage": stage},
+            )
+        metrics.inc(
+            "onboarding_answer_total",
+            labels={"reason": outcome.reason, "escalated": str(outcome.escalated).lower()},
+        )
+        metrics.observe(
+            "onboarding_answer_citations",
+            float(len(outcome.citations)),
+        )
+        completion = outcome.completion
+        if completion is not None:
+            metrics.inc(
+                "onboarding_llm_tokens_total",
+                labels={"direction": "input"},
+                value=float(completion.input_tokens),
+            )
+            metrics.inc(
+                "onboarding_llm_tokens_total",
+                labels={"direction": "output"},
+                value=float(completion.output_tokens),
+            )
+            metrics.inc("onboarding_answer_cost_rub_total", value=completion.cost_rub)
+        log.info(
+            "answer_completed",
+            extra={
+                "reason": outcome.reason,
+                "escalated": outcome.escalated,
+                "citations": len(outcome.citations),
+                "retrieved": len(outcome.retrieved),
+                "latency_ms": round(sum(timings.values()) * 1000),
+            },
+        )
+        return outcome
 
     def _escalate(
         self,

@@ -65,6 +65,28 @@ and proves it works.
    select name, fields from audit_log where name = 'unlinked_channel_user' order by id desc limit 5;
    ```
 
+## Proving a channel end to end
+
+`scripts/channel_smoke.py` posts messenger-shaped updates to the public webhook and then reads the
+database, so a green run means the whole path works: verification, identity, dedupe, the scenario,
+the outbox, the adapter, and the messenger's own message id.
+
+```bash
+TELEGRAM_WEBHOOK_SECRET=... DATABASE_URL=... \
+  uv run python scripts/channel_smoke.py \
+    --base-url https://$HOST --chat-id $CHAT_ID --reset
+```
+
+It walks the whole scenario, presses the first option on every keyboard, files a document where the
+step expects a file, and then checks delivery, the text cap, the refusals (missing secret, wrong
+secret, non-JSON, oversized body, a channel that is off), the unlinked-account rule, and
+redelivery. `--branch trouble` presses the last option instead, which exercises the unhappy routes
+and the risk scoring. `--scenario` picks the script to drive.
+
+The run needs a linked chat: the script cannot invent a messenger account, and an unlinked one is
+refused by design. Telegram is asked directly, so `api.telegram.org` must be reachable from the
+host running the smoke (use `HTTPS_PROXY` when it is not).
+
 ## Verification queries
 
 ```sql

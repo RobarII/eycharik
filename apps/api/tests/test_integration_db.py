@@ -229,13 +229,16 @@ async def test_outbox_and_dispatcher_deliver_a_message(database: Database) -> No
     direct = RecordingMessaging()
     outbox = OutboxMessaging(database, direct)
 
-    message_id = await outbox.send(OutboundMessage(chat_id=ChatId(7), text="привет"))
+    message_id = await outbox.send(
+        OutboundMessage(chat_id=ChatId(7), text="привет", image="welcome.jpg")
+    )
 
     assert message_id.isdigit()
     assert direct.sent == []
     delivered = await MessageDispatcher(database, direct).run_once()
     assert delivered == 1
     assert direct.sent[0].text == "привет"
+    assert direct.sent[0].image == "welcome.jpg"
 
 
 async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Database) -> None:
@@ -1057,3 +1060,21 @@ async def test_only_hr_may_upload_a_file(database: Database) -> None:
         )
 
     assert response.status_code == 403
+
+
+async def test_knowledge_list_hides_hr_only_from_a_recruiter(database: Database) -> None:
+    embedder = HashingEmbedder(dim=1024)
+    await ingest(
+        directory=ROOT / "knowledge",
+        schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+        writer=PostgresKnowledgeWriter(database),
+        embedder=embedder,
+    )
+    queries = AdminQueries(database)
+
+    recruiter = await queries.knowledge(limit=200, include_hr_only=False)
+    hr = await queries.knowledge(limit=200, include_hr_only=True)
+
+    assert any("hr_only" in record.audience for record in hr)
+    assert all("hr_only" not in record.audience for record in recruiter)
+    assert len(recruiter) < len(hr)

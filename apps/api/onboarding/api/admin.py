@@ -378,8 +378,15 @@ async def weekly_digest(
 
 
 @router.get("/knowledge", response_model=KnowledgeList)
-async def knowledge_documents(request: Request, principal: Admin) -> KnowledgeList:
-    records = await _queries(request).knowledge()
+async def knowledge_documents(
+    request: Request,
+    principal: Admin,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> KnowledgeList:
+    """Active documents. An ``hr_only`` document is not fetched for a non-HR caller at all."""
+    records = await _queries(request).knowledge(
+        limit=limit, include_hr_only=principal.is_hr
+    )
     return KnowledgeList(
         items=[
             KnowledgeDocument(

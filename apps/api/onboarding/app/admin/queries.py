@@ -129,13 +129,20 @@ class AdminQueries:
                 EventRecord(name=row.name, at=row.at, fields=row.fields) for row in rows
             )
 
-    async def knowledge(self, *, limit: int = 100) -> tuple[KnowledgeRecord, ...]:
+    async def knowledge(
+        self, *, limit: int = 100, include_hr_only: bool
+    ) -> tuple[KnowledgeRecord, ...]:
+        """Active documents, with ``hr_only`` hidden from everyone who is not HR.
+
+        The predicate is in SQL, like every other scope: a row the caller may not read is never
+        fetched, so a later bug in the formatter cannot leak it.
+        """
         async with self._database.session() as session:
+            statement = select(DocumentRow).where(DocumentRow.status == "active")
+            if not include_hr_only:
+                statement = statement.where(~DocumentRow.audience.contains(["hr_only"]))
             rows = await session.scalars(
-                select(DocumentRow)
-                .where(DocumentRow.status == "active")
-                .order_by(desc(DocumentRow.updated_at))
-                .limit(limit)
+                statement.order_by(desc(DocumentRow.updated_at)).limit(limit)
             )
             return tuple(
                 KnowledgeRecord(

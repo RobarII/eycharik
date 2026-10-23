@@ -56,7 +56,7 @@ cookie exists at all.
 | `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
-| `GET` | `/admin/api/knowledge` | active knowledge documents, newest first |
+| `GET` | `/admin/api/knowledge?limit=100` | active knowledge documents, newest first; `hr_only` is hidden from every non-HR role |
 | `POST` | `/admin/api/knowledge` | HR uploads one markdown document with frontmatter; indexed in the request |
 | `POST` | `/admin/api/knowledge/files` | HR uploads a PDF or a deck; stored by content hash and queued for extraction |
 | `GET` | `/admin/api/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |

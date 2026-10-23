@@ -22,6 +22,9 @@ steps:
     routes:
       tone_you: documents_checklist
       tone_formal: documents_checklist
+    tone:
+      tone_you: informal
+      tone_formal: formal
     timeout:
       after_hours: 48
       action: remind
@@ -33,6 +36,9 @@ steps:
       До первого рабочего дня осталось собрать документы: паспорт, СНИЛС, ИНН, диплом,
       фотография, реквизиты счёта. Пришлите их файлами в этот чат или напишите, если что-то
       уже передали рекрутёру.
+    informal_message: >-
+      Осталось собрать документы: паспорт, СНИЛС, ИНН, диплом, фотография, реквизиты счёта.
+      Пришли их файлами в этот чат или напиши, если что-то уже отдал рекрутёру.
     expects: message
     routes:
       default: day_before

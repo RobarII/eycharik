@@ -44,6 +44,21 @@ The timeline is relative, not absolute. The client's spreadsheet names clock tim
 12:00"); a scenario names delays ("three hours after the previous step"). Absolute times would
 need a per-site working calendar, which the pilot does not have yet.
 
+## Tone
+
+The welcome step asks «ты» or «вы». A step maps its buttons to a tone with `tone`:
+
+```yaml
+tone:
+  tone_you: informal
+  tone_formal: formal
+```
+
+The choice lives on the run (`runs.tone`), not in the process, so a restart, a cron reminder and a
+later step all keep it. Any step may carry `informal_message`; with the informal tone the engine
+sends it instead of `message`, otherwise the default is used. A tone map on a step without buttons
+is a deployment error, and so is a map that names a button the step does not have.
+
 ## Surveys
 
 A `survey` step asks its `questions` one at a time and stores every answer in the run. Three

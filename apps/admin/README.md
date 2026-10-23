@@ -295,7 +295,13 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 | `src/api.ts` | Fetch wrapper, session cookie, `Unauthorized`, typed endpoints |
 | `src/types.ts` | API response types; mirrors the contract |
 | `src/format.ts` | Dates, Russian plurals, reason/event/step/tag labels, initials |
-| `src/styles.css` | Tokens, layout, components, responsive rules |
+| `src/styles.css` | `@import`s the files below in cascade order |
+| `src/styles/base.css` | Tokens, reset, focus, shell, sidebar, top bar |
+| `src/styles/gate.css` | The token gate |
+| `src/styles/layout.css` | Page scaffolding, controls, cards |
+| `src/styles/dashboard.css` | KPI, cohort charts, digest, pills |
+| `src/styles/screens.css` | Runs, detail, risk, questions, knowledge, states |
+| `src/styles/responsive.css` | Breakpoints, reduced motion, print — always last |
 | `src/components/Icons.tsx` | Inline SVG icon set and logo mark |
 | `src/components/TokenGate.tsx` | Login by token |
 | `src/components/Boundary.tsx` | Keeps a crashed screen from becoming a white page |

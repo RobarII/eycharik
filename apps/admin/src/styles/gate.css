@@ -1,0 +1,214 @@
+/* The token gate: the only screen a signed-out visitor sees. */
+
+/* ---------- gate ---------- */
+
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+}
+
+.gate-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.gate-card-single {
+  width: min(560px, 100%);
+  display: block;
+  padding: clamp(28px, 4vw, 40px);
+}
+
+.gate-card-single .gate-title {
+  margin: 6px 0 10px;
+  font-size: clamp(1.5rem, 2.4vw, 1.9rem);
+}
+
+.gate-card-single .gate-lead {
+  margin: 0 0 22px;
+}
+
+.gate-card {
+  width: min(920px, 100%);
+  display: grid;
+  grid-template-columns: 1.02fr 0.98fr;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: rise 260ms ease-out;
+}
+
+.gate-brand {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  padding: clamp(28px, 4vw, 44px);
+  background: var(--accent-deep);
+  color: #fff;
+  overflow: hidden;
+}
+
+.gate-brand::after,
+.gate-brand::before {
+  content: "";
+  position: absolute;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.gate-brand::after {
+  width: 380px;
+  height: 380px;
+  right: -170px;
+  bottom: -180px;
+}
+
+.gate-brand::before {
+  width: 230px;
+  height: 230px;
+  right: -95px;
+  bottom: -105px;
+}
+
+.gate-logo {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.gate-logo .brand-mark {
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.gate-logo .brand-name {
+  color: #fff;
+}
+
+.gate-logo .brand-sub {
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.gate-title {
+  position: relative;
+  z-index: 1;
+  font-size: clamp(1.7rem, 1.3rem + 1.2vw, 2.35rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.16;
+}
+
+.gate-lead {
+  position: relative;
+  z-index: 1;
+  max-width: 34ch;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.94rem;
+}
+
+.gate-points {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 12px;
+  margin: auto 0 0;
+  padding: 10px 0 0;
+  list-style: none;
+}
+
+.gate-point {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.gate-point-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.gate-side {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 16px;
+  padding: clamp(28px, 4vw, 44px);
+}
+
+.gate-side h2 {
+  font-size: 1.3rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.gate-side .muted {
+  font-size: 0.9rem;
+}
+
+.gate-form {
+  display: grid;
+  gap: 9px;
+}
+
+.gate-form label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.gate-form input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.gate-form input:hover {
+  border-color: var(--accent-line);
+}
+
+.gate-form input:focus {
+  border-color: var(--accent);
+  background: #fff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(197, 106, 67, 0.14);
+}
+
+.gate-form .button {
+  margin-top: 4px;
+}
+
+.form-error {
+  color: var(--red);
+  font-size: 0.84rem;
+}
+
+.gate-footnote {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+

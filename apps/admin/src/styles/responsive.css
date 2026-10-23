@@ -1,0 +1,409 @@
+/* Breakpoints, reduced motion and print. Keep these last: they override the above. */
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1180px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-grid-even {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1024px) {
+  .app {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    gap: 22px;
+    padding: 24px 10px 16px;
+  }
+
+  .brand {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .brand-text,
+  .nav-label,
+  .logout span {
+    display: none;
+  }
+
+  .nav-link {
+    justify-content: center;
+    padding: 11px 0;
+  }
+
+  .nav-link-on::before {
+    left: -10px;
+  }
+
+  .nav-count {
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    min-width: 16px;
+    padding: 0 4px;
+    font-size: 0.6rem;
+  }
+
+  .logout {
+    justify-content: center;
+  }
+
+  .detail-grid,
+  .knowledge-layout,
+  .upload-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .gate-card {
+    grid-template-columns: 1fr;
+  }
+
+  .gate-brand {
+    gap: 16px;
+  }
+
+  .gate-points {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .app {
+    grid-template-columns: 1fr;
+    width: 100%;
+    min-height: 100vh;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .sidebar {
+    position: fixed;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    height: 64px;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    border-right: 0;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
+  }
+
+  .sidebar > .brand,
+  .sidebar-foot {
+    display: none;
+  }
+
+  .nav {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    width: 100%;
+    gap: 2px;
+  }
+
+  .nav-link {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 2px;
+    border-radius: 9px;
+    font-size: 0.62rem;
+    font-weight: 500;
+  }
+
+  .nav-label {
+    display: block;
+    max-width: 100%;
+    font-size: 0.62rem;
+  }
+
+  .nav-link-on::before {
+    display: none;
+  }
+
+  .nav-count {
+    top: 1px;
+    right: calc(50% - 20px);
+  }
+
+  .content {
+    min-height: 100vh;
+    padding-bottom: 64px;
+  }
+
+  .topbar {
+    min-height: 58px;
+  }
+
+  .crumb {
+    font-size: 0.74rem;
+  }
+
+  .mobile-logout {
+    display: grid;
+  }
+
+  .page-head {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .page-head .page-count {
+    align-self: flex-start;
+  }
+
+  .run-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .run-side {
+    width: 100%;
+    min-width: 0;
+    grid-auto-flow: column;
+    align-items: center;
+    justify-content: space-between;
+    justify-items: start;
+    padding-top: 9px;
+    border-top: 1px solid var(--line);
+    text-align: left;
+  }
+
+  .chevron {
+    display: none;
+  }
+
+  .timeline li {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .digest-row {
+    flex-direction: column;
+  }
+
+  .digest-tags {
+    max-width: none;
+    justify-content: flex-start;
+  }
+
+  .question-foot .link-button {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .main {
+    padding: 22px 16px 30px;
+  }
+
+  .topbar {
+    padding: 10px 16px;
+  }
+
+  .kpi-grid {
+    gap: 10px;
+  }
+
+  .kpi {
+    padding: 15px;
+  }
+
+  .kpi-value {
+    font-size: 1.85rem;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dash-grid-even {
+    grid-template-columns: 1fr;
+  }
+
+  .facts {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .segmented {
+    width: 100%;
+  }
+
+  .segment {
+    flex: 1;
+    padding: 7px 8px;
+  }
+
+  .search,
+  .search input {
+    width: 100%;
+  }
+
+  .bar-row {
+    grid-template-columns: minmax(80px, 42%) minmax(40px, 1fr) auto;
+    gap: 9px;
+  }
+
+  .topic-list {
+    grid-template-columns: 1fr;
+  }
+
+  .gate {
+    padding: 12px;
+  }
+
+  .gate-card {
+    border-radius: 20px;
+  }
+
+  .gate-brand,
+  .gate-side {
+    padding: 24px;
+  }
+
+  .gate-brand {
+    gap: 12px;
+  }
+
+  .gate-title {
+    font-size: 1.6rem;
+  }
+
+  .upload-area {
+    min-height: 220px;
+  }
+
+  .knowledge-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .knowledge-row > .digest-meta {
+    text-align: left;
+  }
+}
+
+/* Mobile reflow: a long question row must not widen the layout viewport. */
+@media (max-width: 760px) {
+  html,
+  body {
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  .main,
+  .page,
+  .page-head,
+  .page-head-text,
+  .dash-grid,
+  .kpi-grid,
+  .card,
+  .card-head,
+  .activity-row,
+  .activity-main,
+  .activity-name,
+  .attention,
+  .attention-head,
+  .cohort,
+  .bars,
+  .bar-row,
+  .topic-list,
+  .topic-row {
+    min-width: 0;
+  }
+
+  .card-head {
+    flex-wrap: wrap;
+  }
+
+  .card-note {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .activity-row {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    grid-template-areas:
+      "avatar main"
+      "time time";
+    align-items: start;
+    gap: 4px 11px;
+  }
+
+  .activity-avatar {
+    grid-area: avatar;
+  }
+
+  .activity-main {
+    grid-area: main;
+  }
+
+  .activity-time {
+    grid-area: time;
+    justify-self: start;
+  }
+
+  .activity-name {
+    flex-wrap: wrap;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .activity-sub {
+    display: -webkit-box;
+    overflow: hidden;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .crumb {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .crumb span,
+  .crumb strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 380px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}

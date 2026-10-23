@@ -18,6 +18,7 @@ from onboarding.app.container import build_container
 from onboarding.app.db.kb import PostgresKnowledgeWriter
 from onboarding.app.db.models import EmployeeRow
 from onboarding.app.knowledge.pipeline import ingest
+from onboarding.app.max.client import MaxClient, Subscription
 from onboarding.app.settings import Settings
 
 
@@ -33,6 +34,14 @@ def main(argv: list[str] | None = None) -> int:
     seed_parser = sub.add_parser("seed", help="load employees from a JSON file")
     seed_parser.add_argument("--file", type=Path, required=True)
 
+    subscribe_parser = sub.add_parser("subscribe", help="register the MAX webhook subscription")
+    subscribe_parser.add_argument("--url", required=True, help="public HTTPS webhook URL")
+    subscribe_parser.add_argument(
+        "--types",
+        default="message_created,bot_started",
+        help="comma-separated MAX update types",
+    )
+
     sub.add_parser("check", help="validate settings and scenario files")
 
     args = parser.parse_args(argv)
@@ -41,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_ingest(settings, args))
     if args.command == "seed":
         return asyncio.run(_seed(settings, args.file))
+    if args.command == "subscribe":
+        return asyncio.run(_subscribe(settings, args))
     return _check(settings)
 
 
@@ -58,6 +69,29 @@ async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
     finally:
         await container.aclose()
     print(f"indexed {report.documents} documents, {report.chunks} chunks")
+    return 0
+
+
+async def _subscribe(settings: Settings, args: argparse.Namespace) -> int:
+    if settings.max_webhook_secret is None:
+        raise SystemExit("MAX_WEBHOOK_SECRET is not set")
+    container = build_container(settings)
+    try:
+        if not isinstance(container.sender, MaxClient):
+            raise SystemExit("sender is not a MAX client")
+        secret = settings.max_webhook_secret
+        if secret is None:
+            raise SystemExit("MAX_WEBHOOK_SECRET is not set")
+        await container.sender.subscribe(
+            Subscription(
+                url=args.url,
+                update_types=tuple(part.strip() for part in args.types.split(",") if part),
+                secret=secret,
+            )
+        )
+    finally:
+        await container.aclose()
+    print(f"subscribed {args.url}")
     return 0
 
 

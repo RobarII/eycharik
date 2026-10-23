@@ -11,10 +11,10 @@ Built for the "AI assistant in MAX" case (ООО «Группа ПОЛИПЛАС
 |---|---|---|
 | `docs/` | architecture, contracts, decisions, runbooks, evals | yes |
 | `knowledge/` | non-public company corpus served to the assistant | yes, with owner review |
-| `apps/api/` | the service: webhook gateway, scenario engine, RAG, admin API | yes |
+| `apps/api/` | the service: webhook API, scenario engine, RAG, admin API | yes |
 | `apps/admin/` | recruiter cockpit | yes |
-| `evals/` | golden set runner and reports | yes |
-| `infra/` | compose file, database init, tunnel notes | yes |
+| `docs/evals/` | golden set and its runner contract | yes |
+| `infra/demo/` | demo employees for `make seed` | yes |
 
 ## Start here
 

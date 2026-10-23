@@ -4,12 +4,12 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval run worker up down logs migrate ingest seed fmt docs
+.PHONY: install check lint types test eval eval-retrieval run worker up down logs migrate ingest seed fmt docs
 
 install:
 	uv sync
 
-check: lint types test
+check: lint types test docs
 
 lint:
 	$(PY) ruff check .
@@ -25,7 +25,10 @@ test:
 	$(PY) pytest
 
 eval:
-	$(PY) pytest -m eval
+	$(PY) python -m onboarding.evals --write
+
+eval-retrieval:
+	$(PY) python -m onboarding.evals --retrieval-only --write
 
 run:
 	$(PY) uvicorn onboarding.api.app:create_app --factory --reload --port 8000
@@ -51,4 +54,5 @@ ingest:
 seed:
 	$(PY) python -m onboarding.cli seed --file infra/demo/employees.json
 
-docs: check
+docs:
+	$(PY) python scripts/check_docs.py

@@ -53,6 +53,8 @@ ignore = ["ANN401", "PLR0913", "PLR2004", "S101", "B008", "RUF001", "RUF002", "R
 "apps/api/tests/**" = ["S105", "S106", "ANN"]
 "apps/api/onboarding/app/db/migrations/**" = ["ANN", "E501"]
 "apps/api/onboarding/cli.py" = ["T201"]
+"apps/api/onboarding/evals/**" = ["T201"]
+"scripts/**" = ["T201"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["onboarding"]

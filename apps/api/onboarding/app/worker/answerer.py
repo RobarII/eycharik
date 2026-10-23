@@ -121,6 +121,11 @@ class Answerer:
                 )
             )
         except LLMUnavailableError:
+            await self._audit.record(
+                "answer_unavailable",
+                retrieved=len(retrieved),
+                prompt_version=PROMPT_VERSION,
+            )
             return self._escalate(EscalationReason.UNAVAILABLE, retrieved)
 
         try:

@@ -6,7 +6,7 @@ Workspace rules for coding agents and humans. Read this before the first edit.
 
 One product: an onboarding assistant for the MAX messenger.
 
-- `apps/api/` — webhook gateway, scenario engine, retrieval, answer generation, admin API.
+- `apps/api/` — webhook API, scenario engine, retrieval, answer generation, admin API.
 - `apps/admin/` — the recruiter cockpit. Not a chatbot; it reads the admin API.
 - `knowledge/` — the non-public company corpus that the assistant may answer from. Data, not code.
 - `docs/` — the specification of record: architecture, contracts, decisions, runbooks, evals.
@@ -49,11 +49,12 @@ The repository is the only source of truth. A fact that lives only in a chat mes
 
 ```bash
 make install                       # uv sync, creates .venv
-make check                         # ruff, mypy, pytest (no network)
-make eval                          # retrieval and answer quality on the golden set
+make check                         # ruff, mypy, pytest, docs link check
+make eval                          # retrieval, generation, escalation on the golden set
+make eval-retrieval                # retrieval only, no provider key needed
 make run                           # uvicorn on :8000
 make up / make down                # docker compose stack
-make docs                          # markdownlint, link check, index check, frontmatter check
+make docs                          # docs index completeness and dead-link check
 ```
 
 ## Where changes go

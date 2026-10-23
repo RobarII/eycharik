@@ -1,0 +1,66 @@
+from __future__ import annotations
+
+import pytest
+
+from onboarding.core.metrics import mean, percentile, recall_at_k, reciprocal_rank
+from onboarding.evals.runner import Case, CaseResult, summarise
+
+
+def test_recall_counts_expected_documents_in_the_top_k() -> None:
+    assert recall_at_k(["a", "b"], ["x", "a", "b", "c", "d"], k=5) == 1.0
+    assert recall_at_k(["a", "b"], ["x", "a", "y", "z", "w"], k=5) == 0.5
+    assert recall_at_k(["a"], ["a", "b"], k=1) == 1.0
+    assert recall_at_k(["a"], ["b", "a"], k=1) == 0.0
+
+
+def test_recall_of_nothing_expected_is_one() -> None:
+    assert recall_at_k([], ["a"]) == 1.0
+
+
+def test_reciprocal_rank_uses_the_first_hit() -> None:
+    assert reciprocal_rank(["b"], ["a", "b", "c"]) == pytest.approx(0.5)
+    assert reciprocal_rank(["a"], ["a"]) == 1.0
+    assert reciprocal_rank(["z"], ["a", "b"]) == 0.0
+
+
+def test_percentile_uses_nearest_rank() -> None:
+    values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    assert percentile(values, p=50) == 5
+    assert percentile(values, p=95) == 10
+    assert percentile([], p=95) == 0.0
+
+
+def test_percentile_rejects_a_bad_p() -> None:
+    with pytest.raises(ValueError, match="within"):
+        percentile([1], p=101)
+
+
+def test_mean_handles_empty_input() -> None:
+    assert mean([]) == 0.0
+    assert mean([1, 2, 3]) == 2.0
+
+
+def test_escalation_cases_do_not_drag_retrieval_metrics() -> None:
+
+    def result(case_id: str, expected: tuple[str, ...], rr: float) -> CaseResult:
+        case = Case(
+            id=case_id,
+            question="q",
+            audience="all",
+            expect_docs=expected,
+            expect_contains=(),
+            expect_escalation=not expected,
+            expect_reason=None,
+        )
+        return CaseResult(
+            case=case, retrieved_docs=("a",), recall=1.0, rr=rr
+        )
+
+    report = summarise(
+        (result("answerable", ("a",), 1.0), result("refusal", (), 0.0)),
+        generated=False,
+    )
+
+    assert report.metrics["mrr"] == 1.0
+    assert "citation_support" not in report.metrics

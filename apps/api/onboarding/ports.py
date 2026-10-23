@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from onboarding.core.models import (
     ChatId,
@@ -41,13 +41,15 @@ class Message:
 
 @dataclass(frozen=True, slots=True)
 class CompletionRequest:
+    """One call. ``None`` means "the model profile decides"; a value is an explicit override."""
+
     messages: tuple[Message, ...]
-    temperature: float = 0.2
-    max_tokens: int = 700
+    temperature: float | None = None
+    max_tokens: int | None = None
     prompt_name: str = "answer"
     prompt_version: int = 1
     response_format: str = "json_object"
-    timeout_s: float = 8.0
+    timeout_s: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +60,51 @@ class Completion:
     model: str = ""
     latency_ms: int = 0
     cost_rub: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class AnswerProfile:
+    """What one answer model needs: wire dialect, capabilities, envelope, and prices.
+
+    Profiles are data (``apps/api/model-profiles/answer/<name>.yaml``), validated against
+    ``docs/contracts/model-profile.schema.json``. The gateway reads a profile; it never branches on
+    a model name, so a new model is a file plus an eval run, not a code change.
+    """
+
+    name: str
+    model: str
+    family: Literal["openai-chat", "gigachat"] = "openai-chat"
+    json_mode: bool = True
+    max_tokens_field: str = "max_tokens"
+    reasoning_effort: str | None = None
+    temperature: float = 0.2
+    max_tokens: int = 700
+    timeout_s: float = 8.0
+    max_retries: int = 1
+    retry_empty_completion: bool = True
+    price_input_rub_per_1k: float = 0.0
+    price_output_rub_per_1k: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddingProfile:
+    """One embedding model. ``dim`` is part of the contract: a different width is a migration."""
+
+    name: str
+    model: str
+    family: Literal["openai-chat", "gigachat", "local"] = "openai-chat"
+    dim: int = 1024
+    timeout_s: float = 10.0
+
+
+@dataclass(frozen=True, slots=True)
+class RerankProfile:
+    """One reranker. An outage keeps the hybrid order, so this profile is never fatal."""
+
+    name: str
+    model: str
+    family: Literal["cohere-rerank"] = "cohere-rerank"
+    timeout_s: float = 3.0
 
 
 @runtime_checkable

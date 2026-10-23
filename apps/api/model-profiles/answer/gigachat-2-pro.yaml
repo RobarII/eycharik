@@ -1,0 +1,15 @@
+name: gigachat-2-pro
+role: answer
+description: "Production answer model: data stays in Russia (ADR 0010)."
+family: gigachat
+model: GigaChat-2-Pro
+json_mode: true
+max_tokens_field: max_tokens
+temperature: 0.2
+max_tokens: 700
+timeout_s: 8.0
+max_retries: 1
+retry_empty_completion: true
+# Prices stay 0 until the Sber invoice anchors them; never invent a number (workspace rule 5).
+price_input_rub_per_1k: 0.0
+price_output_rub_per_1k: 0.0

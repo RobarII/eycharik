@@ -1,0 +1,7 @@
+name: local-hashing
+role: embed
+description: "Offline deterministic embedder for tests and demos. Never allowed in production."
+family: local
+model: hashing
+dim: 1024
+timeout_s: 10.0

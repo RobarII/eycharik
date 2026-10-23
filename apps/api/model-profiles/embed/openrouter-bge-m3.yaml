@@ -1,0 +1,7 @@
+name: openrouter-bge-m3
+role: embed
+description: "Pilot embedder (ADR 0010). 1024 dimensions is the kb_chunks.embedding width."
+family: openai-chat
+model: baai/bge-m3
+dim: 1024
+timeout_s: 10.0

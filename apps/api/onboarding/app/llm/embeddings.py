@@ -13,6 +13,7 @@ import httpx
 from pydantic import SecretStr
 
 from onboarding.app.knowledge.embedding import HashingEmbedder
+from onboarding.app.llm.profiles import embedding_profile
 from onboarding.app.llm.providers import GigaChatProvider
 from onboarding.app.settings import Settings
 from onboarding.ports import KnowledgeUnavailableError
@@ -93,11 +94,13 @@ class RemoteEmbedder:
 def build_embedder(
     settings: Settings, client: httpx.AsyncClient
 ) -> HashingEmbedder | RemoteEmbedder:
-    if settings.embed_provider == "hashing":
-        return HashingEmbedder(dim=settings.embed_dim)
+    """One embedder from one profile. The vector width is checked here, before any request."""
+    profile = embedding_profile(settings)
+    if profile.family == "local":
+        return HashingEmbedder(dim=profile.dim)
 
     base_url = (settings.embed_base_url or settings.llm_base_url).rstrip("/")
-    if settings.embed_provider == "gigachat":
+    if profile.family == "gigachat":
         provider = GigaChatProvider(
             base_url=base_url,
             auth_key=settings.llm_api_key,
@@ -108,8 +111,9 @@ def build_embedder(
             client=client,
             endpoint=f"{base_url}/embeddings",
             authorization=lambda: provider.authorization(client),
-            model=settings.embed_model,
-            dim=settings.embed_dim,
+            model=profile.model,
+            dim=profile.dim,
+            timeout_s=profile.timeout_s,
         )
 
     key = SecretStr(
@@ -119,8 +123,9 @@ def build_embedder(
         client=client,
         endpoint=f"{base_url}/embeddings",
         authorization=_bearer(key),
-        model=settings.embed_model,
-        dim=settings.embed_dim,
+        model=profile.model,
+        dim=profile.dim,
+        timeout_s=profile.timeout_s,
     )
 
 

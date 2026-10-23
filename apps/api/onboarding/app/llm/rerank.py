@@ -16,6 +16,8 @@ from dataclasses import dataclass
 
 import httpx
 
+from onboarding.app.llm.profiles import rerank_profile
+from onboarding.app.settings import Settings
 from onboarding.ports import RerankUnavailableError
 
 MAX_DOCUMENTS = 100
@@ -72,6 +74,20 @@ class RemoteReranker:
                 raise RerankUnavailableError(f"rerank endpoint answered {response.status_code}")
             return response
         raise RerankUnavailableError(last)
+
+
+def build_reranker(settings: Settings, client: httpx.AsyncClient) -> RemoteReranker | None:
+    """``None`` when no base URL is configured: the retrieval order is used as is."""
+    profile = rerank_profile(settings)
+    if profile is None:
+        return None
+    return RemoteReranker(
+        client=client,
+        base_url=settings.rerank_base_url,
+        api_key=settings.rerank_api_key.get_secret_value(),
+        model=profile.model,
+        timeout_s=profile.timeout_s,
+    )
 
 
 def parse_rerank(payload: object, *, count: int, top_n: int) -> tuple[int, ...]:

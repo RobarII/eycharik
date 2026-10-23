@@ -1,7 +1,8 @@
 """One model gateway: timeout, one retry, a circuit breaker, and cost accounting.
 
-Every call in the application goes through this class. Providers are interchangeable behind it, so
-a provider incident is a configuration change, not a code change.
+Every call in the application goes through this class. The model itself is a profile
+(``apps/api/model-profiles/answer/<name>.yaml``): dialect, capabilities, envelope, and prices.
+Providers are interchangeable behind it, so a model change is a profile change, not a code change.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from datetime import datetime, timedelta
 import httpx
 
 from onboarding.app.llm.extractive import ExtractiveLLM
+from onboarding.app.llm.profiles import answer_profile
 from onboarding.app.llm.providers import (
     GigaChatProvider,
     OpenAICompatibleProvider,
@@ -23,6 +25,7 @@ from onboarding.app.settings import Settings
 from onboarding.core.breaker import CircuitBreaker
 from onboarding.ports import (
     LLM,
+    AnswerProfile,
     Clock,
     Completion,
     CompletionRequest,
@@ -45,29 +48,25 @@ class GatewayLLM(LLM):
     def __init__(
         self,
         provider: Provider,
-        model: str,
+        profile: AnswerProfile,
         *,
         clock: Clock,
         client: httpx.AsyncClient,
         breaker: CircuitBreaker | None = None,
-        max_retries: int = 1,
-        temperature: float = 0.2,
-        reasoning_effort: str | None = None,
-        price_input_rub_per_1k: float = 0.0,
-        price_output_rub_per_1k: float = 0.0,
+        max_retries: int | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._provider = provider
-        self._model = model
+        self._profile = profile
         self._clock = clock
         self._client = client
         self._breaker = breaker or CircuitBreaker()
-        self._max_retries = max(0, max_retries)
-        self._reasoning_effort = reasoning_effort
-        self._temperature = temperature
-        self._price_in = price_input_rub_per_1k
-        self._price_out = price_output_rub_per_1k
+        self._max_retries = max(0, profile.max_retries if max_retries is None else max_retries)
         self._sleep = sleep
+
+    @property
+    def profile(self) -> AnswerProfile:
+        return self._profile
 
     @property
     def breaker(self) -> CircuitBreaker:
@@ -79,6 +78,7 @@ class GatewayLLM(LLM):
             raise LLMUnavailableError("circuit breaker is open")
 
         payload = self._payload(request)
+        timeout = request.timeout_s if request.timeout_s is not None else self._profile.timeout_s
         last_error: str = "no attempt"
         for attempt in range(self._max_retries + 1):
             if not self._breaker.allows(self._clock.now()):
@@ -90,7 +90,7 @@ class GatewayLLM(LLM):
                     prepared.url,
                     headers=prepared.headers,
                     json=payload,
-                    timeout=request.timeout_s,
+                    timeout=timeout,
                 )
             except (httpx.TimeoutException, httpx.TransportError) as error:
                 last_error = f"{type(error).__name__}: {error}"
@@ -119,7 +119,7 @@ class GatewayLLM(LLM):
                 return self._parse(response, started)
             except EmptyCompletionError as error:
                 last_error = str(error)
-                if attempt < self._max_retries:
+                if attempt < self._max_retries and self._profile.retry_empty_completion:
                     await self._backoff(attempt)
                     continue
                 raise
@@ -131,16 +131,23 @@ class GatewayLLM(LLM):
             await self._sleep(min(MAX_BACKOFF_S, 0.5 * (2**attempt)))
 
     def _payload(self, request: CompletionRequest) -> dict[str, object]:
+        """Build the request from the profile's capabilities, not from assumptions about one API."""
+        temperature = (
+            request.temperature if request.temperature is not None else self._profile.temperature
+        )
+        max_tokens = (
+            request.max_tokens if request.max_tokens is not None else self._profile.max_tokens
+        )
         payload: dict[str, object] = {
-            "model": self._model,
+            "model": self._profile.model,
             "messages": [{"role": m.role, "content": m.content} for m in request.messages],
-            "temperature": request.temperature,
-            "max_tokens": request.max_tokens,
+            "temperature": temperature,
+            self._profile.max_tokens_field: max_tokens,
         }
-        if request.response_format == "json_object":
+        if self._profile.json_mode and request.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
-        if self._reasoning_effort is not None:
-            payload["reasoning_effort"] = self._reasoning_effort
+        if self._profile.reasoning_effort is not None:
+            payload["reasoning_effort"] = self._profile.reasoning_effort
         return payload
 
     def _parse(self, response: httpx.Response, started: datetime) -> Completion:
@@ -170,12 +177,15 @@ class GatewayLLM(LLM):
         input_tokens = _int_or_zero(usage.get("prompt_tokens"))
         output_tokens = _int_or_zero(usage.get("completion_tokens"))
         latency_ms = int((self._clock.now() - started).total_seconds() * 1000)
-        cost = input_tokens / 1000 * self._price_in + output_tokens / 1000 * self._price_out
+        cost = (
+            input_tokens / 1000 * self._profile.price_input_rub_per_1k
+            + output_tokens / 1000 * self._profile.price_output_rub_per_1k
+        )
         return Completion(
             text=content,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            model=str(body.get("model") or self._model),
+            model=str(body.get("model") or self._profile.model),
             latency_ms=latency_ms,
             cost_rub=round(cost, 6),
         )
@@ -188,8 +198,9 @@ def _int_or_zero(value: object) -> int:
 def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> LLM:
     if settings.llm_provider == "extractive":
         return ExtractiveLLM()
+    profile = answer_profile(settings)
     provider: Provider
-    if settings.llm_provider == "gigachat":
+    if profile.family == "gigachat":
         provider = GigaChatProvider(
             base_url=settings.llm_base_url,
             auth_key=settings.llm_api_key,
@@ -203,18 +214,14 @@ def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> LL
         )
     return GatewayLLM(
         provider,
-        settings.llm_model,
+        profile,
         clock=clock,
         client=client,
         breaker=CircuitBreaker(
             threshold=settings.llm_breaker_threshold,
             cooldown=timedelta(seconds=settings.llm_breaker_cooldown_s),
         ),
-        max_retries=settings.llm_max_retries,
-        reasoning_effort=settings.llm_reasoning_effort,
-        temperature=settings.llm_temperature,
-        price_input_rub_per_1k=settings.llm_price_input_rub_per_1k,
-        price_output_rub_per_1k=settings.llm_price_output_rub_per_1k,
+        sleep=asyncio.sleep,
     )
 
 

@@ -8,10 +8,10 @@ import pytest
 from pydantic import SecretStr
 
 from onboarding.app.clock import FrozenClock
-from onboarding.app.llm.gateway import GatewayLLM, LLMResponseError
+from onboarding.app.llm.gateway import EmptyCompletionError, GatewayLLM, LLMResponseError
 from onboarding.app.llm.providers import GigaChatProvider, OpenAICompatibleProvider
 from onboarding.core.breaker import CircuitBreaker
-from onboarding.ports import CompletionRequest, LLMUnavailableError, Message
+from onboarding.ports import AnswerProfile, CompletionRequest, LLMUnavailableError, Message
 
 from .conftest import NOW
 
@@ -22,6 +22,18 @@ REQUEST = CompletionRequest(
     ),
     max_tokens=300,
     temperature=0.1,
+)
+
+NO_ENVELOPE = CompletionRequest(
+    messages=(Message(role="user", content="Вопрос"),),
+)
+
+PROFILE = AnswerProfile(
+    name="test-model",
+    model="test-model",
+    max_retries=1,
+    price_input_rub_per_1k=0.1,
+    price_output_rub_per_1k=0.2,
 )
 
 
@@ -51,19 +63,17 @@ async def no_sleep(_: float) -> None:
     return None
 
 
-def build(handler: Callable[[httpx.Request], httpx.Response], **overrides: object) -> GatewayLLM:
+def build(
+    handler: Callable[[httpx.Request], httpx.Response],
+    *,
+    profile: AnswerProfile = PROFILE,
+    **overrides: object,
+) -> GatewayLLM:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    defaults: dict[str, object] = {
-        "clock": FrozenClock(NOW),
-        "client": client,
-        "max_retries": 1,
-        "price_input_rub_per_1k": 0.1,
-        "price_output_rub_per_1k": 0.2,
-        "sleep": no_sleep,
-    }
+    defaults: dict[str, object] = {"clock": FrozenClock(NOW), "client": client, "sleep": no_sleep}
     return GatewayLLM(
         OpenAICompatibleProvider(base_url="https://llm.test/v1", api_key=SecretStr("sk-test")),
-        "test-model",
+        profile,
         **{**defaults, **overrides},  # type: ignore[arg-type]
     )
 
@@ -145,13 +155,67 @@ async def test_reads_envelope_level_usage() -> None:
 
 async def test_retries_a_retryable_status() -> None:
     handler, calls = handler_returning((503, {}), (200, completion_body()))
-    gateway = build(handler, max_retries=1)
+    gateway = build(handler)
 
     result = await gateway.complete(REQUEST)
 
     assert result.text
     assert len(calls) == 2
     assert not gateway.breaker.is_open
+
+
+async def test_payload_follows_the_profile_capabilities() -> None:
+    handler, calls = handler_returning((200, completion_body()))
+    profile = AnswerProfile(
+        name="reasoning",
+        model="reasoning-model",
+        json_mode=False,
+        max_tokens_field="max_completion_tokens",
+        reasoning_effort="low",
+        temperature=0.7,
+        max_tokens=99,
+        timeout_s=4.0,
+    )
+
+    await build(handler, profile=profile).complete(NO_ENVELOPE)
+
+    body = json.loads(calls[0].content)
+    assert body["model"] == "reasoning-model"
+    assert body["temperature"] == 0.7
+    assert body["max_completion_tokens"] == 99
+    assert body["reasoning_effort"] == "low"
+    assert "response_format" not in body
+
+
+async def test_request_envelope_overrides_the_profile() -> None:
+    handler, calls = handler_returning((200, completion_body()))
+
+    await build(handler).complete(REQUEST)
+
+    body = json.loads(calls[0].content)
+    assert body["temperature"] == 0.1
+    assert body["max_tokens"] == 300
+
+
+async def test_an_empty_completion_is_retried_by_default() -> None:
+    handler, calls = handler_returning(
+        (200, completion_body("")), (200, completion_body('{"answer": "ok"}'))
+    )
+
+    result = await build(handler).complete(REQUEST)
+
+    assert result.text == '{"answer": "ok"}'
+    assert len(calls) == 2
+
+
+async def test_an_empty_completion_is_not_retried_when_the_profile_forbids_it() -> None:
+    handler, calls = handler_returning((200, completion_body("")))
+    profile = AnswerProfile(name="strict", model="strict-model", retry_empty_completion=False)
+
+    with pytest.raises(EmptyCompletionError):
+        await build(handler, profile=profile, max_retries=2).complete(REQUEST)
+
+    assert len(calls) == 1
 
 
 async def test_client_error_is_not_retried() -> None:
@@ -217,7 +281,7 @@ async def test_gigachat_refreshes_the_token_once() -> None:
     )
     gateway = GatewayLLM(
         provider,
-        "GigaChat-2-Pro",
+        PROFILE,
         clock=FrozenClock(NOW),
         client=client,
         sleep=no_sleep,

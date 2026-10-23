@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moshackathon.local/contracts/model-profile.schema.json",
+  "title": "ModelProfile",
+  "description": "One model, described as data. Files live in apps/api/model-profiles/<role>/<name>.yaml and are selected by LLM_PROFILE, EMBED_PROFILE, and RERANK_PROFILE. The role decides which fields exist: a field that does not apply to the role is rejected, not ignored.",
+  "oneOf": [
+    {
+      "title": "AnswerProfile",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "model"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "role": {"const": "answer"},
+        "description": {"$ref": "#/$defs/description"},
+        "note": {"$ref": "#/$defs/note"},
+        "model": {"$ref": "#/$defs/model"},
+        "family": {"enum": ["openai-chat", "gigachat"]},
+        "json_mode": {"type": "boolean", "description": "Honour response_format=json_object."},
+        "max_tokens_field": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Some providers want max_completion_tokens instead of max_tokens."
+        },
+        "reasoning_effort": {"enum": ["none", "low", "medium", "high"]},
+        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
+        "max_tokens": {"type": "integer", "minimum": 1, "maximum": 32000},
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+        "max_retries": {"type": "integer", "minimum": 0, "maximum": 5},
+        "retry_empty_completion": {
+          "type": "boolean",
+          "description": "Retry a 200 with empty content instead of escalating it."
+        },
+        "price_input_rub_per_1k": {"type": "number", "minimum": 0},
+        "price_output_rub_per_1k": {"type": "number", "minimum": 0}
+      }
+    },
+    {
+      "title": "EmbeddingProfile",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "model", "dim"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "role": {"const": "embed"},
+        "description": {"$ref": "#/$defs/description"},
+        "note": {"$ref": "#/$defs/note"},
+        "model": {"$ref": "#/$defs/model"},
+        "family": {"enum": ["openai-chat", "gigachat", "local"]},
+        "dim": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 4096,
+          "description": "Vector width. It must equal kb_chunks.embedding; a change is a migration."
+        },
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120}
+      }
+    },
+    {
+      "title": "RerankProfile",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "role", "model"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "role": {"const": "rerank"},
+        "description": {"$ref": "#/$defs/description"},
+        "note": {"$ref": "#/$defs/note"},
+        "model": {"$ref": "#/$defs/model"},
+        "family": {"const": "cohere-rerank"},
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120}
+      }
+    }
+  ],
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Matches the file stem, so a measurement can name exactly what ran."
+    },
+    "model": {"type": "string", "minLength": 1, "description": "Identifier sent to the provider."},
+    "description": {"type": "string", "minLength": 1},
+    "note": {"type": "string", "minLength": 1}
+  }
+}

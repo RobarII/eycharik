@@ -1,0 +1,215 @@
+"""Model profiles: the contract is the schema, and the loader refuses a file that breaks it."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import httpx
+import pytest
+
+from onboarding.app.clock import FrozenClock
+from onboarding.app.llm.gateway import GatewayLLM, build_llm
+from onboarding.app.llm.profiles import (
+    ProfileError,
+    ProfileLibrary,
+    answer_profile,
+    embedding_profile,
+    rerank_profile,
+)
+from onboarding.app.settings import REPO_ROOT, Settings
+
+from .conftest import NOW
+
+CONTRACTS = REPO_ROOT / "docs" / "contracts"
+SHIPPED = REPO_ROOT / "apps" / "api" / "model-profiles"
+
+
+def settings(**overrides: object) -> Settings:
+    return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
+
+
+def write_profile(root: Path, role: str, name: str, body: str) -> Path:
+    directory = root / role
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{name}.yaml"
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def test_every_shipped_profile_satisfies_the_contract() -> None:
+    library = ProfileLibrary(SHIPPED, CONTRACTS / "model-profile.schema.json")
+
+    for role in ("answer", "embed", "rerank"):
+        names = library.available(role)
+        assert names, f"no {role} profiles"
+        for name in names:
+            loaded = library.raw(role, name)
+            assert loaded["name"] == name
+            assert loaded["role"] == role
+
+
+def test_shipped_profiles_load_into_typed_values() -> None:
+    library = ProfileLibrary(SHIPPED, CONTRACTS / "model-profile.schema.json")
+
+    answer = library.answer("openrouter-gpt-4.1-mini")
+    assert answer.family == "openai-chat"
+    assert answer.model == "openai/gpt-4.1-mini"
+    assert answer.json_mode
+
+    embed = library.embed("openrouter-bge-m3")
+    assert embed.dim == 1024
+
+    rerank = library.rerank("openrouter-cohere-rerank-v3.5")
+    assert rerank.model == "cohere/rerank-v3.5"
+
+
+def test_an_unknown_field_is_rejected(tmp_path: Path) -> None:
+    write_profile(
+        tmp_path,
+        "answer",
+        "extra",
+        "name: extra\nrole: answer\nmodel: m\nturbo: true\n",
+    )
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="Additional properties"):
+        library.answer("extra")
+
+
+def test_a_profile_in_the_wrong_directory_is_rejected(tmp_path: Path) -> None:
+    write_profile(
+        tmp_path,
+        "answer",
+        "misfiled",
+        "name: misfiled\nrole: embed\nmodel: m\ndim: 1024\n",
+    )
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="lives under answer/"):
+        library.answer("misfiled")
+
+
+def test_an_embedding_profile_requires_a_dimension(tmp_path: Path) -> None:
+    write_profile(tmp_path, "embed", "wide", "name: wide\nrole: embed\nmodel: m\n")
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="dim"):
+        library.embed("wide")
+
+
+def test_a_rerank_profile_rejects_generation_fields(tmp_path: Path) -> None:
+    write_profile(
+        tmp_path,
+        "rerank",
+        "noisy",
+        "name: noisy\nrole: rerank\nmodel: m\ntemperature: 0.2\n",
+    )
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="temperature"):
+        library.rerank("noisy")
+
+
+def test_a_missing_profile_names_the_known_ones() -> None:
+    library = ProfileLibrary(SHIPPED, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="gigachat-2-pro"):
+        library.answer("does-not-exist")
+
+
+@pytest.mark.parametrize("name", ["../answer/gigachat-2-pro", "GigaChat", ""])
+def test_a_name_cannot_escape_the_profiles_directory(name: str) -> None:
+    library = ProfileLibrary(SHIPPED, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError):
+        library.answer(name)
+
+
+def test_the_environment_profile_is_used_when_none_is_selected() -> None:
+    profile = answer_profile(settings(llm_provider="gigachat", llm_model="GigaChat-2-Pro"))
+
+    assert profile.name == "env"
+    assert profile.family == "gigachat"
+    assert profile.model == "GigaChat-2-Pro"
+
+
+def test_the_environment_overrides_the_selected_profile() -> None:
+    profile = answer_profile(
+        settings(
+            llm_profile="gigachat-2-pro",
+            llm_max_tokens=123,
+            llm_timeout_s=4.5,
+            llm_reasoning_effort="low",
+        )
+    )
+
+    assert profile.name == "gigachat-2-pro"
+    assert profile.model == "GigaChat-2-Pro"
+    assert profile.max_tokens == 123
+    assert profile.timeout_s == 4.5
+    assert profile.reasoning_effort == "low"
+
+
+def test_the_profile_owns_defaults_the_environment_does_not_set() -> None:
+    profile = answer_profile(settings(llm_profile="openrouter-gpt-4.1-mini"))
+
+    assert profile.max_tokens == 700
+    assert profile.timeout_s == 8.0
+    assert profile.max_retries == 1
+
+
+def test_a_profile_vector_width_that_contradicts_embed_dim_is_rejected() -> None:
+    configured = settings(embed_profile="openrouter-bge-m3", embed_dim=768)
+
+    with pytest.raises(ProfileError, match="migration"):
+        embedding_profile(configured)
+
+
+def test_an_embedding_profile_matching_embed_dim_is_accepted() -> None:
+    profile = embedding_profile(settings(embed_profile="local-hashing", embed_dim=1024))
+
+    assert profile.family == "local"
+    assert profile.dim == 1024
+
+
+def test_an_unknown_profile_fails_at_startup() -> None:
+    with pytest.raises(ProfileError, match="missing model profile"):
+        answer_profile(settings(llm_profile="no-such-model"))
+
+
+def test_a_rerank_profile_needs_a_base_url() -> None:
+    with pytest.raises(ValueError, match="RERANK_BASE_URL"):
+        settings(rerank_profile="openrouter-cohere-rerank-v3.5")
+
+
+def test_rerank_is_disabled_without_a_base_url() -> None:
+    assert rerank_profile(settings()) is None
+
+
+def test_rerank_uses_the_profile_model() -> None:
+    profile = rerank_profile(
+        settings(
+            rerank_base_url="https://rerank.test/v1",
+            rerank_profile="openrouter-cohere-rerank-v3.5",
+        )
+    )
+
+    assert profile is not None
+    assert profile.model == "cohere/rerank-v3.5"
+    assert profile.timeout_s == 3.0
+
+
+async def test_build_llm_wires_the_selected_profile() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    try:
+        llm = build_llm(
+            settings(llm_profile="openrouter-gpt-4.1-mini", llm_api_key="sk-test"),
+            FrozenClock(NOW),
+            client,
+        )
+    finally:
+        await client.aclose()
+
+    assert isinstance(llm, GatewayLLM)
+    assert llm.profile.name == "openrouter-gpt-4.1-mini"
+    assert llm.profile.model == "openai/gpt-4.1-mini"

@@ -62,6 +62,7 @@ They share code and the database, not memory. The reminder tick runs inside the 
 6. Knowledge documents never leave their audience. ACL and validity are SQL predicates applied
    before ranking, not filters on the result.
 7. Secrets live in `SecretStr` and are never written to logs or audit fields.
+8. A model's behaviour lives in a profile file, not in a Python branch: no model name in `app/`.
 
 ## Failure modes
 
@@ -79,13 +80,34 @@ They share code and the database, not memory. The reminder tick runs inside the 
 | A scenario file is invalid | the process refuses to start |
 | A job payload is invalid | job fails, is retried, then parked with `last_error` |
 
+## Model profiles
+
+A model is data, not a code path (ADR 0013). Each model is a YAML file under
+`apps/api/model-profiles/<role>/`, validated against
+[`contracts/model-profile.schema.json`](contracts/model-profile.schema.json) before use. The file
+states the wire dialect, the capabilities the model actually has, the generation envelope, and the
+prices. `LLM_PROFILE`, `EMBED_PROFILE`, and `RERANK_PROFILE` choose one; the gateway, the embedder,
+and the reranker read it and never branch on a model name.
+
+| Role | What the profile decides | What the environment keeps |
+|---|---|---|
+| `answer` | dialect, json mode, token field, reasoning effort, temperature, token cap, timeout, retries, prices | base URL, key, breaker, static headers |
+| `embed` | dialect, model id, vector width, timeout | base URL, key |
+| `rerank` | model id, timeout | base URL, key, whether the stage runs at all |
+
+Resolution order for every value: an explicit environment value, then the profile, then the
+default. An invalid or missing profile stops the process at startup, like an invalid scenario.
+`EMBED_DIM` and the profile's `dim` must agree; a different width is a migration, not a setting.
+
 ## Provider compatibility
 
-The gateway speaks the OpenAI chat-completions dialect. GigaChat and OpenAI need only a base URL
-and a key. Some OpenAI-compatible gateways also require static routing headers, supplied as a JSON
-object in `LLM_EXTRA_HEADERS`; authentication and content headers cannot be overridden there.
-A gateway may wrap the completion in `{"success": true, "data": {...}}`; the gateway unwraps it,
-rejects `success: false`, and keeps token usage from either level.
+The gateway speaks the OpenAI chat-completions dialect; `family` in the profile selects the
+adapter. GigaChat and OpenAI need only a base URL and a key. Some OpenAI-compatible gateways also
+require static routing headers, supplied as a JSON object in `LLM_EXTRA_HEADERS`; authentication
+and content headers cannot be overridden there. A gateway may wrap the completion in
+`{"success": true, "data": {...}}`; the gateway unwraps it, rejects `success: false`, and keeps
+token usage from either level. A model that rejects `response_format` or wants
+`max_completion_tokens` is a capability flag in its profile, not a branch in the gateway.
 
 ## Deliberately absent
 
@@ -98,12 +120,13 @@ holds state, vectors, queue, outbox, questions, and audit; the workload does not
 | Path | Responsibility |
 |---|---|
 | `apps/api/onboarding/core/` | pure domain: models, scenario parser, transitions, chunking, ranking, grounding, prompt rendering, breaker, ACL |
-| `apps/api/onboarding/ports.py` | protocols for clock, model, embedder, knowledge, messaging, repositories, audit |
+| `apps/api/onboarding/ports.py` | protocols for clock, model, embedder, knowledge, messaging, repositories, audit; model profile values |
 | `apps/api/onboarding/app/max/` | MAX HTTP client, update parsing, keyboards |
 | `apps/api/onboarding/api/` | FastAPI app, webhook, admin routes, bearer auth, response schemas |
 | `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base |
 | `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop |
-| `apps/api/onboarding/app/llm/` | provider adapters, gateway with retry/breaker/cost, offline extractive provider, embeddings |
+| `apps/api/onboarding/app/llm/` | provider adapters, model profile loader, gateway with retry/breaker/cost, offline extractive provider, embeddings |
+| `apps/api/model-profiles/` | one YAML file per model, validated by `docs/contracts/model-profile.schema.json` |
 | `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |
 | `apps/api/onboarding/scenarios/` | versioned scenario YAML |
 | `apps/api/onboarding/cli.py` | `ingest`, `seed`, `demo`, `subscribe`, `check` commands |

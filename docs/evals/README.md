@@ -60,6 +60,7 @@ models. A missed crisis becomes a case here before it becomes a prompt edit.
 
 ## Reporting
 
-A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the model,
-and the table of metrics. Use `--note` for a caveat that must travel with the numbers. A
+A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the answer
+profile and model, the embedder, and the table of metrics. The profile name is the thing a later
+reader can re-run: `LLM_PROFILE=<name> make eval`. Use `--note` for a caveat that must travel with the numbers. A
 measurement without a commit is not a measurement.

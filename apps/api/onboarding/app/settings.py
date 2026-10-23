@@ -34,32 +34,36 @@ class Settings(BaseSettings):
     max_callbacks_enabled: bool = False
 
     llm_provider: Literal["openai", "gigachat", "extractive"] = "openai"
+    llm_profile: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: SecretStr = SecretStr("")
     llm_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     llm_model: str = "gpt-4o-mini"
-    llm_temperature: float = 0.2
-    llm_max_tokens: int = 700
-    llm_timeout_s: float = 8.0
-    llm_max_retries: int = 1
+    # Explicit overrides. ``None`` means "the model profile in apps/api/model-profiles decides".
+    llm_max_tokens: int | None = None
+    llm_timeout_s: float | None = None
+    llm_max_retries: int | None = None
     llm_reasoning_effort: Literal["none", "low", "medium", "high"] | None = None
     llm_breaker_threshold: int = 3
     llm_breaker_cooldown_s: float = 30.0
-    llm_price_input_rub_per_1k: float = 0.0
-    llm_price_output_rub_per_1k: float = 0.0
+    llm_price_input_rub_per_1k: float | None = None
+    llm_price_output_rub_per_1k: float | None = None
     llm_extra_headers_raw: SecretStr = Field(default=SecretStr(""), alias="LLM_EXTRA_HEADERS")
 
     embed_provider: Literal["openai", "gigachat", "hashing"] = "hashing"
+    embed_profile: str = ""
     embed_base_url: str = ""
     embed_api_key: SecretStr = SecretStr("")
     embed_model: str = "Embeddings"
     embed_dim: int = 1024
+    embed_timeout_s: float | None = None
     llm_embed_scope: str = "GIGACHAT_API_PERS"
 
     rerank_base_url: str = ""
+    rerank_profile: str = ""
     rerank_api_key: SecretStr = SecretStr("")
     rerank_model: str = ""
-    rerank_timeout_s: float = 3.0
+    rerank_timeout_s: float | None = None
 
     sentiment_provider: Literal["prompt", "jev"] = "prompt"
     jev_base_url: str = "https://api.typesafe.ai/v1"
@@ -77,54 +81,72 @@ class Settings(BaseSettings):
     admin_page_size: int = 50
 
     prompts_dir: Path = Field(default=REPO_ROOT / "docs" / "prompts")
+    model_profiles_dir: Path = Field(default=REPO_ROOT / "apps" / "api" / "model-profiles")
     knowledge_dir: Path = Field(default=REPO_ROOT / "knowledge")
     contracts_dir: Path = Field(default=REPO_ROOT / "docs" / "contracts")
     copy_path: Path = Field(default=REPO_ROOT / "docs" / "product" / "copy.yaml")
 
     @model_validator(mode="after")
     def _check(self) -> Settings:
+        self._check_llm()
+        self._check_limits()
+        self._check_production()
+        return self
+
+    def _check_llm(self) -> None:
+        """Every knob is optional: ``None`` defers to the selected model profile."""
+        if self.llm_timeout_s is not None and self.llm_timeout_s <= 0:
+            raise ValueError("LLM_TIMEOUT_S must be positive")
+        if self.llm_max_tokens is not None and self.llm_max_tokens <= 0:
+            raise ValueError("LLM_MAX_TOKENS must be positive")
+        if self.llm_max_retries is not None and self.llm_max_retries < 0:
+            raise ValueError("LLM_MAX_RETRIES must not be negative")
+        if self.llm_profile and self.llm_provider == "extractive":
+            raise ValueError("LLM_PROFILE needs a hosted provider, not extractive")
+        if self.rerank_profile and not self.rerank_base_url:
+            raise ValueError("RERANK_PROFILE requires RERANK_BASE_URL")
+        if self.rerank_base_url and not (self.rerank_model or self.rerank_profile):
+            raise ValueError(
+                "RERANK_MODEL or RERANK_PROFILE is required when RERANK_BASE_URL is set"
+            )
+        if self.rerank_timeout_s is not None and self.rerank_timeout_s <= 0:
+            raise ValueError("RERANK_TIMEOUT_S must be positive")
+        if self.embed_timeout_s is not None and self.embed_timeout_s <= 0:
+            raise ValueError("EMBED_TIMEOUT_S must be positive")
+
+    def _check_limits(self) -> None:
         if self.sentiment_provider == "jev" and not self.jev_api_key.get_secret_value():
             raise ValueError("SENTIMENT_PROVIDER=jev requires JEV_API_KEY")
         if not 0.0 <= self.answer_min_confidence <= 1.0:
             raise ValueError("ANSWER_MIN_CONFIDENCE must be within [0, 1]")
         if self.embed_dim < 8:
             raise ValueError("EMBED_DIM must be at least 8")
-        if self.llm_timeout_s <= 0:
-            raise ValueError("LLM_TIMEOUT_S must be positive")
-        if self.llm_max_tokens <= 0:
-            raise ValueError("LLM_MAX_TOKENS must be positive")
         if self.recall_limit < self.rerank_limit:
             raise ValueError("RECALL_LIMIT must be at least RERANK_LIMIT")
         if any(char in name for name in self.llm_extra_headers for char in "\r\n"):
             raise ValueError("LLM_EXTRA_HEADERS names must not contain newlines")
         if any(char in value for value in self.llm_extra_headers.values() for char in "\r\n"):
             raise ValueError("LLM_EXTRA_HEADERS values must not contain newlines")
-        if self.environment == "production" and self.llm_provider == "extractive":
-            raise ValueError("LLM_PROVIDER=extractive is only for local demos")
-        if self.environment == "production" and self.embed_provider == "hashing":
-            raise ValueError("EMBED_PROVIDER=hashing is only for local demos")
-        if self.environment == "production":
-            missing = [
-                name
-                for name, value in (
-                    ("MAX_BOT_TOKEN", self.max_bot_token.get_secret_value()),
-                    ("MAX_WEBHOOK_SECRET", self.max_webhook_secret.get_secret_value()),
-                    ("LLM_API_KEY", self.llm_api_key.get_secret_value()),
-                    ("ADMIN_TOKENS", self.admin_tokens_raw),
-                )
-                if not value
-            ]
-            if missing:
-                raise ValueError(f"production requires {missing}")
-        return self
 
-    @model_validator(mode="after")
-    def _check_rerank(self) -> Settings:
-        if self.rerank_base_url and not self.rerank_model:
-            raise ValueError("RERANK_MODEL is required when RERANK_BASE_URL is set")
-        if self.rerank_timeout_s <= 0:
-            raise ValueError("RERANK_TIMEOUT_S must be positive")
-        return self
+    def _check_production(self) -> None:
+        if self.environment != "production":
+            return
+        if self.llm_provider == "extractive":
+            raise ValueError("LLM_PROVIDER=extractive is only for local demos")
+        if self.embed_provider == "hashing":
+            raise ValueError("EMBED_PROVIDER=hashing is only for local demos")
+        missing = [
+            name
+            for name, value in (
+                ("MAX_BOT_TOKEN", self.max_bot_token.get_secret_value()),
+                ("MAX_WEBHOOK_SECRET", self.max_webhook_secret.get_secret_value()),
+                ("LLM_API_KEY", self.llm_api_key.get_secret_value()),
+                ("ADMIN_TOKENS", self.admin_tokens_raw),
+            )
+            if not value
+        ]
+        if missing:
+            raise ValueError(f"production requires {missing}")
 
     @property
     def llm_extra_headers(self) -> dict[str, str]:
@@ -179,4 +201,6 @@ class Settings(BaseSettings):
     def is_llm_configured(self) -> bool:
         if self.llm_provider == "extractive":
             return True
-        return bool(self.llm_api_key.get_secret_value()) and bool(self.llm_model)
+        return bool(self.llm_api_key.get_secret_value()) and bool(
+            self.llm_profile or self.llm_model
+        )

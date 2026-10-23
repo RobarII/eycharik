@@ -14,6 +14,8 @@
    size, never the key or the question text.
 3. Check the breaker: after `LLM_BREAKER_THRESHOLD` consecutive failures it opens for
    `LLM_BREAKER_COOLDOWN_S` and the gateway fails fast without a request.
+4. Read the run's profile: `LLM_PROFILE` names the file, and the file states the model, the
+   capabilities, and the envelope. The answer guard is the same for every profile.
 
 ## Action
 
@@ -23,7 +25,10 @@
 | Breaker open, provider healthy again | wait for the cooldown; the next call probes and closes it |
 | Quota or billing | fail closed, alert the owner, never loop on a quota error |
 | Sustained provider outage | the bot keeps scenarios, reminders, and the cabinet working; answers escalate |
-| Wrong model name | fix `LLM_MODEL`, restart the worker; no migration needed |
+| Wrong model id in a profile | edit `apps/api/model-profiles/answer/<name>.yaml`, run the tests, deploy |
+| Model too slow for the budget | switch `LLM_PROFILE` to a faster profile after `make eval` passes |
+| Model returns empty completions | set `retry_empty_completion` in the profile; if it persists, switch profiles (ADR 0010) |
+| Cost looks wrong | the profile owns the prices; an override is `LLM_PRICE_*`, and a real price change is a profile commit |
 
 The bot must never answer from model memory when retrieval or the provider is unavailable.
 Scenario steps and reminders keep working: they do not need the model.

@@ -27,7 +27,7 @@ from onboarding.app.db.session import Database
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
 from onboarding.app.llm.jev import build_jev_classifier
-from onboarding.app.llm.rerank import RemoteReranker
+from onboarding.app.llm.rerank import build_reranker
 from onboarding.app.llm.sentiment import SentimentClassifier
 from onboarding.app.max.client import MaxClient
 from onboarding.app.prompts import PromptLibrary
@@ -110,7 +110,7 @@ def build_container(settings: Settings) -> Container:
     clock = SystemClock()
     llm = build_llm(settings, clock, http)
     embedder = build_embedder(settings, http)
-    assert_embedding_width(settings.embed_dim)
+    assert_embedding_width(embedder.dim)
     knowledge = PostgresKnowledgeBase(database, embedder)
 
     prompts = PromptLibrary(settings.prompts_dir)
@@ -126,17 +126,7 @@ def build_container(settings: Settings) -> Container:
         messages_per_second=settings.max_messages_per_second,
     )
     outbox = OutboxMessaging(database, sender)
-    reranker = (
-        RemoteReranker(
-            client=http,
-            base_url=settings.rerank_base_url,
-            api_key=settings.rerank_api_key.get_secret_value(),
-            model=settings.rerank_model,
-            timeout_s=settings.rerank_timeout_s,
-        )
-        if settings.rerank_base_url
-        else None
-    )
+    reranker = build_reranker(settings, http)
     answerer = Answerer(
         knowledge=knowledge,
         llm=llm,

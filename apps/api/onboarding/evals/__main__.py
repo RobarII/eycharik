@@ -15,6 +15,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from onboarding.app.container import build_container
+from onboarding.app.llm.profiles import answer_profile, embedding_profile, rerank_profile
 from onboarding.app.settings import Settings
 from onboarding.evals.runner import (
     Case,
@@ -133,13 +134,15 @@ def _model_label(settings: Settings, *, retrieval_only: bool) -> str:
         return "n/a"
     if settings.llm_provider == "extractive":
         return "extractive (offline)"
-    return f"{settings.llm_provider}/{settings.llm_model} @ {settings.llm_base_url}"
+    profile = answer_profile(settings)
+    return f"{settings.llm_provider}/{profile.name} ({profile.model}) @ {settings.llm_base_url}"
 
 
 def _retrieval_label(settings: Settings) -> str:
-    embed = f"{settings.embed_provider}/{settings.embed_model}"
-    rerank = settings.rerank_model if settings.rerank_base_url else "none"
-    return f"{embed} + rerank:{rerank}"
+    embed = embedding_profile(settings)
+    rerank = rerank_profile(settings)
+    ranking = f"{rerank.name} ({rerank.model})" if rerank is not None else "none"
+    return f"{embed.name} ({embed.model}, dim {embed.dim}) + rerank:{ranking}"
 
 
 def _commit() -> str:

@@ -3,7 +3,7 @@
 - **Command**: `<exact command>`
 - **Commit**: `<sha>`
 - **Date**: `<YYYY-MM-DD>`
-- **Environment**: `<local | staging | production>`, `<cpu/memory>`, `<model and version>`
+- **Environment**: `<local | staging | production>`, `<cpu/memory>`, `<model profile, model id, version>`
 - **Dataset**: `<name and size>`
 
 ## Result

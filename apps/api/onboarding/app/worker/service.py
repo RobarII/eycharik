@@ -6,8 +6,8 @@ repeats a send at worst and never loses a step.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import date
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from onboarding.app.audit import NullAudit
@@ -65,7 +65,7 @@ class OnboardingService:
             return ServiceResult(handled=False)
 
         scenario = self._catalog.active(self._scenario_id)
-        now = self._clock.now()
+        now = self._now()
         transition = start(scenario, RunId(str(uuid4())), employee_id, now)
         try:
             await self._runs.create(
@@ -95,7 +95,12 @@ class OnboardingService:
             return ServiceResult(handled=False)
 
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
-        transition = advance(scenario, stored.state, event)
+        # Reminders are scheduled from processing time, never from a delivery timestamp: a retried
+        # update can be hours old, and a timeout due in the past would escalate immediately.
+        now = self._now()
+        event_at = event.at if event.at.tzinfo is not None else event.at.replace(tzinfo=UTC)
+        effective = event if event_at >= now else replace(event, at=now)
+        transition = advance(scenario, stored.state, effective)
         completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
         await self._runs.save(
             StoredRun(
@@ -118,10 +123,14 @@ class OnboardingService:
             transition.actions,
             stored.chat_id,
             employee_id,
-            event.at.date(),
+            effective.at.date(),
             question=event.text,
         )
         return ServiceResult(handled=True, completed=completed)
+
+    def _now(self) -> datetime:
+        now = self._clock.now()
+        return now.replace(tzinfo=UTC) if now.tzinfo is None else now
 
     async def _act(
         self,
@@ -136,6 +145,7 @@ class OnboardingService:
         context = ActionContext(
             chat_id=chat_id,
             on_date=on_date,
+            employee_id=employee_id,
             profile=profile,
             question=question,
         )

@@ -25,6 +25,7 @@ from onboarding.core.transitions import (
     ScenarioRunError,
     StepCycleError,
     advance,
+    is_question,
     start,
 )
 
@@ -45,9 +46,7 @@ def test_start_emits_the_initial_send_chain(scenario: Scenario) -> None:
     assert reminder.action is TimeoutAction.REMIND
 
 
-def test_button_moves_the_run_and_sends_the_next_step(
-    scenario: Scenario, state: StepState
-) -> None:
+def test_button_moves_the_run_and_sends_the_next_step(scenario: Scenario, state: StepState) -> None:
     event = Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="done")
 
     transition = advance(scenario, state, event)
@@ -99,9 +98,7 @@ def test_free_text_completes_a_message_step(scenario: Scenario) -> None:
     assert isinstance(transition.reminder, CancelReminder)
 
 
-def test_timeout_reminds_once_and_cancels_the_timer(
-    scenario: Scenario, state: StepState
-) -> None:
+def test_timeout_reminds_once_and_cancels_the_timer(scenario: Scenario, state: StepState) -> None:
     event = Event(kind=EventKind.TIMEOUT, at=NOW + timedelta(hours=48))
 
     transition = advance(scenario, state, event)
@@ -229,3 +226,48 @@ def test_file_step_routes_on_a_file_event() -> None:
     assert transition.state.step_id == "done"
     assert scenario.step("documents").expects is Expects.FILE
     assert isinstance(transition.reminder, CancelReminder)
+
+
+def test_a_question_at_a_message_step_is_answered_not_acknowledged(
+    scenario: Scenario, state: StepState
+) -> None:
+    documents = replace(state, step_id="documents")
+
+    transition = advance(
+        scenario,
+        documents,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="А как оформить отпуск?"),
+    )
+
+    assert transition.state == documents
+    assert [action.kind for action in transition.actions] == [ActionKind.ANSWER]
+
+
+def test_a_confirmation_at_a_message_step_advances_it(scenario: Scenario, state: StepState) -> None:
+    documents = replace(state, step_id="documents")
+
+    transition = advance(
+        scenario,
+        documents,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил документы"),
+    )
+
+    assert transition.state.step_id == "done"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Сколько дней отпуска?", True),
+        ("Как получить ноутбук", True),
+        ("подскажите про ДМС", True),
+        ("а сколько дней отпуска", True),
+        ("ну как получить доступ", True),
+        ("Отправил документы", False),
+        ("готово", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_is_question(text: str | None, expected: bool) -> None:
+    assert is_question(text) is expected

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from onboarding.core.metrics import mean, percentile, recall_at_k, reciprocal_rank
-from onboarding.evals.runner import Case, CaseResult, summarise
+from onboarding.evals.runner import Case, CaseResult, Report, summarise
 
 
 def test_recall_counts_expected_documents_in_the_top_k() -> None:
@@ -53,9 +53,7 @@ def test_escalation_cases_do_not_drag_retrieval_metrics() -> None:
             expect_escalation=not expected,
             expect_reason=None,
         )
-        return CaseResult(
-            case=case, retrieved_docs=("a",), recall=1.0, rr=rr
-        )
+        return CaseResult(case=case, retrieved_docs=("a",), recall=1.0, rr=rr)
 
     report = summarise(
         (result("answerable", ("a",), 1.0), result("refusal", (), 0.0)),
@@ -64,3 +62,35 @@ def test_escalation_cases_do_not_drag_retrieval_metrics() -> None:
 
     assert report.metrics["mrr"] == 1.0
     assert "citation_support" not in report.metrics
+
+
+def test_escalation_must_match_the_expected_reason() -> None:
+    case = Case(
+        id="restricted",
+        question="q",
+        audience="all",
+        expect_docs=(),
+        expect_contains=(),
+        expect_escalation=True,
+        expect_reason="restricted",
+    )
+
+    wrong = CaseResult(
+        case=case, retrieved_docs=(), recall=0.0, rr=0.0, escalated=True, reason="no_sources"
+    )
+    right = CaseResult(
+        case=case, retrieved_docs=(), recall=0.0, rr=0.0, escalated=True, reason="restricted"
+    )
+
+    assert wrong.escalation_correct is False
+    assert right.escalation_correct is True
+
+
+def test_latency_gate_is_an_upper_bound() -> None:
+    fast = Report(metrics={"p95_latency_ms": 1200.0}, results=(), generated=True)
+    slow = Report(metrics={"p95_latency_ms": 9000.0}, results=(), generated=True)
+    weak = Report(metrics={"recall_at_5": 0.5}, results=(), generated=True)
+
+    assert fast.failures == ()
+    assert slow.failures == ("p95_latency_ms",)
+    assert weak.failures == ("recall_at_5",)

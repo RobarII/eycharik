@@ -172,11 +172,56 @@ def _on_button(scenario: Scenario, state: StepState, event: Event) -> Transition
 
 def _on_message(scenario: Scenario, state: StepState, event: Event) -> Transition:
     step = scenario.step(state.step_id)
-    if step.expects is Expects.MESSAGE:
+    if step.expects is Expects.MESSAGE and not is_question(event.text):
         target = step.routes.get("default")
         if target is not None:
             return _leave(scenario, state, target, event.at)
+    # A question is never a step acknowledgement. Otherwise asking "а как оформить отпуск?"
+    # would silently advance the scenario and leave the newcomer without an answer.
     return _idle(state, ActionKind.ANSWER)
+
+
+def is_question(text: str | None) -> bool:
+    """Heuristic for free text: a question is answered, a confirmation advances the step."""
+    if not text:
+        return False
+    normalized = " ".join(text.lower().replace("ё", "е").split())
+    if "?" in normalized:
+        return True
+    for filler in ("а ", "ну ", "и "):
+        if normalized.startswith(filler):
+            normalized = normalized[len(filler) :].lstrip()
+    starts = (
+        "как ",
+        "с какого ",
+        "до какого ",
+        "в каком ",
+        "во сколько ",
+        "на какой ",
+        "в какой ",
+        "где ",
+        "когда ",
+        "сколько ",
+        "кто ",
+        "что ",
+        "почему ",
+        "зачем ",
+        "какой ",
+        "какая ",
+        "какие ",
+        "каких ",
+        "куда ",
+        "откуда ",
+        "чем ",
+        "можно ли ",
+        "есть ли ",
+        "нужно ли ",
+        "нужен ли ",
+        "подскажите",
+        "расскажите",
+        "объясните",
+    )
+    return normalized.startswith(starts)
 
 
 def _on_file(scenario: Scenario, state: StepState, event: Event) -> Transition:

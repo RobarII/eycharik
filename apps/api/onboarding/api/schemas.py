@@ -16,6 +16,7 @@ class RunSummary(BaseModel):
     role: str
     department: str
     step_id: str
+    step_title: str | None
     step_number: int
     steps_total: int
     entered_at: datetime

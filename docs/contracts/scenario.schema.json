@@ -24,6 +24,7 @@
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
         "kind": {"enum": ["send", "wait", "terminal"]},
+        "title": {"type": "string", "minLength": 1, "maxLength": 80},
         "message": {"type": "string", "minLength": 1, "maxLength": 4000},
         "keyboard": {
           "type": "array",

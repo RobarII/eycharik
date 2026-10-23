@@ -35,12 +35,25 @@ cases:
     expect_contains: ["заявк"]
     expect_escalation: false
 
+  - id: hr-contact
+    question: "Куда писать по вопросам адаптации?"
+    audience: all
+    expect_docs: [company/org-structure]
+    expect_contains: ["hr@polypiast.ru"]
+    expect_escalation: false
+
+  - id: contract-timing
+    question: "Когда со мной заключат трудовой договор?"
+    audience: all
+    expect_escalation: true
+    expect_reason: no_sources
+
   - id: mentor-who
     question: "Кто мой наставник?"
     audience: all
     expect_docs: [company/org-structure, hr/probation]
     expect_escalation: true
-    expect_reason: no_sources
+    expect_reason: restricted
 
   - id: salary-personal
     question: "Какая у меня будет зарплата после испытательного срока?"

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from onboarding.app.admin.queries import AdminQueries
 from onboarding.app.clock import FrozenClock
@@ -27,6 +28,7 @@ from onboarding.app.db.repos import (
     DatabaseAuditLog,
     DatabaseQuestionLog,
     DatabaseRunRepository,
+    RunAlreadyActiveError,
     SqlEventDeduper,
 )
 from onboarding.app.db.scheduler import ReminderScheduler
@@ -43,11 +45,14 @@ from onboarding.core.models import (
     Action,
     ActionKind,
     ChatId,
+    EmployeeId,
     Event,
     EventKind,
+    RunId,
     ScheduleReminder,
 )
-from onboarding.ports import OutboundMessage, SearchQuery
+from onboarding.core.transitions import start as start_run
+from onboarding.ports import OutboundMessage, SearchQuery, StoredRun
 
 from .fakes import (
     EMPLOYEE,
@@ -154,9 +159,7 @@ async def test_start_persists_a_run_and_reaches_the_admin_view(database: Databas
 
 
 async def test_second_start_is_rejected_by_the_partial_index(database: Database) -> None:
-    service = build_service(
-        database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase()
-    )
+    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
 
     first = await service.start(EMPLOYEE, ChatId(1))
     second = await service.start(EMPLOYEE, ChatId(1))
@@ -186,14 +189,10 @@ async def test_outbox_and_dispatcher_deliver_a_message(database: Database) -> No
 
 
 async def test_scheduler_enqueues_a_due_reminder(database: Database) -> None:
-    service = build_service(
-        database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase()
-    )
+    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
     await service.start(EMPLOYEE, ChatId(1))
     async with database.session() as session:
-        await session.execute(
-            text("UPDATE runs SET reminder_at = now() - interval '1 minute'")
-        )
+        await session.execute(text("UPDATE runs SET reminder_at = now() - interval '1 minute'"))
 
     assert await ReminderScheduler(database).tick() == 1
     jobs = await JobQueue(database).claim()
@@ -326,12 +325,8 @@ async def test_question_queue_carries_the_employee_and_respects_scope(
             ]
         )
 
-    mine = await AdminQueries(database).questions(
-        recruiter_id="rec-1", answered=False, limit=10
-    )
-    everyone = await AdminQueries(database).questions(
-        recruiter_id=None, answered=False, limit=10
-    )
+    mine = await AdminQueries(database).questions(recruiter_id="rec-1", answered=False, limit=10)
+    everyone = await AdminQueries(database).questions(recruiter_id=None, answered=False, limit=10)
     only_employee = await AdminQueries(database).questions(
         recruiter_id="rec-1", answered=None, limit=10, employee_id=str(EMPLOYEE)
     )
@@ -339,3 +334,67 @@ async def test_question_queue_carries_the_employee_and_respects_scope(
     assert [(q.employee_id, q.employee_name) for q in mine] == [(str(EMPLOYEE), "Иван Иванов")]
     assert {q.employee_id for q in everyone} == {str(EMPLOYEE), "2002"}
     assert [q.text for q in only_employee] == ["Сколько дней отпуска?"]
+
+
+async def test_creating_a_run_for_an_unknown_employee_is_not_a_race(
+    database: Database,
+) -> None:
+
+    catalog = ScenarioCatalog.load(SCENARIOS)
+    transition = start_run(
+        catalog.active("onboarding_default"),
+        RunId("00000000-0000-4000-8000-000000000404"),
+        EmployeeId("404"),
+        NOW,
+    )
+
+    with pytest.raises(IntegrityError) as raised:
+        await DatabaseRunRepository(database).create(
+            StoredRun(state=transition.state, reminder=transition.reminder, chat_id=ChatId(1))
+        )
+
+    assert not isinstance(raised.value, RunAlreadyActiveError)
+
+
+async def test_a_second_active_run_for_the_same_employee_is_a_race(
+    database: Database,
+) -> None:
+    catalog = ScenarioCatalog.load(SCENARIOS)
+    scenario = catalog.active("onboarding_default")
+    repository = DatabaseRunRepository(database)
+    first = start_run(
+        scenario,
+        RunId("00000000-0000-4000-8000-000000000501"),
+        EMPLOYEE,
+        NOW,
+    )
+    await repository.create(
+        StoredRun(state=first.state, reminder=first.reminder, chat_id=ChatId(1))
+    )
+
+    second = start_run(
+        scenario,
+        RunId("00000000-0000-4000-8000-000000000502"),
+        EMPLOYEE,
+        NOW,
+    )
+    with pytest.raises(RunAlreadyActiveError):
+        await repository.create(
+            StoredRun(state=second.state, reminder=second.reminder, chat_id=ChatId(1))
+        )
+
+
+async def test_completion_is_attached_to_the_employee(database: Database) -> None:
+    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
+    await service.start(EMPLOYEE, ChatId(1))
+
+    for event in (
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="checklist_done"),
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="готово"),
+        Event(kind=EventKind.FILE_RECEIVED, at=NOW, file_id="file-1"),
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="готово"),
+    ):
+        await service.handle(EMPLOYEE, ChatId(1), event)
+
+    events = await AdminQueries(database).events(str(EMPLOYEE))
+    assert "run_completed" in [event.name for event in events]

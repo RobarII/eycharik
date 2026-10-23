@@ -13,7 +13,10 @@ Narrows the root `AGENTS.md`. On a conflict this file wins.
 
 1. A new effect is a port plus an implementation. Do not import `app/` from `core/`.
 2. SQL only in `app/db/`. Repositories accept domain types and return domain types.
-3. Every model call goes through `app/llm/gateway.py`: timeout, one retry, circuit breaker, cost.
+3. Every production model call goes through `app/llm/gateway.py`: timeout, one retry, circuit
+   breaker, cost. `app/llm/extractive.py` is the offline exception (ADR 0007): it may serve the
+   local demo, including the webhook path, but `Settings` refuses to boot with it when
+   `ENVIRONMENT=production`.
 4. Every outbound MAX message is written to the outbox before it is sent.
 5. A prompt is loaded by name and version; a string literal prompt is a review blocker.
 6. Tests for `core/` use no fixtures beyond data. Tests with Postgres are `-m integration`.

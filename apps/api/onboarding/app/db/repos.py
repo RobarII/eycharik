@@ -51,7 +51,9 @@ class SqlRunRepository:
         try:
             await self._session.flush()
         except IntegrityError as error:
-            raise RunAlreadyActiveError(str(state.employee_id)) from error
+            if _is_active_run_conflict(error):
+                raise RunAlreadyActiveError(str(state.employee_id)) from error
+            raise
 
     async def load(self, run_id: RunId) -> StoredRun | None:
         row = await self._session.get(RunRow, UUID(run_id))
@@ -91,6 +93,17 @@ class SqlRunRepository:
             statement.order_by(RunRow.entered_at).limit(min(limit, 200))
         )
         return tuple(_stored_run(row) for row in rows)
+
+
+def _is_active_run_conflict(error: IntegrityError) -> bool:
+    """Only the partial unique index means a second active run; a bad foreign key is a bug."""
+    original = error.orig
+    constraint = getattr(original, "constraint_name", None)
+    if constraint is not None:
+        return str(constraint) == "runs_employee_active_idx"
+    return getattr(original, "pgcode", None) == "23505" and "runs_employee_active_idx" in str(
+        original
+    )
 
 
 def _stored_run(row: RunRow) -> StoredRun:

@@ -93,10 +93,10 @@ holds state, vectors, queue, outbox, questions, and audit; the workload does not
 | `apps/api/onboarding/api/` | FastAPI app, webhook, admin routes, bearer auth, response schemas |
 | `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base |
 | `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop |
-| `apps/api/onboarding/app/llm/` | provider adapters, gateway with retry/breaker/cost, embeddings |
+| `apps/api/onboarding/app/llm/` | provider adapters, gateway with retry/breaker/cost, offline extractive provider, embeddings |
 | `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |
 | `apps/api/onboarding/scenarios/` | versioned scenario YAML |
-| `apps/api/onboarding/cli.py` | `ingest`, `seed`, `check` commands |
+| `apps/api/onboarding/cli.py` | `ingest`, `seed`, `demo`, `subscribe`, `check` commands |
 | `apps/admin/` | recruiter cabinet (React + TypeScript) |
 | `knowledge/` | the corpus, one Markdown file per document |
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -187,3 +187,40 @@ def test_stored_run_helper_matches_the_scenario() -> None:
 
     assert run.state.scenario_id == "onboarding_default"
     assert run.state.entered_at.date() == date(2026, 10, 20)
+
+
+async def test_a_stale_delivery_schedules_reminders_from_processing_time() -> None:
+    service, runs, _, _, _ = build()
+    await service.start(EMPLOYEE, ChatId(1))
+
+    await service.handle(
+        EMPLOYEE,
+        ChatId(1),
+        Event(
+            kind=EventKind.BUTTON_PRESSED,
+            at=NOW - timedelta(days=2),
+            button_id="checklist_done",
+        ),
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert isinstance(stored.reminder, ScheduleReminder)
+    assert stored.reminder.due_at == NOW + timedelta(hours=72)
+
+
+async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
+    service, runs, _, _, _ = build()
+    await service.start(EMPLOYEE, ChatId(1))
+
+    await service.handle(
+        EMPLOYEE,
+        ChatId(1),
+        Event(
+            kind=EventKind.BUTTON_PRESSED,
+            at=datetime(2026, 10, 20, 9, 0),  # noqa: DTZ001 - exercising a naive payload
+            button_id="checklist_done",
+        ),
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert stored.state.step_id == "meet_the_team"

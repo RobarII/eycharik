@@ -1,37 +1,47 @@
 # Onboarding scenarios
 
 A scenario is data: YAML validated by [scenario.schema.json](../contracts/scenario.schema.json).
-A run pins the version it started on, so editing a scenario never strands a live newcomer.
+A run pins the version it started on, so editing a scenario never strands a live newcomer. Every
+step also has a human-readable `title`; the cabinet shows it instead of the raw `step_id`.
 
 ## First run: `onboarding_default` v1
 
 | Step | Kind | What happens | Timeout |
 |---|---|---|---|
-| `welcome` | send | greeting, three buttons: "С чего начать", "Мой наставник", "Задать вопрос" | — |
-| `first_day_checklist` | wait | checklist message, expects a button press | 48 h → remind, then escalate to recruiter |
-| `meet_the_team` | send | team, mentor, first-week meetings | 72 h → remind |
-| `documents` | wait | list of documents to bring, expects a file or a button "Готово" | 72 h → remind, then escalate to recruiter |
-| `ask_anything` | wait | free questions go to the assistant; a human handoff button is always visible | 5 days → remind |
-| `week_one_check` | wait | three-question quiz, any answer routes to `week_one_done` | 48 h → escalate |
-| `done` | terminal | completion message and a feedback link | — |
+| `welcome` | send | greeting, then the first-day checklist follows automatically | — |
+| `first_day_checklist` | wait | pass, laptop, mentor, access checklist; buttons "Готово" / "Задать вопрос" both lead to the next step | 48 h → remind |
+| `meet_the_team` | wait | mentor and team; expects a reply, default route to documents | 72 h → remind |
+| `documents` | wait | passport, SNILS, INN, diploma, photo; expects a file, default route to the week-one check | 72 h → escalate and move on |
+| `week_one_check` | wait | three questions about the first week; any acknowledgement finishes the run | 48 h → escalate |
+| `done` | terminal | completed; no timeout, no routes | — |
 
-Free text at any `wait` step is answered by the assistant; the scenario position does not move
-unless the step expects a message.
+Free text at a step that expects a button or a file is answered by the assistant and the run does
+not move. At a step that expects a message, a question is answered and the run stays; a plain
+acknowledgement ("готово", "отправил") advances the step. The check is deterministic
+(`core.transitions.is_question`), not a model decision.
+
+Timeout actions are `remind` (send a nudge, keep the run) or `escalate` (hand the run to the
+recruiter, optionally continue with `next`). Documents uses `escalate` with `next` so a newcomer who
+never sends files still gets to the week-one check and a human sees the stall.
 
 ## Recruiter flows
 
 | Flow | Trigger | Behaviour |
 |---|---|---|
-| Stall detection | no step progress past its timeout | escalation row with the step and the last activity |
-| Manual nudge | recruiter sends a message | delivered by the bot, recorded in the transcript |
-| Escalation inbox | assistant cannot ground an answer | question, retrieved chunk ids, and confidence attached |
-| Progress overview | cockpit list | current step, progress fraction, open escalations, last activity |
+| Stall detection | no step progress past its timeout | escalation audit row with the step and the reason |
+| Progress overview | cabinet list | current step title, progress fraction, last activity, status |
+| Question inbox | assistant cannot ground an answer | question, owner, reason, citations; scoped to the recruiter's employees |
+| Role scoping | recruiter vs HR token | recruiter sees own employees, HR sees all; enforced by SQL, out-of-scope is 404 |
+| Audit trail | every transition and escalation | append-only `audit_log`, read in the run detail |
+
+Manual nudges from the cabinet are not implemented: the cabinet is read-only in v1. Sending a
+message to a newcomer stays with the bot's scenario messages and the human HR channel.
 
 ## Rules
 
 1. Every `wait` step has a timeout with an action; a step without one is a review blocker.
-2. Every keyboard button id is unique inside the scenario; the router maps id to a route, never
-   to free text.
+2. Every keyboard button id is unique inside the scenario; the router maps id to a route, never to
+   free text.
 3. A terminal step has no timeout and no routes.
 4. Escalation never blocks the scenario: the run continues when the answer arrives.
 5. Copy is Russian, in the company voice, second person plural ("вы"), no emoji in scenario text.

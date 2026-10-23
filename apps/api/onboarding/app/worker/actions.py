@@ -16,6 +16,7 @@ from onboarding.core.models import (
     Action,
     ActionKind,
     ChatId,
+    EmployeeId,
     EmployeeProfile,
     EscalationReason,
 )
@@ -28,6 +29,7 @@ MAX_LOGGED_QUESTION = 2000
 class ActionContext:
     chat_id: ChatId
     on_date: date
+    employee_id: EmployeeId | None = None
     profile: EmployeeProfile | None = None
     question: str | None = None
 
@@ -53,9 +55,7 @@ class ActionExecutor:
             case ActionKind.SEND:
                 assert action.text is not None
                 text = (
-                    self._copy.reminder(action.text)
-                    if action.note == "reminder"
-                    else action.text
+                    self._copy.reminder(action.text) if action.note == "reminder" else action.text
                 )
                 await self._messaging.send(
                     OutboundMessage(
@@ -75,19 +75,30 @@ class ActionExecutor:
                     )
                 )
                 await self._audit.record(
-                    "escalation_requested", reason=reason.value, note=action.note
+                    "escalation_requested",
+                    employee_id=_employee(context),
+                    reason=reason.value,
+                    note=action.note,
                 )
             case ActionKind.COMPLETE:
                 await self._messaging.send(
                     OutboundMessage(chat_id=context.chat_id, text=self._copy.completion)
                 )
-                await self._audit.record("run_completed", outcome=str(action.outcome))
+                await self._audit.record(
+                    "run_completed",
+                    employee_id=_employee(context),
+                    outcome=str(action.outcome),
+                )
             case ActionKind.IGNORE:
-                await self._audit.record("action_ignored")
+                await self._audit.record("action_ignored", employee_id=_employee(context))
 
     async def _answer(self, context: ActionContext) -> None:
         if context.profile is None or not context.question:
-            await self._audit.record("answer_skipped", reason="no_profile_or_question")
+            await self._audit.record(
+                "answer_skipped",
+                employee_id=_employee(context),
+                reason="no_profile_or_question",
+            )
             return
         outcome = await self._answerer.answer(context.question, context.profile, context.on_date)
         if self._questions is not None:
@@ -100,7 +111,8 @@ class ActionExecutor:
                 citations=[str(citation) for citation in outcome.citations],
                 latency_ms=outcome.completion.latency_ms if outcome.completion else None,
             )
-        await self._messaging.send(
-            OutboundMessage(chat_id=context.chat_id, text=outcome.text)
-        )
+        await self._messaging.send(OutboundMessage(chat_id=context.chat_id, text=outcome.text))
 
+
+def _employee(context: ActionContext) -> str | None:
+    return None if context.employee_id is None else str(context.employee_id)

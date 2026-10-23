@@ -23,6 +23,7 @@ GATES = {
     "citation_support": 1.0,
     "escalation_correctness": 0.90,
 }
+MAXIMUMS = {"p95_latency_ms": 3000.0}
 
 
 class GoldenSetError(ValueError):
@@ -60,7 +61,10 @@ class CaseResult:
 
     @property
     def escalation_correct(self) -> bool:
-        return self.escalated is not None and self.escalated == self.case.expect_escalation
+        if self.escalated is None or self.escalated != self.case.expect_escalation:
+            return False
+        expected = self.case.expect_reason
+        return expected is None or not self.escalated or self.reason == expected
 
     @property
     def contains_expected(self) -> bool:
@@ -94,9 +98,7 @@ def load_cases(path: Path) -> tuple[Case, ...]:
                 expect_docs=tuple(str(doc) for doc in item.get("expect_docs", ())),
                 expect_contains=tuple(str(text) for text in item.get("expect_contains", ())),
                 expect_escalation=bool(item.get("expect_escalation", False)),
-                expect_reason=(
-                    str(item["expect_reason"]) if item.get("expect_reason") else None
-                ),
+                expect_reason=(str(item["expect_reason"]) if item.get("expect_reason") else None),
             )
         )
     if not cases:
@@ -170,12 +172,17 @@ class Report:
 
     @property
     def failures(self) -> tuple[str, ...]:
-        failed = [
+        below = [
             name
             for name, gate in GATES.items()
             if name in self.metrics and self.metrics[name] < gate
         ]
-        return tuple(failed)
+        above = [
+            name
+            for name, limit in MAXIMUMS.items()
+            if name in self.metrics and self.metrics[name] > limit
+        ]
+        return (*below, *above)
 
 
 def summarise(results: tuple[CaseResult, ...], *, generated: bool) -> Report:
@@ -194,7 +201,8 @@ def summarise(results: tuple[CaseResult, ...], *, generated: bool) -> Report:
         metrics["escalation_correctness"] = mean(
             [1.0 if result.escalation_correct else 0.0 for result in results]
         )
-        metrics["p95_latency_ms"] = percentile(latency, p=95)
+        if latency:
+            metrics["p95_latency_ms"] = percentile(latency, p=95)
         metrics["cost_per_answer_rub"] = mean([result.cost_rub for result in results])
     return Report(metrics=metrics, results=results, generated=generated)
 
@@ -206,6 +214,8 @@ def render_markdown(
     commit: str,
     model: str,
     environment: str,
+    embed_provider: str,
+    note: str | None,
     on_date: date,
 ) -> str:
     status = "FAIL" if report.failures else "PASS"
@@ -216,6 +226,8 @@ def render_markdown(
         f"- commit: `{commit}`",
         f"- model: `{model}`",
         f"- environment: `{environment}`",
+        f"- embed provider: `{embed_provider}`",
+        *([f"- note: {note}"] if note else []),
         f"- cases: {len(report.results)}",
         f"- generated answers: {report.generated}",
         "",
@@ -223,10 +235,13 @@ def render_markdown(
         "|---|---|---|",
     ]
     for name, value in report.metrics.items():
-        gate = GATES.get(name)
-        lines.append(
-            f"| `{name}` | {value:.3f} | {'' if gate is None else f'>= {gate:.2f}'} |"
-        )
+        if name in MAXIMUMS:
+            limit = f"<= {MAXIMUMS[name]:.2f}"
+        elif name in GATES:
+            limit = f">= {GATES[name]:.2f}"
+        else:
+            limit = ""
+        lines.append(f"| `{name}` | {value:.3f} | {limit} |")
     if report.failures:
         lines += ["", f"Failed gates: {', '.join(report.failures)}"]
     lines += [
@@ -243,5 +258,3 @@ def render_markdown(
             f"{result.reason or '-'} |"
         )
     return "\n".join(lines) + "\n"
-
-

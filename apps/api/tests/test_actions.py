@@ -17,7 +17,7 @@ from onboarding.core.models import (
     Outcome,
 )
 
-from .fakes import RecordingAudit, RecordingMessaging, profile
+from .fakes import EMPLOYEE, RecordingAudit, RecordingMessaging, profile
 
 ROOT = Path(__file__).resolve().parents[3]
 COPY = load_copy(ROOT / "docs" / "product" / "copy.yaml")
@@ -81,20 +81,28 @@ async def test_escalation_sends_copy_and_records_an_event() -> None:
     executor, messaging, _, audit = build()
     action = Action(kind=ActionKind.ESCALATE, reason=EscalationReason.TIMEOUT)
 
-    await executor.execute(action, ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20)))
+    await executor.execute(
+        action,
+        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20), employee_id=EMPLOYEE),
+    )
 
     assert messaging.sent[0].text == COPY.escalation_for(EscalationReason.TIMEOUT)
     assert audit.names() == ["escalation_requested"]
+    assert audit.events[0][1]["employee_id"] == str(EMPLOYEE)
 
 
 async def test_completion_sends_the_completion_copy() -> None:
     executor, messaging, _, audit = build()
     action = Action(kind=ActionKind.COMPLETE, outcome=Outcome.COMPLETED)
 
-    await executor.execute(action, ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20)))
+    await executor.execute(
+        action,
+        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20), employee_id=EMPLOYEE),
+    )
 
     assert messaging.sent[0].text == COPY.completion
     assert audit.names() == ["run_completed"]
+    assert audit.events[0][1]["employee_id"] == str(EMPLOYEE)
 
 
 async def test_answer_calls_the_assistant_with_the_employee_context() -> None:
@@ -118,12 +126,19 @@ async def test_answer_without_a_question_is_skipped_and_recorded() -> None:
     action = Action(kind=ActionKind.ANSWER)
 
     await executor.execute(
-        action, ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 23), profile=profile())
+        action,
+        ActionContext(
+            chat_id=ChatId(1),
+            on_date=date(2026, 10, 23),
+            employee_id=EMPLOYEE,
+            profile=profile(),
+        ),
     )
 
     assert answerer.calls == []
     assert messaging.sent == []
     assert audit.names() == ["answer_skipped"]
+    assert audit.events[0][1]["employee_id"] == str(EMPLOYEE)
 
 
 async def test_ignore_sends_nothing() -> None:
@@ -131,9 +146,10 @@ async def test_ignore_sends_nothing() -> None:
 
     await executor.execute(
         Action(kind=ActionKind.IGNORE),
-        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 23)),
+        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 23), employee_id=EMPLOYEE),
     )
 
     assert messaging.sent == []
     assert audit.names() == ["action_ignored"]
+    assert audit.events[0][1]["employee_id"] == str(EMPLOYEE)
     assert NullAudit

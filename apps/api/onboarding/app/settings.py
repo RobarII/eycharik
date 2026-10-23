@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     max_messages_per_second: float = 2.0
     max_callbacks_enabled: bool = False
 
-    llm_provider: Literal["openai", "gigachat"] = "openai"
+    llm_provider: Literal["openai", "gigachat", "extractive"] = "openai"
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: SecretStr = SecretStr("")
     llm_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
@@ -76,6 +76,10 @@ class Settings(BaseSettings):
             raise ValueError("LLM_TIMEOUT_S must be positive")
         if self.recall_limit < self.rerank_limit:
             raise ValueError("RECALL_LIMIT must be at least RERANK_LIMIT")
+        if self.environment == "production" and self.llm_provider == "extractive":
+            raise ValueError("LLM_PROVIDER=extractive is only for local demos")
+        if self.environment == "production" and self.embed_provider == "hashing":
+            raise ValueError("EMBED_PROVIDER=hashing is only for local demos")
         if self.environment == "production":
             missing = [
                 name
@@ -116,4 +120,6 @@ class Settings(BaseSettings):
 
     @property
     def is_llm_configured(self) -> bool:
+        if self.llm_provider == "extractive":
+            return True
         return bool(self.llm_api_key.get_secret_value()) and bool(self.llm_model)

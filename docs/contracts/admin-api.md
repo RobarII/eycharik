@@ -45,12 +45,16 @@ the cap.
   "role": "Инженер-технолог",
   "department": "Производство",
   "step_id": "documents",
+  "step_title": "Документы",
   "step_number": 4,
   "steps_total": 6,
   "entered_at": "2026-10-20T09:00:00Z",
   "status": "active"
 }
 ```
+
+`step_title` is `null` when the pinned scenario version cannot be loaded or the step id is not in
+it; the cabinet falls back to `step_id`. `step_number` is 1-based and `0` when the step is unknown.
 
 `RunDetail` extends `RunSummary` with `scenario`, `scenario_version`, `step_message`, `events`,
 and `questions`. Its questions are only that employee's, limited to the newest 20.

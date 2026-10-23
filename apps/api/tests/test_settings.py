@@ -42,3 +42,13 @@ def test_recall_must_not_be_smaller_than_rerank() -> None:
 def test_confidence_is_bounded() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, answer_min_confidence=1.5)
+
+
+def test_production_rejects_the_offline_llm() -> None:
+    with pytest.raises(ValidationError, match="extractive"):
+        Settings(_env_file=None, environment="production", llm_provider="extractive")
+
+
+def test_production_rejects_hashing_embeddings() -> None:
+    with pytest.raises(ValidationError, match="hashing"):
+        Settings(_env_file=None, environment="production", embed_provider="hashing")

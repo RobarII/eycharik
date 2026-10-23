@@ -19,6 +19,7 @@ DocId = NewType("DocId", str)
 ChunkId = NewType("ChunkId", str)
 
 MAX_MESSAGE_CHARS = 4000
+MAX_TITLE_CHARS = 80
 
 
 class EventKind(StrEnum):
@@ -96,6 +97,7 @@ class Timeout:
 class Step:
     id: str
     kind: StepKind
+    title: str | None = None
     message: str | None = None
     keyboard: Keyboard = ()
     expects: Expects | None = None

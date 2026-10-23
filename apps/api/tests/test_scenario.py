@@ -24,6 +24,14 @@ def test_steps_mapping_is_read_only(scenario: Any) -> None:
         scenario.steps["x"] = scenario.step("done")  # type: ignore[index]
 
 
+def test_rejects_a_title_longer_than_the_schema_allows() -> None:
+    document = scenario_document()
+    document["steps"][0]["title"] = "я" * 81
+
+    with pytest.raises(ScenarioError, match="title exceeds"):
+        parse_scenario(document)
+
+
 def test_rejects_unknown_top_level_key() -> None:
     document = scenario_document()
     document["owner"] = "hr"
@@ -105,9 +113,7 @@ def test_rejects_duplicate_button_id() -> None:
 
 def test_rejects_keyboard_wider_than_three() -> None:
     document = scenario_document()
-    document["steps"][1]["keyboard"] = [
-        [{"id": f"b{index}", "text": "x"} for index in range(4)]
-    ]
+    document["steps"][1]["keyboard"] = [[{"id": f"b{index}", "text": "x"} for index in range(4)]]
     document["steps"][1]["routes"] = {f"b{index}": "done" for index in range(4)}
     with pytest.raises(ScenarioError, match="at most 3 buttons"):
         parse_scenario(document)

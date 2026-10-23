@@ -98,28 +98,40 @@ def _console_table(report: Report) -> str:
     return "\n".join(lines)
 
 
-def _write(
-    report: Report, args: argparse.Namespace, settings: Settings, on_date: date
-) -> None:
+def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date: date) -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     scope = "retrieval" if args.retrieval_only else "full"
     suffix = f"-{args.label}" if args.label else ""
     path = args.out_dir / f"{on_date.isoformat()}-eval-{scope}{suffix}.md"
-    command = "python -m onboarding.evals"
-    if args.retrieval_only:
-        command += " --retrieval-only"
+    command = " ".join(["python -m onboarding.evals", *sys.argv[1:]]).strip()
+    note = None
+    if settings.llm_provider == "extractive":
+        note = (
+            "the offline extractive provider returns zero latency and cost by construction; "
+            "this measures retrieval, grounding, and escalation, not model quality"
+        )
     path.write_text(
         render_markdown(
             report,
             command=command,
             commit=_commit(),
-            model="n/a" if args.retrieval_only else settings.llm_model,
+            model=_model_label(settings, retrieval_only=args.retrieval_only),
             environment=settings.environment,
+            embed_provider=settings.embed_provider,
+            note=note,
             on_date=on_date,
         ),
         encoding="utf-8",
     )
     print(f"wrote {path}")
+
+
+def _model_label(settings: Settings, *, retrieval_only: bool) -> str:
+    if retrieval_only:
+        return "n/a"
+    if settings.llm_provider == "extractive":
+        return "extractive (offline)"
+    return settings.llm_model
 
 
 def _commit() -> str:

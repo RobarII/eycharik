@@ -9,17 +9,28 @@ import argparse
 import asyncio
 import json
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.engine import make_url
 
-from onboarding.app.container import build_container
+from onboarding.app.clock import SystemClock
+from onboarding.app.container import Container, build_container
+from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.kb import PostgresKnowledgeWriter
 from onboarding.app.db.models import EmployeeRow
+from onboarding.app.db.repos import DatabaseQuestionLog, DatabaseRunRepository
 from onboarding.app.knowledge.pipeline import ingest
 from onboarding.app.max.client import MaxClient, Subscription
 from onboarding.app.settings import Settings
+from onboarding.app.worker.actions import ActionExecutor
+from onboarding.app.worker.service import OnboardingService
+from onboarding.core.models import ChatId, EmployeeId, Event, EventKind, Expects, Keyboard
+from onboarding.ports import Messaging, OutboundMessage
+
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,6 +44,18 @@ def main(argv: list[str] | None = None) -> int:
 
     seed_parser = sub.add_parser("seed", help="load employees from a JSON file")
     seed_parser.add_argument("--file", type=Path, required=True)
+
+    demo_parser = sub.add_parser("demo", help="populate the cabinet with demo runs")
+    demo_parser.add_argument(
+        "--reset",
+        action="store_true",
+        help="clear runs, questions, events, jobs and audit rows first (local only)",
+    )
+    demo_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm the destructive --reset without a prompt",
+    )
 
     subscribe_parser = sub.add_parser("subscribe", help="register the MAX webhook subscription")
     subscribe_parser.add_argument("--url", required=True, help="public HTTPS webhook URL")
@@ -52,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_seed(settings, args.file))
     if args.command == "subscribe":
         return asyncio.run(_subscribe(settings, args))
+    if args.command == "demo":
+        return asyncio.run(_demo(settings, reset=args.reset, assume_yes=args.yes))
     return _check(settings)
 
 
@@ -93,6 +118,177 @@ async def _subscribe(settings: Settings, args: argparse.Namespace) -> int:
         await container.aclose()
     print(f"subscribed {args.url}")
     return 0
+
+
+async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
+    if settings.environment != "local":
+        raise SystemExit("demo data is only allowed with ENVIRONMENT=local")
+    if reset and not assume_yes:
+        raise SystemExit("--reset is destructive: re-run with --reset --yes")
+    path = ROOT / "infra" / "demo" / "employees.json"
+    await _seed(settings, path)
+    container = build_container(settings)
+    try:
+        if reset:
+            db_target = make_url(settings.database_url).render_as_string(hide_password=True)
+            print(f"resetting runtime tables in {db_target}")
+            async with container.database.session() as session:
+                await session.execute(
+                    text(
+                        "TRUNCATE messages, jobs, events, questions, audit_log, runs "
+                        "RESTART IDENTITY CASCADE"
+                    )
+                )
+        service = _demo_service(container)
+        questions = DatabaseQuestionLog(container.database)
+        directory = SqlDirectory(container.database)
+        now = SystemClock().now()
+
+        for employee_id, name, chat_id, target in (
+            ("1001", "Анна Смирнова", ChatId(1001), "meet_the_team"),
+            ("1002", "Пётр Кузнецов", ChatId(1002), None),
+            ("1003", "Мария Волкова", ChatId(1003), "first_day_checklist"),
+        ):
+            employee = EmployeeId(employee_id)
+            if await DatabaseRunRepository(container.database).find_active_by_employee(employee):
+                print(f"skip {name}: already has an active run")
+                continue
+            if not (await service.start(employee, chat_id)).handled:
+                continue
+            await _drive(container, service, employee, chat_id, target=target, now=now)
+
+        await _demo_question(
+            container,
+            questions,
+            directory=directory,
+            employee_id=EmployeeId("1001"),
+            chat_id=ChatId(1001),
+            text="Сколько дней отпуска в первый год?",
+            now=now,
+            require_citation=True,
+            expect_reason="answered",
+            expect_doc="hr/leave-policy#0",
+        )
+        await _demo_question(
+            container,
+            questions,
+            directory=directory,
+            employee_id=EmployeeId("1001"),
+            chat_id=ChatId(1001),
+            text="Кто мой наставник?",
+            now=now,
+            expect_reason="restricted",
+        )
+        await _demo_question(
+            container,
+            questions,
+            directory=directory,
+            employee_id=EmployeeId("1003"),
+            chat_id=ChatId(1003),
+            text="Какая у меня будет зарплата после испытательного срока?",
+            now=now,
+            expect_reason="restricted",
+        )
+    finally:
+        await container.aclose()
+    print("demo data is ready: 3 employees, one completed run, three questions in the queue")
+    return 0
+
+
+async def _demo_question(
+    container: Container,
+    questions: DatabaseQuestionLog,
+    *,
+    directory: SqlDirectory,
+    employee_id: EmployeeId,
+    chat_id: ChatId,
+    text: str,
+    now: datetime,
+    require_citation: bool = False,
+    expect_reason: str | None = None,
+    expect_doc: str | None = None,
+) -> None:
+    """Ask the real pipeline so the cabinet shows observed citations, not fixtures."""
+    profile = await directory.profile(employee_id)
+    if profile is None:
+        raise SystemExit(f"demo employee {employee_id} is not seeded")
+    outcome = await container.answerer.answer(text, profile, now.date())
+    if require_citation and not outcome.citations:
+        raise SystemExit("no citation: run `make ingest` before `make demo`")
+    if expect_reason is not None and outcome.reason != expect_reason:
+        raise SystemExit(f"demo question {text!r}: expected {expect_reason}, got {outcome.reason}")
+    citations = {str(citation) for citation in outcome.citations}
+    if expect_doc is not None and expect_doc not in citations:
+        raise SystemExit(f"demo question {text!r}: expected citation {expect_doc}, got {citations}")
+    await questions.record_question(
+        employee_id=employee_id,
+        chat_id=chat_id,
+        text=text,
+        answered=not outcome.escalated,
+        reason=outcome.reason,
+        citations=[str(citation) for citation in outcome.citations],
+        latency_ms=outcome.completion.latency_ms if outcome.completion else None,
+    )
+
+
+async def _drive(
+    container: Container,
+    service: OnboardingService,
+    employee: EmployeeId,
+    chat_id: ChatId,
+    *,
+    target: str | None,
+    now: datetime,
+) -> None:
+    """Walk the scenario with synthetic replies until ``target`` or the terminal step."""
+
+    runs = DatabaseRunRepository(container.database)
+    for _ in range(12):
+        stored = await runs.find_active_by_employee(employee)
+        if stored is None:
+            if target is not None:
+                raise SystemExit(f"demo run for {employee} ended before {target}")
+            return
+        if stored.state.step_id == target:
+            return
+        scenario = container.catalog.get(stored.state.scenario_id, stored.state.scenario_version)
+        step = scenario.step(stored.state.step_id)
+        if step.expects is Expects.FILE:
+            event = Event(kind=EventKind.FILE_RECEIVED, at=now, file_id="demo-file")
+        elif step.expects is Expects.BUTTON:
+            event = Event(kind=EventKind.BUTTON_PRESSED, at=now, button_id="checklist_done")
+        else:
+            event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text="готово")
+        await service.handle(employee, chat_id, event)
+    raise SystemExit(f"demo run for {employee} did not reach {target or 'the terminal step'}")
+
+
+def _demo_service(container: Container) -> OnboardingService:
+    return OnboardingService(
+        runs=DatabaseRunRepository(container.database),
+        catalog=container.catalog,
+        executor=ActionExecutor(
+            messaging=_Discard(),
+            answerer=container.answerer,
+            copy=container.copy,
+            audit=container.audit,
+            questions=DatabaseQuestionLog(container.database),
+        ),
+        clock=SystemClock(),
+        directory=SqlDirectory(container.database),
+        audit=container.audit,
+    )
+
+
+class _Discard(Messaging):
+    """The demo writes state, not chat history: nothing leaves the process."""
+
+    async def send(self, message: OutboundMessage) -> str:
+        del message
+        return "demo"
+
+    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None:
+        del message_id, text, keyboard
 
 
 async def _seed(settings: Settings, path: Path) -> int:

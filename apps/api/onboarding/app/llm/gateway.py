@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 import httpx
 
+from onboarding.app.llm.extractive import ExtractiveLLM
 from onboarding.app.llm.providers import (
     GigaChatProvider,
     OpenAICompatibleProvider,
@@ -157,7 +158,9 @@ def _int_or_zero(value: object) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
-def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> GatewayLLM:
+def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> LLM:
+    if settings.llm_provider == "extractive":
+        return ExtractiveLLM()
     provider: Provider
     if settings.llm_provider == "gigachat":
         provider = GigaChatProvider(

@@ -5,6 +5,7 @@ export interface RunSummary {
   role: string;
   department: string;
   step_id: string;
+  step_title: string | null;
   step_number: number;
   steps_total: number;
   entered_at: string;

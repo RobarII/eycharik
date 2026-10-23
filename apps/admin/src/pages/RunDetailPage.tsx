@@ -66,7 +66,7 @@ export function RunDetailPage({
               <dl className="facts">
                 <div>
                   <dt>Текущий шаг</dt>
-                  <dd>{query.data.step_id}</dd>
+                  <dd>{query.data.step_title ?? query.data.step_id}</dd>
                 </div>
                 <div>
                   <dt>Сценарий</dt>

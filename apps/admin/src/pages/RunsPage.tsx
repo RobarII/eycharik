@@ -134,7 +134,7 @@ function RunCard({ run, onOpen }: { run: RunSummary; onOpen: (id: string) => voi
           </span>
         </span>
         <span className="run-side">
-          <span className="run-step">Шаг: {run.step_id}</span>
+          <span className="run-step">Шаг: {run.step_title ?? run.step_id}</span>
           <span className="run-time" title={formatDateTime(run.entered_at)}>
             {daysSince(run.entered_at)} в шаге
           </span>

@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval eval-retrieval run worker up down logs migrate ingest seed fmt docs admin-dev admin-build admin-check
+.PHONY: install check lint types test eval eval-retrieval run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check
 
 install:
 	uv sync
@@ -54,8 +54,14 @@ ingest:
 seed:
 	$(PY) python -m onboarding.cli seed --file infra/demo/employees.json
 
+demo:
+	$(PY) python -m onboarding.cli demo --reset --yes
+
 docs:
 	$(PY) python scripts/check_docs.py
+
+admin-install:
+	cd apps/admin && npm ci
 
 admin-dev:
 	cd apps/admin && npm run dev

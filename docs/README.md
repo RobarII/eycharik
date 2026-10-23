@@ -15,6 +15,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | What exactly does the model see? | [prompts/answer/v1.md](prompts/answer/v1.md) |
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
+| How do I demo this in five minutes? | [product/demo-script.md](product/demo-script.md) |
 | Who may see what? | [product/roles.md](product/roles.md) |
 | Why is the code split into core and app? | [decisions/0001-functional-core.md](decisions/0001-functional-core.md) |
 | Why does the webhook answer before doing work? | [decisions/0002-async-webhook.md](decisions/0002-async-webhook.md) |
@@ -22,6 +23,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why are prompts files with versions? | [decisions/0004-prompts-as-data.md](decisions/0004-prompts-as-data.md) |
 | Why does one Postgres hold state, vectors, and the outbox? | [decisions/0005-single-postgres.md](decisions/0005-single-postgres.md) |
 | Why refuse instead of guessing? | [decisions/0006-refuse-over-guess.md](decisions/0006-refuse-over-guess.md) |
+| Why is there an offline provider? | [decisions/0007-extractive-demo-provider.md](decisions/0007-extractive-demo-provider.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |

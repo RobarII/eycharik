@@ -10,13 +10,15 @@ request that touches retrieval, prompts, or the answer policy.
 | `recall@5` | share of cases whose expected document id is in the top 5 | ≥ 0.90 |
 | `mrr` | mean reciprocal rank of the first expected document | ≥ 0.75 |
 | `citation_support` | share of answers whose every citation was retrieved for that question | = 1.00 |
-| `escalation_correctness` | share of cases whose escalation expectation matches | ≥ 0.90 |
-| `refusal_safety` | share of adversarial cases refused | = 1.00 |
+| `escalation_correctness` | share of cases whose escalation flag and reason match | ≥ 0.90 |
 | `p95_latency_ms` | answer latency on the set, warm cache excluded | ≤ 3000 |
 | `cost_per_answer_rub` | provider cost divided by cases | recorded, no gate |
 
-`recall@5` and `citation_support` run offline with fakes and are deterministic. Generation metrics
-need a provider and are marked `@pytest.mark.eval`.
+`recall@5` runs without a model. `citation_support` and `escalation_correctness` appear only when
+the runner generates answers (`--retrieval-only` skips them). `p95_latency_ms` appears only when at
+least one completion reports a non-zero latency, so an offline provider does not score a fake zero.
+The offline provider makes generation deterministic too, but it measures the pipeline, not a
+model's answer quality.
 
 ## Case format
 
@@ -28,7 +30,6 @@ need a provider and are marked `@pytest.mark.eval`.
   audience: all
   expect_docs: [hr/leave-policy]
   expect_contains: ["28"]
-  must_not_contain: ["не знаю"]
 ```
 
 Escalation cases use `expect_escalation: true` and `expect_reason`.

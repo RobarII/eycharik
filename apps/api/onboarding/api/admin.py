@@ -97,6 +97,7 @@ async def list_questions(
 
 
 def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
+    step_title: str | None = None
     try:
         scenario = catalog.get(record.scenario_id, record.scenario_version)
     except ScenarioCatalogError:
@@ -105,6 +106,8 @@ def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
         ordered = list(scenario.steps)
         number = ordered.index(record.step_id) + 1 if record.step_id in ordered else 0
         total = len(ordered)
+        if record.step_id in ordered:
+            step_title = scenario.step(record.step_id).title
     return RunSummary(
         run_id=record.run_id,
         employee_id=record.employee_id,
@@ -112,6 +115,7 @@ def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
         role=record.role,
         department=record.department,
         step_id=record.step_id,
+        step_title=step_title,
         step_number=number,
         steps_total=total,
         entered_at=record.entered_at,

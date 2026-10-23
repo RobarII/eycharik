@@ -14,6 +14,7 @@ from typing import Any
 
 from .models import (
     MAX_MESSAGE_CHARS,
+    MAX_TITLE_CHARS,
     Button,
     Expects,
     Keyboard,
@@ -30,6 +31,7 @@ _TOP_KEYS = {"id", "version", "title", "start", "steps"}
 _STEP_KEYS = {
     "id",
     "kind",
+    "title",
     "message",
     "keyboard",
     "expects",
@@ -103,6 +105,10 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
     if message is not None and len(message) > MAX_MESSAGE_CHARS:
         raise ScenarioError(f"{path}: message exceeds {MAX_MESSAGE_CHARS} characters")
 
+    title = _text(raw, "title", path) if "title" in raw else None
+    if title is not None and len(title) > MAX_TITLE_CHARS:
+        raise ScenarioError(f"{path}: title exceeds {MAX_TITLE_CHARS} characters")
+
     keyboard = _parse_keyboard(raw, path, button_ids)
     routes = _routes(raw, path)
     timeout = _timeout(raw, path)
@@ -125,6 +131,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
     return Step(
         id=step_id,
         kind=kind,
+        title=title,
         message=message,
         keyboard=keyboard,
         expects=expects,
@@ -233,9 +240,7 @@ def _kind(raw: Mapping[str, Any], path: str) -> StepKind:
     try:
         return StepKind(str(value))
     except ValueError:
-        raise ScenarioError(
-            f"{path}.kind must be one of {[k.value for k in StepKind]}"
-        ) from None
+        raise ScenarioError(f"{path}.kind must be one of {[k.value for k in StepKind]}") from None
 
 
 def _mapping(value: Any, path: str) -> Mapping[str, Any]:

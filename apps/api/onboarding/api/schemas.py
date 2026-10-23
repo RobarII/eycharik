@@ -48,6 +48,7 @@ class RunSummary(BaseModel):
     step_number: int
     steps_total: int
     entered_at: datetime
+    updated_at: datetime
     status: str
 
 
@@ -101,7 +102,11 @@ class OffboardedEmployee(BaseModel):
 
 
 class RunList(BaseModel):
+    """One page of runs. `next_cursor` is null on the last page; `total` counts the whole scope."""
+
     items: list[RunSummary]
+    next_cursor: str | None = None
+    total: int
 
 
 class RunDetail(RunSummary):
@@ -115,6 +120,8 @@ class RunDetail(RunSummary):
 
 class QuestionList(BaseModel):
     items: list[Question]
+    next_cursor: str | None = None
+    total: int
 
 
 class TagCount(BaseModel):

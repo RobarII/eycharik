@@ -286,3 +286,20 @@ def test_api_responses_forbid_sniffing_and_caching_of_identity() -> None:
 
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["Referrer-Policy"] == "no-referrer"
+
+
+def test_a_malformed_cursor_is_a_bad_request_not_a_partial_page() -> None:
+    app = create_app(
+        Settings(_env_file=None, admin_tokens_raw="rec:recruiter:rec-1", max_webhook_secret="secret")
+    )
+    with TestClient(app) as http:
+        runs = http.get(
+            "/admin/api/runs?cursor=not-a-cursor", headers={"Authorization": "Bearer rec"}
+        )
+        questions = http.get(
+            "/admin/api/questions?cursor=not-a-cursor", headers={"Authorization": "Bearer rec"}
+        )
+
+    assert runs.status_code == 400
+    assert runs.json()["detail"] == "cursor is not valid"
+    assert questions.status_code == 400

@@ -23,6 +23,7 @@ def record(**overrides: object) -> RunRecord:
         "tone": "formal",
         "step_id": "meet_the_team",
         "entered_at": datetime(2026, 10, 23, 9, 0, tzinfo=UTC),
+        "updated_at": datetime(2026, 10, 23, 12, 0, tzinfo=UTC),
         "active": True,
     }
     values.update(overrides)

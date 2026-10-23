@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import desc, func, literal_column, select, text
+from sqlalchemy import and_, desc, func, literal_column, or_, select, text, tuple_
 
 from onboarding.app.db.models import AuditRow, DocumentRow, EmployeeRow, QuestionRow, RunRow
 from onboarding.app.db.session import Database
@@ -29,6 +29,7 @@ class RunRecord:
     tone: str
     step_id: str
     entered_at: datetime
+    updated_at: datetime
     active: bool
 
 
@@ -91,6 +92,23 @@ class KnowledgeRecord:
     updated_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class RunCursor:
+    """The sort key of the last row on a page: ``(updated_at, id)``, newest first."""
+
+    at: datetime
+    run_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class QuestionCursor:
+    """The sort key of the last row on a page: unanswered first, then newest asked."""
+
+    answered: bool
+    asked_at: datetime
+    id: int
+
+
 class AdminQueries:
     def __init__(self, database: Database) -> None:
         self._database = database
@@ -98,11 +116,42 @@ class AdminQueries:
     async def runs(
         self, *, recruiter_id: str | None, department: str | None = None, limit: int
     ) -> tuple[RunRecord, ...]:
-        async with self._database.session() as session:
-            rows = await session.execute(
-                _run_query(recruiter_id, department).limit(limit)
+        records, _ = await self.runs_page(
+            recruiter_id=recruiter_id, department=department, limit=limit
+        )
+        return records
+
+    async def runs_page(
+        self,
+        *,
+        recruiter_id: str | None,
+        department: str | None = None,
+        limit: int,
+        after: RunCursor | None = None,
+    ) -> tuple[tuple[RunRecord, ...], bool]:
+        """One page of runs, newest activity first, and whether another page exists.
+
+        Keyset, not offset: a run that moves while the recruiter reads page one cannot shift a row
+        from page two into a hole. One extra row is fetched to learn that the page is not the last.
+        """
+        statement = _run_query(recruiter_id, department)
+        if after is not None:
+            statement = statement.where(
+                tuple_(RunRow.updated_at, RunRow.id) < tuple_(after.at, _uuid(after.run_id))
             )
-            return tuple(_run_record(*row) for row in rows.all())
+        async with self._database.session() as session:
+            rows = (await session.execute(statement.limit(limit + 1))).all()
+        return tuple(_run_record(*row) for row in rows[:limit]), len(rows) > limit
+
+    async def runs_total(
+        self, *, recruiter_id: str | None, department: str | None = None
+    ) -> int:
+        statement = select(func.count()).select_from(RunRow).join(
+            EmployeeRow, EmployeeRow.id == RunRow.employee_id
+        )
+        statement = _scope_runs(statement, recruiter_id, department)
+        async with self._database.session() as session:
+            return int(await session.scalar(statement) or 0)
 
     async def run(
         self, run_id: str, *, recruiter_id: str | None, department: str | None = None
@@ -293,22 +342,45 @@ class AdminQueries:
         department: str | None = None,
         employee_id: str | None = None,
     ) -> tuple[QuestionRecord, ...]:
+        records, _ = await self.questions_page(
+            recruiter_id=recruiter_id,
+            answered=answered,
+            limit=limit,
+            department=department,
+            employee_id=employee_id,
+        )
+        return records
+
+    async def questions_page(
+        self,
+        *,
+        recruiter_id: str | None,
+        answered: bool | None,
+        limit: int,
+        department: str | None = None,
+        employee_id: str | None = None,
+        after: QuestionCursor | None = None,
+    ) -> tuple[tuple[QuestionRecord, ...], bool]:
+        statement = _question_query(
+            recruiter_id=recruiter_id,
+            department=department,
+            answered=answered,
+            employee_id=employee_id,
+        )
+        if after is not None:
+            statement = statement.where(_after_question(after))
         async with self._database.session() as session:
-            statement = select(QuestionRow).join(
-                EmployeeRow, EmployeeRow.id == QuestionRow.employee_id
-            )
-            for condition in employee_scope_filters(recruiter_id, department):
-                statement = statement.where(condition)
-            if answered is not None:
-                statement = statement.where(QuestionRow.answered == answered)
-            if employee_id is not None:
-                statement = statement.where(QuestionRow.employee_id == employee_id)
             rows = await session.execute(
                 statement.add_columns(EmployeeRow.name)
-                .order_by(QuestionRow.answered.asc(), desc(QuestionRow.asked_at))
-                .limit(limit)
+                .order_by(
+                    QuestionRow.answered.asc(),
+                    desc(QuestionRow.asked_at),
+                    desc(QuestionRow.id),
+                )
+                .limit(limit + 1)
             )
-            return tuple(
+            all_rows = rows.all()
+            records = tuple(
                 QuestionRecord(
                     id=question.id,
                     employee_id=question.employee_id or "",
@@ -321,8 +393,27 @@ class AdminQueries:
                     resolved_at=question.resolved_at,
                     resolved_by=question.resolved_by,
                 )
-                for question, name in rows.all()
+                for question, name in all_rows[:limit]
             )
+        return records, len(all_rows) > limit
+
+    async def questions_total(
+        self,
+        *,
+        recruiter_id: str | None,
+        answered: bool | None,
+        department: str | None = None,
+        employee_id: str | None = None,
+    ) -> int:
+        statement = _question_query(
+            recruiter_id=recruiter_id,
+            department=department,
+            answered=answered,
+            employee_id=employee_id,
+        )
+        counter = select(func.count()).select_from(statement.subquery())
+        async with self._database.session() as session:
+            return int(await session.scalar(counter) or 0)
 
 
 def _texts(value: object) -> tuple[str, ...]:
@@ -351,6 +442,46 @@ def employee_scope_filters(recruiter_id: str | None, department: str | None) -> 
     return tuple(filters)
 
 
+def _question_query(
+    *,
+    recruiter_id: str | None,
+    department: str | None,
+    answered: bool | None,
+    employee_id: str | None,
+) -> Any:
+    statement = select(QuestionRow).join(
+        EmployeeRow, EmployeeRow.id == QuestionRow.employee_id
+    )
+    for condition in employee_scope_filters(recruiter_id, department):
+        statement = statement.where(condition)
+    if answered is not None:
+        statement = statement.where(QuestionRow.answered == answered)
+    if employee_id is not None:
+        statement = statement.where(QuestionRow.employee_id == employee_id)
+    return statement
+
+
+def _after_question(cursor: QuestionCursor) -> Any:
+    """Rows that sort after the cursor: unanswered first, then newest asked, then highest id.
+
+    Postgres compares row values in one direction only, and this order mixes directions, so the
+    predicate is spelled out instead of using a row-value comparison.
+    """
+    return or_(
+        QuestionRow.answered > cursor.answered,
+        and_(
+            QuestionRow.answered == cursor.answered,
+            or_(
+                QuestionRow.asked_at < cursor.asked_at,
+                and_(
+                    QuestionRow.asked_at == cursor.asked_at,
+                    QuestionRow.id < cursor.id,
+                ),
+            ),
+        ),
+    )
+
+
 def _scope_runs(statement: Any, recruiter_id: str | None, department: str | None) -> Any:
     for condition in employee_scope_filters(recruiter_id, department):
         statement = statement.where(condition)
@@ -366,7 +497,8 @@ def _run_query(recruiter_id: str | None, department: str | None = None) -> Any:
     ).join(EmployeeRow, EmployeeRow.id == RunRow.employee_id)
     for condition in employee_scope_filters(recruiter_id, department):
         statement = statement.where(condition)
-    return statement.order_by(desc(RunRow.updated_at))
+    # The id breaks ties: two runs saved in the same millisecond must still have one stable order.
+    return statement.order_by(desc(RunRow.updated_at), desc(RunRow.id))
 
 
 def _run_record(
@@ -383,6 +515,7 @@ def _run_record(
         tone=run.tone,
         step_id=run.step_id,
         entered_at=run.entered_at,
+        updated_at=run.updated_at,
         active=run.status == "active",
     )
 

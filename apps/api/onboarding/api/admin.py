@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -34,6 +34,7 @@ from onboarding.api.auth import (
     authenticate,
     current_admin,
 )
+from onboarding.api.cursor import CursorError, decode, encode
 from onboarding.api.schemas import (
     AdminIdentity,
     AdminScope,
@@ -65,7 +66,13 @@ from onboarding.app.admin.actions import (
     QuestionNotFoundError,
     QuestionResolver,
 )
-from onboarding.app.admin.queries import AdminQueries, QuestionRecord, RunRecord
+from onboarding.app.admin.queries import (
+    AdminQueries,
+    QuestionCursor,
+    QuestionRecord,
+    RunCursor,
+    RunRecord,
+)
 from onboarding.app.db.kb import PostgresKnowledgeWriter
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.knowledge.extract.media import SUPPORTED, media_type_for
@@ -158,12 +165,23 @@ async def list_runs(
     request: Request,
     principal: Admin,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: Annotated[str | None, Query()] = None,
 ) -> RunList:
     catalog = request.app.state.container.catalog
-    records = await _queries(request).runs(
-        recruiter_id=_scope(principal), department=_department(principal), limit=limit
+    queries = _queries(request)
+    recruiter_id = _scope(principal)
+    department = _department(principal)
+    records, has_more = await queries.runs_page(
+        recruiter_id=recruiter_id,
+        department=department,
+        limit=limit,
+        after=_run_cursor(cursor),
     )
-    return RunList(items=[_summary(record, catalog) for record in records])
+    return RunList(
+        items=[_summary(record, catalog) for record in records],
+        next_cursor=_next_run_cursor(records, has_more),
+        total=await queries.runs_total(recruiter_id=recruiter_id, department=department),
+    )
 
 
 @router.get("/runs/{run_id}", response_model=RunDetail)
@@ -211,15 +229,26 @@ async def list_questions(
     principal: Admin,
     status: Annotated[Literal["unanswered", "answered", "all"], Query()] = "unanswered",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: Annotated[str | None, Query()] = None,
 ) -> QuestionList:
     answered = {"unanswered": False, "answered": True, "all": None}[status]
-    records = await _queries(request).questions(
-        recruiter_id=_scope(principal),
-        department=_department(principal),
+    queries = _queries(request)
+    recruiter_id = _scope(principal)
+    department = _department(principal)
+    records, has_more = await queries.questions_page(
+        recruiter_id=recruiter_id,
+        department=department,
         answered=answered,
         limit=limit,
+        after=_question_cursor(cursor),
     )
-    return QuestionList(items=[_question(record) for record in records])
+    return QuestionList(
+        items=[_question(record) for record in records],
+        next_cursor=_next_question_cursor(records, has_more),
+        total=await queries.questions_total(
+            recruiter_id=recruiter_id, department=department, answered=answered
+        ),
+    )
 
 
 @router.post(
@@ -309,7 +338,62 @@ def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
         step_number=number,
         steps_total=total,
         entered_at=record.entered_at,
+        updated_at=record.updated_at,
         status="active" if record.active else "completed",
+    )
+
+
+def _run_cursor(raw: str | None) -> RunCursor | None:
+    if raw is None:
+        return None
+    payload = _payload(raw)
+    try:
+        return RunCursor(
+            at=datetime.fromisoformat(str(payload["at"])),
+            run_id=str(payload["run_id"]),
+        )
+    except (KeyError, ValueError) as error:
+        raise _bad_cursor() from error
+
+
+def _question_cursor(raw: str | None) -> QuestionCursor | None:
+    if raw is None:
+        return None
+    payload = _payload(raw)
+    try:
+        return QuestionCursor(
+            answered=bool(payload["answered"]),
+            asked_at=datetime.fromisoformat(str(payload["asked_at"])),
+            id=int(str(payload["id"])),
+        )
+    except (KeyError, ValueError) as error:
+        raise _bad_cursor() from error
+
+
+def _payload(raw: str) -> dict[str, Any]:
+    try:
+        return decode(raw)
+    except CursorError as error:
+        raise _bad_cursor() from error
+
+
+def _bad_cursor() -> HTTPException:
+    return HTTPException(status.HTTP_400_BAD_REQUEST, "cursor is not valid")
+
+
+def _next_run_cursor(records: tuple[RunRecord, ...], has_more: bool) -> str | None:
+    if not has_more or not records:
+        return None
+    last = records[-1]
+    return encode({"at": last.updated_at.isoformat(), "run_id": last.run_id})
+
+
+def _next_question_cursor(records: tuple[QuestionRecord, ...], has_more: bool) -> str | None:
+    if not has_more or not records:
+        return None
+    last = records[-1]
+    return encode(
+        {"answered": last.answered, "asked_at": last.asked_at.isoformat(), "id": last.id}
     )
 
 

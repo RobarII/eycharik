@@ -49,9 +49,9 @@ cookie exists at all.
 | `GET` | `/admin/api/me` | the caller's role, scope, capabilities and token expiry |
 | `POST` | `/admin/api/session` | trade a bearer token for an HttpOnly session cookie |
 | `DELETE` | `/admin/api/session` | clear the session cookie |
-| `GET` | `/admin/api/runs?limit=50` | active and completed runs, newest activity first |
+| `GET` | `/admin/api/runs?limit=50&cursor=` | active and completed runs, newest activity first, paged |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
-| `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
+| `GET` | `/admin/api/questions?status=unanswered&limit=50&cursor=` | questions by status: `unanswered`, `answered`, `all`, paged |
 | `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
 | `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
@@ -62,9 +62,29 @@ cookie exists at all.
 | `GET` | `/admin/api/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |
 | `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
 
-`limit` is bounded to `1..200`. There is no cursor pagination yet: the cabinet asks for the newest
-50 and the dataset is one cohort of hires. If a cohort outgrows that, add a cursor before raising
-the cap.
+## Paging
+
+`limit` is bounded to `1..200`. `GET /runs` and `GET /questions` are keyset-paged:
+
+```json
+{
+  "items": [ /* … */ ],
+  "next_cursor": "eyJhdCI6IjIwMjYtMTAtMjNUMDk6MDA6MDArMDA6MDAiLCJydW5faWQiOiIwZjBhIn0",
+  "total": 128
+}
+```
+
+- `next_cursor` is `null` on the last page. Pass it back as `cursor=` to get the next one.
+- The cursor is opaque: base64url of the last row's sort key. A client must not build or parse one,
+  and the server is free to change the key. A malformed cursor answers `400`, never a partial page.
+- `total` counts the whole caller scope, not the page: it is what the cabinet prints in a header.
+- Paging is keyset, not offset. A run that moves while a recruiter reads page one cannot shift a row
+  from page two into a hole, and cannot duplicate one either.
+- Runs are ordered by `updated_at` descending, then id: newest activity first. Questions are ordered
+  unanswered first, then `asked_at` descending, then id.
+
+Without a cursor the server answers the newest `limit` rows, so a client that ignores paging still
+gets a valid page.
 
 ## Identity and capabilities
 
@@ -119,9 +139,14 @@ entry omits the date field, which is allowed for a local demo and not for a depl
   "step_number": 4,
   "steps_total": 6,
   "entered_at": "2026-10-20T09:00:00Z",
+  "updated_at": "2026-10-23T08:40:00Z",
   "status": "active"
 }
 ```
+
+`entered_at` is the first day of the run; `updated_at` is the last activity and the field the list is
+sorted by. A card that says "N days in the scenario" reads `entered_at`; a card that says "last seen"
+reads `updated_at`.
 
 `step_title` is `null` when the pinned scenario version cannot be loaded or the step id is not in
 it; the cabinet falls back to `step_id`. `step_number` is 1-based and `0` when the step is unknown.

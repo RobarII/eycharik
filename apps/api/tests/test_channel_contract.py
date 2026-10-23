@@ -15,6 +15,7 @@ from pydantic import SecretStr
 
 from onboarding.app.channels.max.client import MaxClient
 from onboarding.app.channels.max.ingress import MaxIngress
+from onboarding.app.channels.telegram.ingress import TelegramIngress
 from onboarding.core.channels import ChannelProfile, fit_keyboard, fit_text
 from onboarding.core.models import Address, Button, Channel, ChatId
 from onboarding.ports import Ingress, Messaging
@@ -43,6 +44,41 @@ def max_ingress() -> MaxIngress:
 
 def is_ingress(candidate: object) -> bool:
     return isinstance(candidate, Ingress)
+
+
+def test_a_telegram_ingress_is_an_ingress_too() -> None:
+    assert is_ingress(TelegramIngress(SecretStr("hook-secret")))
+    assert is_ingress(max_ingress())
+
+
+def test_every_ingress_namespaces_its_dedupe_key_by_channel() -> None:
+    telegram = TelegramIngress(SecretStr("hook-secret"))
+    deliveries = {
+        Channel.MAX: (max_ingress(), json.dumps(MAX_MESSAGE).encode()),
+        Channel.TELEGRAM: (
+            telegram,
+            json.dumps(
+                {
+                    "update_id": 7,
+                    "message": {
+                        "message_id": 1,
+                        "date": 1_760_000_000,
+                        "chat": {"id": 111},
+                        "from": {"id": 222},
+                        "text": "привет",
+                    },
+                }
+            ).encode(),
+        ),
+    }
+
+    keys = {
+        channel: ingress.parse(body, received_at=RECEIVED).dedupe_key  # type: ignore[union-attr]
+        for channel, (ingress, body) in deliveries.items()
+    }
+
+    assert keys[Channel.MAX] == "max:mid-1"
+    assert keys[Channel.TELEGRAM] == "telegram:7"
 
 
 def test_an_ingress_is_verified_by_its_own_secret_header() -> None:

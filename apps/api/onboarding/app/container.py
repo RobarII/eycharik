@@ -14,6 +14,8 @@ import httpx
 from onboarding.app.channels.max.client import MaxClient
 from onboarding.app.channels.max.ingress import MaxIngress
 from onboarding.app.channels.profiles import ChannelProfileLibrary
+from onboarding.app.channels.telegram.client import TelegramClient
+from onboarding.app.channels.telegram.ingress import TelegramIngress
 from onboarding.app.clock import SystemClock
 from onboarding.app.copy import Copy, load_copy
 from onboarding.app.db.blobs import PostgresBlobStore
@@ -157,6 +159,14 @@ def build_container(settings: Settings) -> Container:
             messages_per_second=profiles[Channel.MAX].messages_per_second,
         )
         ingress[Channel.MAX] = MaxIngress(settings.max_webhook_secret)
+    if Channel.TELEGRAM in enabled:
+        senders[Channel.TELEGRAM] = TelegramClient(
+            base_url=settings.telegram_base_url,
+            token=settings.telegram_bot_token,
+            client=http,
+            profile=profiles[Channel.TELEGRAM],
+        )
+        ingress[Channel.TELEGRAM] = TelegramIngress(settings.telegram_webhook_secret)
 
     outbox = OutboxMessaging(database, senders, profiles)
     reranker = build_reranker(settings, http)

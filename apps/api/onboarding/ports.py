@@ -244,6 +244,7 @@ class InboundMessage:
     starts_run: bool = False
 
 
+@runtime_checkable
 class Ingress(Protocol):
     """One messenger's inbound path: authenticate, handshake, parse. Never touches the database."""
 

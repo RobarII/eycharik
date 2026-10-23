@@ -161,26 +161,36 @@ async def close_session(request: Request, response: Response) -> None:
 
 
 @router.get("/runs", response_model=RunList)
-async def list_runs(
+async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's interface
+
     request: Request,
     principal: Admin,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
+    status_filter: Annotated[
+        Literal["active", "completed", "all"], Query(alias="status")
+    ] = "all",
+    q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> RunList:
     catalog = request.app.state.container.catalog
     queries = _queries(request)
     recruiter_id = _scope(principal)
     department = _department(principal)
+    active = {"active": True, "completed": False, "all": None}[status_filter]
     records, has_more = await queries.runs_page(
         recruiter_id=recruiter_id,
         department=department,
         limit=limit,
         after=_run_cursor(cursor),
+        active=active,
+        search=q,
     )
     return RunList(
         items=[_summary(record, catalog) for record in records],
         next_cursor=_next_run_cursor(records, has_more),
-        total=await queries.runs_total(recruiter_id=recruiter_id, department=department),
+        total=await queries.runs_total(
+            recruiter_id=recruiter_id, department=department, active=active, search=q
+        ),
     )
 
 
@@ -510,7 +520,7 @@ async def upload_knowledge(
             text=body.text,
             source="upload",
             schema_path=container.settings.contracts_dir / "doc.schema.json",
-            writer=PostgresKnowledgeWriter(container.database),
+            writer=PostgresKnowledgeWriter(container.database, container.embedder),
             embedder=container.embedder,
         )
     except CorpusError as error:

@@ -128,13 +128,15 @@ class AdminQueries:
         department: str | None = None,
         limit: int,
         after: RunCursor | None = None,
+        active: bool | None = None,
+        search: str | None = None,
     ) -> tuple[tuple[RunRecord, ...], bool]:
         """One page of runs, newest activity first, and whether another page exists.
 
         Keyset, not offset: a run that moves while the recruiter reads page one cannot shift a row
         from page two into a hole. One extra row is fetched to learn that the page is not the last.
         """
-        statement = _run_query(recruiter_id, department)
+        statement = _run_query(recruiter_id, department, active=active, search=search)
         if after is not None:
             statement = statement.where(
                 tuple_(RunRow.updated_at, RunRow.id) < tuple_(after.at, _uuid(after.run_id))
@@ -144,12 +146,18 @@ class AdminQueries:
         return tuple(_run_record(*row) for row in rows[:limit]), len(rows) > limit
 
     async def runs_total(
-        self, *, recruiter_id: str | None, department: str | None = None
+        self,
+        *,
+        recruiter_id: str | None,
+        department: str | None = None,
+        active: bool | None = None,
+        search: str | None = None,
     ) -> int:
         statement = select(func.count()).select_from(RunRow).join(
             EmployeeRow, EmployeeRow.id == RunRow.employee_id
         )
         statement = _scope_runs(statement, recruiter_id, department)
+        statement = _filter_runs(statement, active=active, search=search)
         async with self._database.session() as session:
             return int(await session.scalar(statement) or 0)
 
@@ -482,13 +490,47 @@ def _after_question(cursor: QuestionCursor) -> Any:
     )
 
 
+def _filter_runs(
+    statement: Any, *, active: bool | None, search: str | None
+) -> Any:
+    """The employee list's own filters, applied in SQL so a page is a page of matches.
+
+    Filtering a fetched page in the browser silently truncates the list: the fifty-first employee
+    never appears. Both filters therefore travel to the database with the keyset predicate.
+    """
+    if active is not None:
+        statement = statement.where(RunRow.status == ("active" if active else "completed"))
+    if search:
+        pattern = f"%{_escape_like(search.strip())}%"
+        statement = statement.where(
+            or_(
+                EmployeeRow.name.ilike(pattern, escape="\\"),
+                EmployeeRow.role.ilike(pattern, escape="\\"),
+                EmployeeRow.department.ilike(pattern, escape="\\"),
+                EmployeeRow.id.ilike(pattern, escape="\\"),
+            )
+        )
+    return statement
+
+
+def _escape_like(value: str) -> str:
+    """A recruiter typing ``%`` searches for a percent sign, not for everything."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _scope_runs(statement: Any, recruiter_id: str | None, department: str | None) -> Any:
     for condition in employee_scope_filters(recruiter_id, department):
         statement = statement.where(condition)
     return statement
 
 
-def _run_query(recruiter_id: str | None, department: str | None = None) -> Any:
+def _run_query(
+    recruiter_id: str | None,
+    department: str | None = None,
+    *,
+    active: bool | None = None,
+    search: str | None = None,
+) -> Any:
     statement = select(
         RunRow,
         EmployeeRow.name,
@@ -497,6 +539,7 @@ def _run_query(recruiter_id: str | None, department: str | None = None) -> Any:
     ).join(EmployeeRow, EmployeeRow.id == RunRow.employee_id)
     for condition in employee_scope_filters(recruiter_id, department):
         statement = statement.where(condition)
+    statement = _filter_runs(statement, active=active, search=search)
     # The id breaks ties: two runs saved in the same millisecond must still have one stable order.
     return statement.order_by(desc(RunRow.updated_at), desc(RunRow.id))
 

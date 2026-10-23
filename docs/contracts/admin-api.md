@@ -49,7 +49,7 @@ cookie exists at all.
 | `GET` | `/admin/api/me` | the caller's role, scope, capabilities and token expiry |
 | `POST` | `/admin/api/session` | trade a bearer token for an HttpOnly session cookie |
 | `DELETE` | `/admin/api/session` | clear the session cookie |
-| `GET` | `/admin/api/runs?limit=50&cursor=` | active and completed runs, newest activity first, paged |
+| `GET` | `/admin/api/runs?limit=50&cursor=&status=all&q=` | runs, newest activity first, paged; `status` is `active`, `completed` or `all`, `q` searches name, role, department and employee id |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50&cursor=` | questions by status: `unanswered`, `answered`, `all`, paged |
 | `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
@@ -85,6 +85,10 @@ cookie exists at all.
 
 Without a cursor the server answers the newest `limit` rows, so a client that ignores paging still
 gets a valid page.
+
+`status` and `q` narrow the same statement the cursor pages through, and `total` counts the filtered
+scope. A client must not filter a fetched page instead: that silently hides every match after the
+first `limit` rows. `q` is a case-insensitive substring match; `%` and `_` are literal.
 
 ## Identity and capabilities
 

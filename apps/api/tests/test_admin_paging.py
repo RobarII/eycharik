@@ -150,3 +150,33 @@ async def test_question_total_follows_the_status_filter(database: Database) -> N
     answered = await queries.questions_total(recruiter_id="rec-1", answered=True)
 
     assert (unanswered, answered) == (4, 3)
+
+
+async def test_status_filter_and_total_agree(database: Database) -> None:
+    queries = AdminQueries(database)
+
+    active, _ = await queries.runs_page(recruiter_id="rec-1", limit=10, active=True)
+    completed, _ = await queries.runs_page(recruiter_id="rec-1", limit=10, active=False)
+
+    assert len(active) == await queries.runs_total(recruiter_id="rec-1", active=True)
+    assert len(completed) == await queries.runs_total(recruiter_id="rec-1", active=False)
+    assert all(record.active for record in active)
+    assert not any(record.active for record in completed)
+
+
+async def test_search_matches_a_department_and_ignores_case(database: Database) -> None:
+    queries = AdminQueries(database)
+
+    hit, _ = await queries.runs_page(recruiter_id="rec-1", limit=10, search="ПРОИЗВ")
+    miss, _ = await queries.runs_page(recruiter_id="rec-1", limit=10, search="Sales")
+
+    assert len(hit) == 7
+    assert miss == ()
+
+
+async def test_search_treats_a_percent_sign_as_a_character(database: Database) -> None:
+    queries = AdminQueries(database)
+
+    page, _ = await queries.runs_page(recruiter_id="rec-1", limit=10, search="%")
+
+    assert page == ()

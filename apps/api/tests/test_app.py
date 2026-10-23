@@ -290,7 +290,11 @@ def test_api_responses_forbid_sniffing_and_caching_of_identity() -> None:
 
 def test_a_malformed_cursor_is_a_bad_request_not_a_partial_page() -> None:
     app = create_app(
-        Settings(_env_file=None, admin_tokens_raw="rec:recruiter:rec-1", max_webhook_secret="secret")
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="rec:recruiter:rec-1",
+            max_webhook_secret="secret",
+        )
     )
     with TestClient(app) as http:
         runs = http.get(

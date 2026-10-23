@@ -24,6 +24,9 @@ Every event carries `type`, `group_id`, and `event_id`. `event_id` is the dedupe
 | `messages.send` | send a message with an optional `keyboard` and `attachment` |
 | `messages.edit` | rewrite a message sent by the community |
 
+`messages.getLongPollServer`, `photos.getMessagesUploadServer` and similar are documented but unused:
+an `OutboundMessage` carries no image yet.
+
 `messages.send`: `peer_id`, `message` up to 4096 characters, `random_id` (required: VK drops a
 repeat with the same value), `keyboard` (JSON, see below), `attachment` (for images).
 

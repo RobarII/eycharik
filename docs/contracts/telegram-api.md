@@ -21,13 +21,15 @@ Source: <https://core.telegram.org/bots/api> and <https://core.telegram.org/bots
 | Method | Path | Purpose |
 |---|---|---|
 | `POST` | `sendMessage` | send a message, optional `reply_markup` |
-| `POST` | `sendPhoto` | send an image with a caption |
 | `POST` | `editMessageText` | rewrite a sent message |
-| `POST` | `deleteWebhook`, `setWebhook` | registration, `onboarding.cli` |
+| `POST` | `setWebhook` | registration, by hand or from a script |
 
 `sendMessage`: `chat_id`, `text` 1–4096 characters after entity parsing, `parse_mode`
 (`MarkdownV2` or `HTML`), `reply_markup` with `inline_keyboard`, `reply_to_message_id`.
-`sendPhoto`: `photo` as a `file_id` or a multipart upload, `caption` up to 1024 characters.
+
+`sendPhoto` (`photo` as a `file_id` or a multipart upload, `caption` up to 1024 characters) is
+documented but not implemented: an `OutboundMessage` carries no image yet, so the adapter sends the
+text and the keyboard. Adding it is a change to the message value first, not to this adapter.
 
 `InlineKeyboardButton.callback_data`: a `String` of 1–64 **bytes**. Longer is an error, not a
 truncation.
@@ -47,8 +49,10 @@ differ in groups.
 ## Rate limits
 
 Telegram documents "no more than about 30 messages per second" overall and "not more than one
-message per second in a single chat". The adapter paces per chat at 1/s and globally at 30/s, and
-treats `429` with `retry_after` as `ChannelUnavailable`.
+message per second in a single chat". The profile sets `messages_per_second: 30` and
+`per_chat_per_second: 1`, and the adapter paces on both. A `429` is `ChannelUnavailableError`: the
+dispatcher backs off, and the row returns to `pending`. The `retry_after` field is not honoured — the
+backoff is ours, so one code path covers every messenger.
 
 ## Differences from MAX that matter
 

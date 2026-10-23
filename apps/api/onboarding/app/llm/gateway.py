@@ -176,19 +176,30 @@ class GatewayLLM(LLM):
             usage = {}
         input_tokens = _int_or_zero(usage.get("prompt_tokens"))
         output_tokens = _int_or_zero(usage.get("completion_tokens"))
+        cached_tokens = min(_cached_tokens(usage), input_tokens)
         latency_ms = int((self._clock.now() - started).total_seconds() * 1000)
         cost = (
-            input_tokens / 1000 * self._profile.price_input_rub_per_1k
+            (input_tokens - cached_tokens) / 1000 * self._profile.price_input_rub_per_1k
+            + cached_tokens / 1000 * self._profile.price_cache_read_rub_per_1k
             + output_tokens / 1000 * self._profile.price_output_rub_per_1k
         )
         return Completion(
             text=content,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cached_input_tokens=cached_tokens,
             model=str(body.get("model") or self._profile.model),
             latency_ms=latency_ms,
             cost_rub=round(cost, 6),
         )
+
+
+def _cached_tokens(usage: dict[str, object]) -> int:
+    """OpenAI-compatible providers report the cached prefix here, or nowhere at all."""
+    details = usage.get("prompt_tokens_details")
+    if not isinstance(details, dict):
+        return 0
+    return _int_or_zero(details.get("cached_tokens"))
 
 
 def _int_or_zero(value: object) -> int:

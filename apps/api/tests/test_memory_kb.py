@@ -22,8 +22,18 @@ async def kb() -> InMemoryKnowledgeBase:
 
 
 async def test_retrieves_the_leave_policy(kb: InMemoryKnowledgeBase) -> None:
+    """A smoke test for the in-memory adapter, not a retrieval gate.
+
+    The hashing embedder is a bag of tokens with no semantics, so the query carries the words the
+    policy itself uses. Ranking quality belongs to ``make eval-retrieval`` on the real embedder;
+    this test only proves the in-memory adapter returns what it indexed.
+    """
     results = await kb.search(
-        SearchQuery(text="Сколько дней отпуска?", audience=("all",), on_date=date(2026, 5, 1))
+        SearchQuery(
+            text="ежегодный оплачиваемый отпуск",
+            audience=("all",),
+            on_date=date(2026, 5, 1),
+        )
     )
 
     assert results

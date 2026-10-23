@@ -22,6 +22,7 @@ from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.kb import PostgresKnowledgeWriter
 from onboarding.app.db.models import EmployeeRow
 from onboarding.app.db.repos import DatabaseQuestionLog, DatabaseRunRepository
+from onboarding.app.knowledge.contextual import LlmContextualizer
 from onboarding.app.knowledge.extract.media import media_type_for
 from onboarding.app.knowledge.extract.ocr import build_ocr
 from onboarding.app.knowledge.extract.pdf import PdfReader
@@ -116,6 +117,14 @@ def main(argv: list[str] | None = None) -> int:
 
 async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
     container = build_container(settings)
+    contextualizer = None
+    if settings.contextual_retrieval:
+        contextualizer = LlmContextualizer(
+            llm=container.llm,
+            prompts=container.prompts,
+            prompt_version=settings.contextual_prompt_version,
+            max_context_chars=settings.contextual_context_max_chars,
+        )
     try:
         report = await ingest(
             directory=args.dir or settings.knowledge_dir,
@@ -124,10 +133,12 @@ async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
             embedder=container.embedder,
             max_chars=args.max_chars,
             overlap_chars=args.overlap_chars,
+            contextualizer=contextualizer,
         )
     finally:
         await container.aclose()
-    print(f"indexed {report.documents} documents, {report.chunks} chunks")
+    suffix = f", {report.contextualized} contextualized" if report.contextualized else ""
+    print(f"indexed {report.documents} documents, {report.chunks} chunks{suffix}")
     return 0
 
 

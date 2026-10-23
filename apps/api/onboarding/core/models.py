@@ -231,6 +231,16 @@ class Chunk:
     doc_id: DocId
     index: int
     text: str
+    # Generated once at ingest by a contextual-retrieval pass (ADR 0016). Empty means the chunk is
+    # embedded and indexed on its own text, which is the default behaviour.
+    context: str = ""
+
+    @property
+    def embedding_text(self) -> str:
+        """What the embedder and the lexical index see; ``text`` stays the quotable source."""
+        if not self.context:
+            return self.text
+        return f"{self.context}\n\n{self.text}"
 
 
 @dataclass(frozen=True, slots=True)

@@ -37,8 +37,8 @@ eval-retrieval:
 eval-ocr:                          # extraction quality; needs no database and no provider key
 	$(PY) python -m onboarding.evals.ocr $(ARGS)
 
-eval-sentiment:
-	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --write
+eval-sentiment:                     # PROVIDER=keyword|prompt|jev, SPLIT=dev|test|all
+	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --split $(or $(SPLIT),all) --repeat $(or $(REPEAT),1) $(ARGS) --write
 
 run:
 	$(PY) uvicorn onboarding.api.app:create_app --factory --reload --port 8000

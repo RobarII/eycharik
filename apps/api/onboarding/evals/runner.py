@@ -24,7 +24,7 @@ GATES = {
     "answer_contains": 1.0,
     "escalation_correctness": 0.90,
 }
-MAXIMUMS = {"p95_latency_ms": 8000.0}
+MAXIMUMS = {"p95_latency_ms": 8000.0, "leak_rate": 0.0}
 
 
 class GoldenSetError(ValueError):
@@ -40,6 +40,8 @@ class Case:
     expect_contains: tuple[str, ...]
     expect_escalation: bool
     expect_reason: str | None
+    # Documents that must stay invisible: other audiences, expired editions, never-indexed drafts.
+    expect_absent_docs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +50,7 @@ class CaseResult:
     retrieved_docs: tuple[str, ...]
     recall: float
     rr: float
+    leaked_docs: tuple[str, ...] = ()
     retrieved_citations: int = 0
     accepted_citations: int = 0
     escalated: bool | None = None
@@ -55,6 +58,11 @@ class CaseResult:
     answer: str | None = None
     latency_ms: int = 0
     cost_rub: float = 0.0
+
+    @property
+    def leaked(self) -> bool:
+        """True when a document the viewer must not see reached the retrieval result."""
+        return bool(self.leaked_docs)
 
     @property
     def citation_supported(self) -> bool:
@@ -91,12 +99,17 @@ def load_cases(path: Path) -> tuple[Case, ...]:
         if case_id in seen:
             raise GoldenSetError(f"{path}: duplicate case id {case_id!r}")
         seen.add(case_id)
+        expect_docs = tuple(str(doc) for doc in item.get("expect_docs", ()))
+        absent_docs = tuple(str(doc) for doc in item.get("expect_absent_docs", ()))
+        if set(expect_docs) & set(absent_docs):
+            raise GoldenSetError(f"{path}: case {case_id!r} expects and forbids the same document")
         cases.append(
             Case(
                 id=case_id,
                 question=question,
                 audience=str(item.get("audience", "all")),
-                expect_docs=tuple(str(doc) for doc in item.get("expect_docs", ())),
+                expect_docs=expect_docs,
+                expect_absent_docs=absent_docs,
                 expect_contains=tuple(str(text) for text in item.get("expect_contains", ())),
                 expect_escalation=bool(item.get("expect_escalation", False)),
                 expect_reason=(str(item["expect_reason"]) if item.get("expect_reason") else None),
@@ -140,8 +153,17 @@ async def evaluate(
         docs = tuple(dict.fromkeys(str(chunk.chunk.doc_id) for chunk in retrieved))
         recall = recall_at_k(case.expect_docs, docs, k=5)
         rr = reciprocal_rank(case.expect_docs, docs)
+        leaked = tuple(doc for doc in docs if doc in case.expect_absent_docs)
         if answerer is None:
-            results.append(CaseResult(case=case, retrieved_docs=docs, recall=recall, rr=rr))
+            results.append(
+                CaseResult(
+                    case=case,
+                    retrieved_docs=docs,
+                    recall=recall,
+                    rr=rr,
+                    leaked_docs=leaked,
+                )
+            )
             continue
 
         outcome = await answerer.answer(case.question, profile, on_date)
@@ -153,6 +175,7 @@ async def evaluate(
                 retrieved_docs=docs,
                 recall=recall,
                 rr=rr,
+                leaked_docs=leaked,
                 retrieved_citations=len(citations),
                 accepted_citations=sum(1 for c in citations if c in retrieved_ids),
                 escalated=outcome.escalated,
@@ -194,6 +217,11 @@ def summarise(results: tuple[CaseResult, ...], *, generated: bool) -> Report:
         "recall_at_5": mean([result.recall for result in retrieval_cases]),
         "mrr": mean([result.rr for result in retrieval_cases]),
     }
+    # A case with a forbidden document checks confidentiality or validity, not recall: a leak
+    # makes the answer wrong even when the expected document was also retrieved.
+    guarded = [result for result in results if result.case.expect_absent_docs]
+    if guarded:
+        metrics["leak_rate"] = mean([1.0 if result.leaked else 0.0 for result in guarded])
     if generated:
         latency = [float(result.latency_ms) for result in results if result.latency_ms]
         metrics["citation_support"] = mean(
@@ -256,13 +284,15 @@ def render_markdown(
         "",
         "## Cases",
         "",
-        "| case | recall@5 | rr | escalated | reason |",
-        "|---|---|---|---|---|",
+        "| case | recall@5 | rr | leaked | escalated | reason |",
+        "|---|---|---|---|---|---|",
     ]
     for result in report.results:
+        leaked = ",".join(result.leaked_docs) if result.leaked_docs else "-"
         lines.append(
-            f"| `{result.case.id}` | {result.recall:.2f} | {result.rr:.2f} | "
+            f"| `{result.case.id}` | {result.recall:.2f} | {result.rr:.2f} | {leaked} | "
             f"{result.escalated if result.escalated is not None else '-'} | "
             f"{result.reason or '-'} |"
         )
     return "\n".join(lines) + "\n"
+

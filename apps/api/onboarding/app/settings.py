@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     llm_breaker_cooldown_s: float = 30.0
     llm_price_input_rub_per_1k: float | None = None
     llm_price_output_rub_per_1k: float | None = None
+    llm_price_cache_read_rub_per_1k: float | None = None
     llm_extra_headers_raw: SecretStr = Field(default=SecretStr(""), alias="LLM_EXTRA_HEADERS")
 
     embed_provider: Literal["openai", "gigachat", "hashing"] = "hashing"
@@ -91,6 +92,13 @@ class Settings(BaseSettings):
     extraction_max_pages: int = 200
     extraction_max_upload_bytes: int = 25 * 1024 * 1024
 
+    # Retrieval experiments. Both are off in every deployment: ADR 0012 keeps BM25 out of the
+    # request path, ADR 0016 keeps contextual retrieval unaccepted until it is measured.
+    bm25_enabled: bool = False
+    contextual_retrieval: bool = False
+    contextual_prompt_version: int = 1
+    contextual_context_max_chars: int = 400
+
     answer_min_confidence: float = 0.45
     recall_limit: int = 30
     rerank_limit: int = 5
@@ -112,8 +120,15 @@ class Settings(BaseSettings):
     def _check(self) -> Settings:
         self._check_llm()
         self._check_limits()
+        self._check_experiments()
         self._check_production()
         return self
+
+    def _check_experiments(self) -> None:
+        if self.contextual_prompt_version < 1:
+            raise ValueError("CONTEXTUAL_PROMPT_VERSION must be at least 1")
+        if not 50 <= self.contextual_context_max_chars <= 1200:
+            raise ValueError("CONTEXTUAL_CONTEXT_MAX_CHARS must be within [50, 1200]")
 
     def _check_llm(self) -> None:
         """Every knob is optional: ``None`` defers to the selected model profile."""

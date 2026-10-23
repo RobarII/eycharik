@@ -18,6 +18,7 @@ from onboarding.core.models import (
     ChatId,
     Chunk,
     DocId,
+    Document,
     DocumentSniff,
     EmployeeId,
     EmployeeProfile,
@@ -64,6 +65,9 @@ class Completion:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
+    # Prefix tokens the provider served from its cache. Some providers bill these at a lower rate,
+    # so a cost that ignores them is wrong in the expensive direction.
+    cached_input_tokens: int = 0
     model: str = ""
     latency_ms: int = 0
     cost_rub: float = 0.0
@@ -91,6 +95,7 @@ class AnswerProfile:
     retry_empty_completion: bool = True
     price_input_rub_per_1k: float = 0.0
     price_output_rub_per_1k: float = 0.0
+    price_cache_read_rub_per_1k: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +106,8 @@ class EmbeddingProfile:
     model: str
     family: Literal["openai-chat", "gigachat", "local"] = "openai-chat"
     dim: int = 1024
+    # Matryoshka models answer any prefix width; asking for a shorter one avoids a migration.
+    dimensions_param: bool = False
     timeout_s: float = 10.0
 
 
@@ -148,6 +155,16 @@ class Embedder(Protocol):
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         """One vector per input text, in the same order."""
         ...
+
+
+class Contextualizer(Protocol):
+    """Adds back the sentence a chunk lost when the document was split (ADR 0016).
+
+    The result is prepended to the chunk for embedding and for the lexical indexes only; citations
+    keep quoting the chunk text itself.
+    """
+
+    async def context_for(self, document: Document, chunk: Chunk) -> str: ...
 
 
 @runtime_checkable

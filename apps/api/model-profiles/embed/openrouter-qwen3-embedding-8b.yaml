@@ -1,0 +1,10 @@
+name: openrouter-qwen3-embedding-8b
+role: embed
+description: "Bigger multilingual embedder than bge-m3; asked for 1024 dimensions so kb_chunks keeps its frozen width."
+family: openai-chat
+model: qwen/qwen3-embedding-8b
+dim: 1024
+# Native width is 4096. Truncating to 1024 with Matryoshka costs a little recall and saves a
+# migration: pgvector's HNSW index tops out at 2000 dimensions for the vector type.
+dimensions_param: true
+timeout_s: 15.0

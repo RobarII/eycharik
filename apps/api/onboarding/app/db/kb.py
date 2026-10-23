@@ -6,9 +6,10 @@ ranker or the prompt.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 
-from sqlalchemy import ColumnElement, Select, Text, cast, delete, func, select
+from sqlalchemy import ColumnElement, Select, Text, cast, delete, func, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,8 @@ from onboarding.ports import (
     SearchQuery,
 )
 
+log = logging.getLogger(__name__)
+
 OVERFETCH = 40
 
 
@@ -33,10 +36,15 @@ class PostgresKnowledgeBase:
         embedder: Embedder,
         *,
         overfetch: int = OVERFETCH,
+        bm25: bool = False,
     ) -> None:
         self._database = database
         self._embedder = embedder
         self._overfetch = overfetch
+        # An experiment switch, not a feature flag: ADR 0012 keeps BM25 out of the request path
+        # until a measurement on a larger corpus says otherwise.
+        self._bm25_enabled = bm25
+        self._bm25_available: bool | None = None
 
     async def search(self, query: SearchQuery) -> tuple[ScoredChunk, ...]:
         if not query.text.strip():
@@ -46,9 +54,18 @@ class PostgresKnowledgeBase:
         except Exception as error:
             raise KnowledgeUnavailableError(f"embedding failed: {error}") from error
         async with self._database.session() as session:
+            if self._bm25_enabled and self._bm25_available is None:
+                self._bm25_available = await _has_bm25(session)
+                if not self._bm25_available:
+                    # Enabled but unavailable is a configuration mistake, not a runtime failure:
+                    # the two-list fusion is still correct, so the turn must not fail.
+                    log.warning("bm25_enabled_but_pg_search_is_missing")
             semantic = await _semantic_ids(session, query, vector, self._overfetch)
             lexical = await _lexical_ids(session, query, self._overfetch)
-            fused = reciprocal_rank_fusion([semantic, lexical], limit=query.limit)
+            rankings = [semantic, lexical]
+            if self._bm25_enabled and self._bm25_available:
+                rankings.append(await _bm25_ids(session, query, self._overfetch))
+            fused = reciprocal_rank_fusion(rankings, limit=query.limit)
             if not fused:
                 return ()
             rows = {
@@ -112,8 +129,9 @@ class PostgresKnowledgeWriter:
                         doc_id=str(chunk.doc_id),
                         index=chunk.index,
                         text=chunk.text,
+                        context=chunk.context,
                         embedding=list(embedding),
-                        ts=func.to_tsvector("russian", chunk.text),
+                        ts=func.to_tsvector("russian", chunk.embedding_text),
                     )
                 )
 
@@ -131,6 +149,28 @@ async def _semantic_ids(
         .limit(limit)
     )
     return tuple(ChunkId(row) for row in rows)
+
+
+async def _has_bm25(session: AsyncSession) -> bool:
+    """ParadeDB is optional; a plain-Postgres deployment keeps the two-list fusion."""
+    found = await session.scalar(
+        text("SELECT count(*) FROM pg_extension WHERE extname = 'pg_search'")
+    )
+    return bool(found)
+
+
+async def _bm25_ids(
+    session: AsyncSession, query: SearchQuery, limit: int
+) -> tuple[ChunkId, ...]:
+    score = func.pdb.score(ChunkRow.id).label("score")
+    rows = await session.execute(
+        _filtered(query)
+        .with_only_columns(ChunkRow.id, score)
+        .where(ChunkRow.text.op("@@@")(query.text))
+        .order_by(score.desc())
+        .limit(limit)
+    )
+    return tuple(ChunkId(row.id) for row in rows)
 
 
 async def _lexical_ids(
@@ -171,6 +211,7 @@ def _chunk(row: ChunkRow) -> Chunk:
         doc_id=DocId(row.doc_id),
         index=row.index,
         text=row.text,
+        context=row.context or "",
     )
 
 

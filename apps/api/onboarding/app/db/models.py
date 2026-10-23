@@ -215,6 +215,9 @@ class ChunkRow(Base):
     doc_id: Mapped[str] = mapped_column(ForeignKey("kb_documents.id", ondelete="CASCADE"))
     index: Mapped[int] = mapped_column(Integer)
     text: Mapped[str] = mapped_column(Text)
+    # Generated at ingest by the contextual-retrieval pass (ADR 0016). Empty on a corpus indexed
+    # without it, which keeps the column additive and the migration cheap.
+    context: Mapped[str] = mapped_column(Text, server_default=sql_text("''"))
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
     ts: Mapped[str | None] = mapped_column(TSVECTOR)
 

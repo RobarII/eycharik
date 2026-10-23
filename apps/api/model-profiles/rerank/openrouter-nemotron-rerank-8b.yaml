@@ -1,0 +1,7 @@
+name: openrouter-nemotron-rerank-8b
+role: rerank
+description: "Free hosted cross-encoder. Rate-limited, so a 429 must keep the hybrid order rather than fail the turn (ADR 0008)."
+family: cohere-rerank
+model: nvidia/nemotron-3.5-rerank-8b:free
+# A free endpoint is slower than a paid one; the rerank timeout is not fatal, it degrades to fusion.
+timeout_s: 8.0

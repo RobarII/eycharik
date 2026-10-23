@@ -29,6 +29,7 @@ class Prompt:
     template: str
     model: str
     temperature: float
+    max_tokens: int | None = None
 
     def render(self, values: dict[str, str]) -> str:
         return render(self.template, values)
@@ -71,13 +72,21 @@ class PromptLibrary:
         temperature = meta.get("temperature", 0.2)
         if not isinstance(temperature, int | float):
             raise PromptError(f"{meta_path}: temperature must be a number")
+        max_tokens = meta.get("max_tokens")
+        if max_tokens is not None and not _is_int(max_tokens):
+            raise PromptError(f"{meta_path}: max_tokens must be an integer")
         return Prompt(
             name=name,
             version=version,
             template=body_path.read_text(encoding="utf-8"),
             model=str(meta["model"]),
             temperature=float(temperature),
+            max_tokens=max_tokens,
         )
+
+
+def _is_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def _require(meta: dict[str, Any], key: str, expected: type, path: Path) -> None:

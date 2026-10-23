@@ -6,7 +6,7 @@ transaction, so a re-run after an edit never leaves two versions retrievable at 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from onboarding.app.knowledge.ingest import (
@@ -16,13 +16,20 @@ from onboarding.app.knowledge.ingest import (
     parse_document,
 )
 from onboarding.core.chunking import split_document
-from onboarding.ports import Embedder, KnowledgeDocumentRecord, KnowledgeWriter
+from onboarding.core.models import Chunk, Document
+from onboarding.ports import (
+    Contextualizer,
+    Embedder,
+    KnowledgeDocumentRecord,
+    KnowledgeWriter,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class IngestReport:
     documents: int
     chunks: int
+    contextualized: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,16 +47,19 @@ async def ingest(
     embedder: Embedder,
     max_chars: int = 1200,
     overlap_chars: int = 200,
+    contextualizer: Contextualizer | None = None,
 ) -> IngestReport:
     loaded = load_corpus(directory, schema_path)
     chunks = 0
+    contextualized = 0
     for item in loaded:
-        pieces = split_document(
-            item.document, max_chars=max_chars, overlap_chars=overlap_chars
-        )
+        pieces = split_document(item.document, max_chars=max_chars, overlap_chars=overlap_chars)
         if not pieces:
             raise ValueError(f"{item.path}: document produced no chunks")
-        embeddings = await embedder.embed([piece.text for piece in pieces])
+        if contextualizer is not None:
+            pieces = await _with_context(contextualizer, item.document, pieces)
+            contextualized += len(pieces)
+        embeddings = await embedder.embed([piece.embedding_text for piece in pieces])
         if len(embeddings) != len(pieces):
             raise ValueError(f"{item.path}: embedder returned a wrong number of vectors")
         await writer.replace_document(
@@ -68,7 +78,7 @@ async def ingest(
             embeddings,
         )
         chunks += len(pieces)
-    return IngestReport(documents=len(loaded), chunks=chunks)
+    return IngestReport(documents=len(loaded), chunks=chunks, contextualized=contextualized)
 
 
 async def ingest_document(
@@ -80,6 +90,7 @@ async def ingest_document(
     embedder: Embedder,
     max_chars: int = 1200,
     overlap_chars: int = 200,
+    contextualizer: Contextualizer | None = None,
 ) -> IndexedDocument:
     """Index one uploaded document. Raises ``CorpusError`` when its frontmatter is invalid."""
     loaded = parse_document(text, load_schema(schema_path), source=source)
@@ -91,6 +102,7 @@ async def ingest_document(
         embedder=embedder,
         max_chars=max_chars,
         overlap_chars=overlap_chars,
+        contextualizer=contextualizer,
     )
     return IndexedDocument(id=str(loaded.document.id), title=loaded.document.title, chunks=chunks)
 
@@ -102,13 +114,14 @@ async def _chunks(
     embedder: Embedder,
     max_chars: int,
     overlap_chars: int,
+    contextualizer: Contextualizer | None = None,
 ) -> int:
-    pieces = split_document(
-        loaded.document, max_chars=max_chars, overlap_chars=overlap_chars
-    )
+    pieces = split_document(loaded.document, max_chars=max_chars, overlap_chars=overlap_chars)
     if not pieces:
         raise ValueError(f"{loaded.path}: document produced no chunks")
-    embeddings = await embedder.embed([piece.text for piece in pieces])
+    if contextualizer is not None:
+        pieces = await _with_context(contextualizer, loaded.document, pieces)
+    embeddings = await embedder.embed([piece.embedding_text for piece in pieces])
     if len(embeddings) != len(pieces):
         raise ValueError(f"{loaded.path}: embedder returned a wrong number of vectors")
     await writer.replace_document(
@@ -127,3 +140,14 @@ async def _chunks(
         embeddings,
     )
     return len(pieces)
+
+
+async def _with_context(
+    contextualizer: Contextualizer, document: Document, pieces: tuple[Chunk, ...]
+) -> tuple[Chunk, ...]:
+    """One model call per chunk. Sequential on purpose: an ingest is not a latency race."""
+    out: list[Chunk] = []
+    for piece in pieces:
+        context = await contextualizer.context_for(document, piece)
+        out.append(replace(piece, context=context))
+    return tuple(out)

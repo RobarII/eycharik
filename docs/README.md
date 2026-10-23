@@ -38,6 +38,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is a model a profile file? | [decisions/0013-model-profiles.md](decisions/0013-model-profiles.md) |
 | Why does the cabinet write through the outbox, and what does leaving delete? | [decisions/0014-cabinet-writes-through-the-outbox.md](decisions/0014-cabinet-writes-through-the-outbox.md) |
 | Why is extraction an adapter, and how does an uploaded PDF become a document? | [decisions/0015-extraction-is-an-adapter.md](decisions/0015-extraction-is-an-adapter.md) |
+| Why is contextual retrieval written but switched off? | [decisions/0016-contextual-retrieval.md](decisions/0016-contextual-retrieval.md) |
 | How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
 | An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |
 | How is OCR quality measured? | [evals/ocr.yaml](evals/ocr.yaml), `make eval-ocr` |
@@ -49,6 +50,8 @@ from this table. If a question is not answered here, the answer does not exist y
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
 | How is answer quality measured? | [evals/README.md](evals/README.md) |
+| How is the risk radar scored, and what does a label mean? | [evals/sentiment-guide.md](evals/sentiment-guide.md) |
+| How is the retrieval corpus built, and what can it prove? | [evals/corpus-design.md](evals/corpus-design.md) |
 | Where do measured numbers live? | [measurements/TEMPLATE.md](measurements/TEMPLATE.md) |
 | Where does a postmortem live? | [incidents/TEMPLATE.md](incidents/TEMPLATE.md) |
 

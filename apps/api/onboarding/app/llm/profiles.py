@@ -145,6 +145,9 @@ def answer_profile(settings: Settings) -> AnswerProfile:
             price_output_rub_per_1k=_env_float(
                 settings.llm_price_output_rub_per_1k, profile.price_output_rub_per_1k
             ),
+            price_cache_read_rub_per_1k=_env_float(
+                settings.llm_price_cache_read_rub_per_1k, profile.price_cache_read_rub_per_1k
+            ),
         )
     return AnswerProfile(
         name="env",
@@ -212,6 +215,7 @@ def _answer(data: dict[str, Any]) -> AnswerProfile:
         retry_empty_completion=_flag(data, "retry_empty_completion", default=True),
         price_input_rub_per_1k=_number(data, "price_input_rub_per_1k", 0.0),
         price_output_rub_per_1k=_number(data, "price_output_rub_per_1k", 0.0),
+        price_cache_read_rub_per_1k=_number(data, "price_cache_read_rub_per_1k", 0.0),
     )
 
 
@@ -221,6 +225,7 @@ def _embedding(data: dict[str, Any]) -> EmbeddingProfile:
         model=_text(data, "model"),
         family=_family(data, ("openai-chat", "gigachat", "local"), "openai-chat"),
         dim=_integer(data, "dim", _EMBED.dim),
+        dimensions_param=_flag(data, "dimensions_param", default=False),
         timeout_s=_number(data, "timeout_s", _EMBED.timeout_s),
     )
 

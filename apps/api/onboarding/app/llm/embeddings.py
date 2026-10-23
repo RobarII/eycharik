@@ -29,6 +29,7 @@ class RemoteEmbedder:
         model: str,
         dim: int,
         timeout_s: float = 10.0,
+        dimensions_param: bool = False,
     ) -> None:
         self._client = client
         self._endpoint = endpoint
@@ -36,6 +37,7 @@ class RemoteEmbedder:
         self._model = model
         self._dim = dim
         self._timeout = timeout_s
+        self._dimensions_param = dimensions_param
 
     @property
     def dim(self) -> int:
@@ -60,6 +62,12 @@ class RemoteEmbedder:
             vectors.append(tuple(float(value) for value in raw))
         return tuple(vectors)
 
+    def _body(self, texts: list[str]) -> dict[str, object]:
+        body: dict[str, object] = {"model": self._model, "input": texts}
+        if self._dimensions_param:
+            body["dimensions"] = self._dim
+        return body
+
     async def _post_with_retry(self, texts: list[str]) -> httpx.Response:
         """Cheap gateways answer 429/503 under load; two retries turn an outage into a delay."""
         last = "no attempt"
@@ -74,7 +82,7 @@ class RemoteEmbedder:
                         "Content-Type": "application/json",
                         "Accept": "application/json",
                     },
-                    json={"model": self._model, "input": texts},
+                    json=self._body(texts),
                     timeout=self._timeout,
                 )
             except httpx.HTTPError as error:
@@ -126,6 +134,7 @@ def build_embedder(
         model=profile.model,
         dim=profile.dim,
         timeout_s=profile.timeout_s,
+        dimensions_param=profile.dimensions_param,
     )
 
 

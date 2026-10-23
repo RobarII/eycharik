@@ -126,7 +126,7 @@ def build_container(settings: Settings) -> Container:
     llm = build_llm(settings, clock, http)
     embedder = build_embedder(settings, http)
     assert_embedding_width(embedder.dim)
-    knowledge = PostgresKnowledgeBase(database, embedder)
+    knowledge = PostgresKnowledgeBase(database, embedder, bm25=settings.bm25_enabled)
 
     prompts = PromptLibrary(settings.prompts_dir)
     copy = load_copy(settings.copy_path)

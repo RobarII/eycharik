@@ -1,0 +1,19 @@
+name: opencode-deepseek-v4.1-flash
+role: answer
+description: "Answer model on opencode-go: cheaper per token than the OpenRouter pilot, prefix cache billed separately."
+family: openai-chat
+model: deepseek-v4.1-flash
+json_mode: true
+max_tokens_field: max_tokens
+# The model can reason; an onboarding answer is a lookup, and reasoning tokens are billed as output.
+reasoning_effort: none
+temperature: 0.2
+max_tokens: 700
+# Reasoning models answer slower than gpt-4.1-mini even with effort off; the gate is p95 <= 8000 ms.
+timeout_s: 30.0
+max_retries: 1
+retry_empty_completion: true
+# Prices stay 0 until a provider invoice anchors them. Cost accounting then reports 0, never a guess.
+price_input_rub_per_1k: 0.0
+price_output_rub_per_1k: 0.0
+price_cache_read_rub_per_1k: 0.0

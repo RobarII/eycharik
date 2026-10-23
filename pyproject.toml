@@ -47,7 +47,9 @@ markers = [
   "integration: needs postgres",
   "eval: needs a model provider",
 ]
-addopts = "-q"
+# A plain `pytest` must never spend tokens or touch a paid endpoint. Live suites opt in by marker:
+# `pytest -m "integration or eval"` (see `make test-live`).
+addopts = "-q -m 'not integration and not eval'"
 
 [tool.ruff]
 line-length = 100

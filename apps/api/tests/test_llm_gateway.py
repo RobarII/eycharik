@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -51,11 +52,16 @@ def handler_returning(
     return handler, calls
 
 
-def completion_body(text: str = '{"answer": "ok"}') -> dict[str, object]:
+def completion_body(
+    text: str = '{"answer": "ok"}', *, cached_tokens: int = 0
+) -> dict[str, object]:
+    usage: dict[str, object] = {"prompt_tokens": 100, "completion_tokens": 50}
+    if cached_tokens:
+        usage["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
     return {
         "model": "test-model",
         "choices": [{"message": {"content": text}}],
-        "usage": {"prompt_tokens": 100, "completion_tokens": 50},
+        "usage": usage,
     }
 
 
@@ -76,6 +82,29 @@ def build(
         profile,
         **{**defaults, **overrides},  # type: ignore[arg-type]
     )
+
+
+async def test_counts_a_cached_prefix_at_its_own_price() -> None:
+    """A provider that bills cache reads cheaper must not be charged full price for them."""
+    profile = replace(PROFILE, price_cache_read_rub_per_1k=0.01)
+    handler, _ = handler_returning((200, completion_body(cached_tokens=80)))
+    gateway = build(handler, profile=profile)
+
+    result = await gateway.complete(REQUEST)
+
+    assert result.cached_input_tokens == 80
+    expected = (20 / 1000 * 0.1) + (80 / 1000 * 0.01) + (50 / 1000 * 0.2)
+    assert result.cost_rub == pytest.approx(expected)
+
+
+async def test_a_cache_count_larger_than_the_prompt_is_clamped() -> None:
+    profile = replace(PROFILE, price_cache_read_rub_per_1k=0.01)
+    handler, _ = handler_returning((200, completion_body(cached_tokens=500)))
+    gateway = build(handler, profile=profile)
+
+    result = await gateway.complete(REQUEST)
+
+    assert result.cached_input_tokens == 100
 
 
 async def test_returns_a_completion_and_counts_cost() -> None:

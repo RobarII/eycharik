@@ -53,11 +53,16 @@ class EmployeeRow(Base):
     scenario_id: Mapped[str] = mapped_column(
         String(64), server_default=sql_text("'onboarding_default'")
     )
+    status: Mapped[str] = mapped_column(String(16), server_default=sql_text("'active'"))
+    left_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    __table_args__ = (Index("employees_recruiter_idx", "recruiter_id"),)
+    __table_args__ = (
+        Index("employees_recruiter_idx", "recruiter_id"),
+        Index("employees_status_idx", "status"),
+    )
 
 
 class RunRow(Base):
@@ -163,8 +168,14 @@ class QuestionRow(Base):
     asked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by: Mapped[str | None] = mapped_column(String(200))
+    resolution: Mapped[str | None] = mapped_column(Text)
 
-    __table_args__ = (Index("questions_asked_idx", "asked_at"),)
+    __table_args__ = (
+        Index("questions_asked_idx", "asked_at"),
+        Index("questions_answered_idx", "answered", "asked_at"),
+    )
 
 
 class AuditRow(Base):

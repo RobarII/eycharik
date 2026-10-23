@@ -92,6 +92,9 @@ Known gaps, stated so nobody assumes otherwise:
   attach them.
 - The retention window is a placeholder until the company's data protection policy confirms it.
   The mechanism is tested; the legal number is not ours.
+- The automated retention pass covers questions, audit fragments, and uploaded files, not the
+  `messages` outbox. Outbound text, including a recruiter's reply, lives there until delivered.
+  Extending the pass to the outbox is the next retention task.
 - One worker replica: the MAX pacing state is in-process. More replicas need a shared limiter.
 - The production model vendor must satisfy 152-ФЗ. The architecture keeps the provider behind a
   port; `docs/decisions/0010-one-model-vendor.md` records the current choice and what changes for

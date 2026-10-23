@@ -7,7 +7,8 @@ What the system keeps, for how long, and how to check that a purge happened.
 | Data | Where | Retention |
 |---|---|---|
 | Escalated questions and answers | `questions` | `DATA_RETENTION_DAYS` after `asked_at` |
-| Replies written in the cabinet | `questions.resolution`, `messages` outbox | same as the question |
+| Replies written in the cabinet | `questions.resolution` | same as the question |
+| Outbound message text (including replies) | `messages` outbox | not purged by the automated pass; see Known gaps in the README |
 | Personal fields in the audit log (`evidence`, `quote`, `question`, `text`) | `audit_log.fields` | replaced by null after `DATA_RETENTION_DAYS`; the row stays |
 | Runs, risk signals, jobs, events | `runs`, `risk_*`, `jobs`, `events` | not purged; they carry ids, not free text |
 | Knowledge documents | `kb_*` | not personal data; versioned by `valid_from` / `valid_to` |

@@ -89,6 +89,7 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding"
     admin_tokens_raw: str = Field(default="", alias="ADMIN_TOKENS")
+    metrics_token: SecretStr = Field(default=SecretStr(""), alias="METRICS_TOKEN")
     admin_page_size: int = 50
     data_retention_days: int = 365
 

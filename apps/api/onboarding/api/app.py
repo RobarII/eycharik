@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from time import perf_counter
@@ -91,7 +92,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     @app.get("/metrics", include_in_schema=False)
-    async def prometheus() -> PlainTextResponse:
+    async def prometheus(request: Request) -> Response:
+        expected = resolved.metrics_token.get_secret_value()
+        if expected:
+            header = request.headers.get("Authorization", "")
+            supplied = header.removeprefix("Bearer ")
+            if not secrets.compare_digest(supplied, expected):
+                return Response(status_code=status.HTTP_401_UNAUTHORIZED)
         return PlainTextResponse(metrics.render())
 
     @app.get("/healthz", include_in_schema=False)

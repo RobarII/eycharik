@@ -115,3 +115,23 @@ def test_repeated_bad_tokens_are_throttled() -> None:
         )
 
     assert blocked.status_code == 429
+
+
+def test_metrics_can_require_a_token() -> None:
+    app = create_app(
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="token:hr_admin:hr-1",
+            max_webhook_secret="secret",
+            metrics_token="scrape-token",
+        )
+    )
+
+    with TestClient(app) as http:
+        assert http.get("/metrics").status_code == 401
+        assert (
+            http.get("/metrics", headers={"Authorization": "Bearer wrong"}).status_code == 401
+        )
+        response = http.get("/metrics", headers={"Authorization": "Bearer scrape-token"})
+
+    assert response.status_code == 200

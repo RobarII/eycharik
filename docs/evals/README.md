@@ -143,6 +143,14 @@ Metrics:
 `--repeat N` calls the provider N times per case and lists the cases whose verdict changed. A gate
 cannot be tighter than that instability.
 
+**`case_accuracy` is not the production number.** It takes the majority verdict over repetitions,
+and a single wrong call in production has no second or third attempt to be outvoted. Read
+`sentiment_accuracy` (per call) for what a deploy would do, use `case_accuracy` only to separate a
+systematic error from a flaky one, and treat `fallback_rate` as part of the answer: a provider that
+degrades on one call in five is not competing at its table accuracy. Measured on 2026-10-23, the two
+rankings disagreed — Jev led per call (0.883 against 0.854) and trailed on majority (0.886 against
+0.921).
+
 The Markdown header names what ran: the model, the prompt version, or the rubric selector
 (`sentiment-jev@1`). A table without that line is not comparable with anything.
 
@@ -159,9 +167,14 @@ interval and `p(delta <= 0)`. Two standalone accuracies are not a comparison; th
 resampled together are.
 
 There is no gate yet: a gate needs a stable baseline across models and repetitions. The current
-numbers, and the reason Jev has no row, are in
-[decisions/0011-jev-sentiment-pilot.md](../decisions/0011-jev-sentiment-pilot.md). A missed crisis
-becomes a case here before it becomes a prompt edit.
+numbers and the reasoning are in
+[decisions/0019-jev-as-a-classifier-profile.md](../decisions/0019-jev-as-a-classifier-profile.md).
+A missed crisis becomes a case here before it becomes a prompt edit.
+
+A stratum needs roughly thirty cases before its recall means anything: on ten crisis cases, three
+discordant pairs give `p = 0.25` in either direction, which is how a "perfect escalation recall"
+appears and then evaporates. The test split now holds 34 crisis and 14 `unknown` cases for that
+reason.
 
 ## OCR set
 

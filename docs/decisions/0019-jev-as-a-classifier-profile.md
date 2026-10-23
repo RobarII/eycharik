@@ -70,37 +70,62 @@ tokens and nothing else.
 
 ## Measured
 
-`docs/measurements/2026-10-23-sentiment-jev.md`, commit `4e8901f`, model `typesafe/jev-1.14`,
-rubric `sentiment-jev@1`, test split, three repetitions per case, 174 calls, no fallbacks and no
-format errors:
+Two runs, both on the test split with three repetitions per case. The first used the original
+58 cases; the second widened the crisis and `unknown` strata to 114 cases after discovering that
+the first could not support the claim it seemed to make.
 
-| metric | value |
-|---|---|
-| `sentiment_accuracy` | 0.833 [0.77, 0.88] |
-| `escalation_recall` | 1.000 [0.89, 1.00] |
-| `false_alarm_rate` | 0.396 |
-| `tag_f1` | 0.637 |
-| `cost_usd_per_1k_calls` | 0.0432 |
-| `p95_latency_ms` | 509.6 |
+### First pass, 58 cases, rubric v1
 
-Escalation recall is perfect and the cost is 4.3 cents per thousand calls, against roughly 1000
-input tokens per call: the rubric, not the answer, is most of the bill. Tag precision (0.53) and
-the false-alarm rate (0.40) are the weak numbers: Jev routes too many answers to a second tag, so
-the radar escalates on calm text. `unknown` recall is 0.5 on six cases and one case
-(`workload-overtime-every-day`) flips between `negative` and `neutral` across repetitions, which
-caps how tight a gate can be.
-
-The same test split, three repetitions except where noted:
+`docs/measurements/2026-10-23-sentiment-jev.md`, commit `4e8901f`:
 
 | provider | `sentiment_accuracy` | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
 |---|---|---|---|---|---|---|---|
 | `keyword` | 0.345 | 0.600 | 0.188 | 0.694 | 0 | 0 | 0 |
-| `prompt` (`opencode-deepseek-v4.1-flash`, one repetition) | 0.741 | 0.700 | 0.375 | 0.770 | 0.224 | 4701 | not priced in the profile |
+| `prompt` (`opencode-deepseek-v4.1-flash`, one repetition) | 0.741 | 0.700 | 0.375 | 0.770 | 0.224 | 4701 | not in the profile |
 | `jev` (`typesafe/jev-1.14`) | 0.833 | 1.000 | 0.396 | 0.637 | 0 | 525 | 0.0432 |
 
-Jev is the only provider that escalated every crisis case, and it is nine times faster than the
-prompt path, which matters because the radar runs on answers as they arrive. The price of that
-recall is precision: a false alarm costs a recruiter a look, a missed crisis costs the employee.
+The obvious reading — Jev escalates every crisis, the prompt path misses three — was wrong, and the
+paired bootstrap against the prompt run said so (`delta +0.086`, 95% CI `[-0.05, 0.22]`,
+`p = 0.129`). The escalation advantage rested on ten crisis cases with three discordant pairs:
+`p = 0.25` by an exact sign test. A number that weak is not a finding.
+
+### Second pass, 114 cases, rubric v1 and v2
+
+`docs/measurements/2026-10-23-sentiment-jev-expanded-v{1,2}.md` and
+[`2026-10-23-sentiment-prompt-expanded.md`](../measurements/2026-10-23-sentiment-prompt-expanded.md),
+all at commit `460d91f`, which holds the widened set and rubric v2 together. 34 crisis cases,
+14 `unknown`, 342 calls per provider, no fallbacks on either Jev run.
+
+| provider | `sentiment_accuracy` (per call) | `case_accuracy` (majority) | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
+|---|---|---|---|---|---|---|---|---|
+| `prompt` | 0.848 | 0.904 | 0.912 | 0.371 | 0.691 | 0.170 | 3078 | not in the profile |
+| `jev`, rubric v1 | 0.877 | 0.877 | 0.971 | 0.338 | 0.587 | 0 | 493 | 0.0430 |
+| `jev`, rubric v2 | 0.883 | 0.886 | 0.971 | 0.338 | 0.626 | 0 | 520 | 0.0430 |
+
+Paired bootstrap over the 114 shared cases:
+
+| comparison | delta | 95% CI | `p(delta <= 0)` | discordant pairs |
+|---|---|---|---|---|
+| `case_accuracy`, Jev v2 vs prompt | −0.018 | [−0.088, +0.053] | 0.729 | 1 / 0 |
+| `case_accuracy`, Jev v2 vs v1 | +0.009 | [+0.000, +0.026] | 0.372 | 1 / 0 |
+| `escalation_recall`, Jev v2 vs prompt | +0.059 | [−0.059, +0.176] | 0.223 | 3 swapped / 1 swapped |
+
+Every interval contains zero. The honest statement is therefore: **on this set the two providers
+are indistinguishable on quality**, and the earlier "Jev escalates every crisis" was ten cases of
+luck. Jev misses `crisis-quit-direct` (one call in three came back `neutral`); the prompt path
+misses the two humiliation cases and `workload-crisis-cant`, where its three calls returned
+`unknown` and fell back to keywords.
+
+What does separate them is not accuracy: Jev is 5.9 times faster at the tail, never degrades to
+keywords, and costs 4.3 cents per thousand calls. The prompt path is slower, and one call in six
+goes to keywords, whose own accuracy on this set is 0.345.
+
+The tag fix came from data, not from a hunch. On the dev split the raw `noul` probabilities of 49
+cases said the 0.5 threshold bought 0.590 precision for 0.767 recall, and 0.70 bought 0.754
+precision at the same recall. `docs/prompts/sentiment-jev/v2.yaml` changes that number and nothing
+else. On the held-out test split the gain shrank to `tag_f1 0.587 -> 0.626`: a dev-tuned threshold
+transfers, but not fully, and the gap between 0.760 on dev and 0.626 on test is what overfitting
+looks like before it is obvious.
 
 The run also caught a contract defect that mocked tests could not: the live API rejects
 `criteria` as a list with `400 invalid_type, expected record`. The schema and rubric v1 said list;
@@ -125,9 +150,15 @@ shape, so v1 was corrected in place rather than superseded.
   `CLASSIFY_PROFILE` (or an explicit `SENTIMENT_RUBRIC`), because the rubric selector is data and
   the adapter no longer carries a version. `JEV_TIMEOUT_S` and `JEV_MAX_RETRIES` become overrides
   of the profile rather than the only source, and `JEV_MODEL` is new. `.env.example` states it.
-- `SENTIMENT_PROVIDER` still defaults to `prompt`. Flipping the default is now a decision with
-  numbers behind it (accuracy and escalation recall up, false alarms up, cost 4.3 cents per
-  thousand), but it is a separate change with its own commit and rollout.
+- `SENTIMENT_PROVIDER` still defaults to `prompt`, and the measurement supports keeping it: no
+  interval separates the providers on quality, so flipping the default would be taste dressed as
+  evidence. The case for Jev is operational — tail latency, a fallback rate of zero against 0.17,
+  and a measurable price — and that is a separate change with its own rollout.
+- To actually separate the two, the set needs a bigger crisis stratum, not a new metric: at 34
+  crisis cases and four discordant ones, the escalation interval is still ±0.12 wide.
+- The classifier profile now names rubric v2. `jev-1.13.0` keeps v1: the tag threshold was tuned
+  against 1.14 probabilities, and a threshold does not transfer between model versions without the
+  same measurement.
 
 ## Alternatives
 

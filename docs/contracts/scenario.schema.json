@@ -4,28 +4,79 @@
   "title": "Scenario",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "version", "title", "start", "steps"],
+  "required": [
+    "id",
+    "version",
+    "title",
+    "start",
+    "steps"
+  ],
   "properties": {
-    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
-    "version": {"type": "integer", "minimum": 1},
-    "title": {"type": "string", "minLength": 1},
-    "start": {"type": "string", "minLength": 1},
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "start": {
+      "type": "string",
+      "minLength": 1
+    },
     "steps": {
       "type": "array",
       "minItems": 1,
-      "items": {"$ref": "#/$defs/step"}
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "segments": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+      },
+      "description": "Production sites this scenario serves. A run pins the scenario chosen for the employee's site."
     }
   },
   "$defs": {
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "kind"],
+      "required": [
+        "id",
+        "kind"
+      ],
       "properties": {
-        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
-        "kind": {"enum": ["send", "wait", "terminal"]},
-        "title": {"type": "string", "minLength": 1, "maxLength": 80},
-        "message": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "kind": {
+          "enum": [
+            "send",
+            "wait",
+            "survey",
+            "terminal"
+          ]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
         "keyboard": {
           "type": "array",
           "maxItems": 3,
@@ -36,38 +87,255 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["id", "text"],
+              "required": [
+                "id",
+                "text"
+              ],
               "properties": {
-                "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
-                "text": {"type": "string", "minLength": 1}
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]+$"
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             }
           }
         },
-        "expects": {"enum": ["message", "button", "file"]},
+        "expects": {
+          "enum": [
+            "message",
+            "button",
+            "file"
+          ]
+        },
         "routes": {
           "type": "object",
-          "additionalProperties": {"type": "string"},
-          "properties": {"default": {"type": "string"}}
+          "additionalProperties": {
+            "type": "string"
+          },
+          "properties": {
+            "default": {
+              "type": "string"
+            }
+          }
         },
-        "next": {"type": "string"},
+        "next": {
+          "type": "string"
+        },
         "timeout": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["after_hours", "action"],
+          "required": [
+            "after_hours",
+            "action"
+          ],
           "properties": {
-            "after_hours": {"type": "number", "minimum": 0.1},
-            "action": {"enum": ["remind", "escalate"]},
-            "next": {"type": "string"}
+            "after_hours": {
+              "type": "number",
+              "minimum": 0.1
+            },
+            "action": {
+              "enum": [
+                "remind",
+                "escalate"
+              ]
+            },
+            "next": {
+              "type": "string"
+            }
           }
         },
-        "escalate_to": {"enum": ["recruiter", "hr"]},
-        "outcome": {"enum": ["completed", "escalated"]}
+        "escalate_to": {
+          "enum": [
+            "recruiter",
+            "hr"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "completed",
+            "escalated"
+          ]
+        },
+        "questions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 30,
+          "items": {
+            "$ref": "#/$defs/question"
+          }
+        }
       },
       "allOf": [
-        {"if": {"properties": {"kind": {"const": "send"}}}, "then": {"required": ["message", "next"]}},
-        {"if": {"properties": {"kind": {"const": "wait"}}}, "then": {"required": ["expects"]}},
-        {"if": {"properties": {"kind": {"const": "terminal"}}}, "then": {"required": ["outcome"]}}
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "send"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "message",
+              "next"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "wait"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "expects"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "survey"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "questions",
+              "next"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "terminal"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "outcome"
+            ]
+          }
+        }
+      ]
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "prompt"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "kind": {
+          "enum": [
+            "choice",
+            "scale",
+            "open"
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "text"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9_]+$"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              }
+            }
+          }
+        },
+        "low_threshold": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 10
+        },
+        "reason_prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "choice"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "options"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "scale"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "low_threshold",
+              "reason_prompt"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "open"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "options"
+              ]
+            }
+          }
+        }
       ]
     }
   }

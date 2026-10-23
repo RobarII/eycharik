@@ -24,6 +24,25 @@ Timeout actions are `remind` (send a nudge, keep the run) or `escalate` (hand th
 recruiter, optionally continue with `next`). Documents uses `escalate` with `next` so a newcomer who
 never sends files still gets to the week-one check and a human sees the stall.
 
+## Surveys
+
+A `survey` step asks its `questions` one at a time and stores every answer in the run. Three
+question kinds exist:
+
+| Kind | Input | Follow-up |
+|---|---|---|
+| `choice` | the option buttons drawn from `options` | none |
+| `scale` | a number from 1 to 10 | a score below `low_threshold` asks `reason_prompt` before the survey continues |
+| `open` | free text | the answer goes to the sentiment classifier |
+
+Every free-text answer, including a reason, produces a risk signal. Scores and text are evaluated
+by the pure rules in `core/risk.py`: a negative answer with a tag, or a confident complaint plus a
+low score, escalates to `escalate_to`; a weak signal only feeds the weekly digest. A survey has no
+routes: it ends at `next`, and its `timeout` re-asks the current question.
+
+A scenario may declare `segments` (production sites). The run picks the scenario that matches the
+employee's site at creation time, so office copy and plant copy never mix.
+
 ## Recruiter flows
 
 | Flow | Trigger | Behaviour |
@@ -44,4 +63,5 @@ message to a newcomer stays with the bot's scenario messages and the human HR ch
    free text.
 3. A terminal step has no timeout and no routes.
 4. Escalation never blocks the scenario: the run continues when the answer arrives.
-5. Copy is Russian, in the company voice, second person plural ("вы"), no emoji in scenario text.
+5. A survey answer is stored before the next question is sent; a repeated delivery must not lose it.
+6. Copy is Russian, in the company voice, second person plural ("вы"), no emoji in scenario text.

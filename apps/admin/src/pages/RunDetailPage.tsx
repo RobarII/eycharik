@@ -7,14 +7,12 @@ import { Progress } from "../components/Progress";
 import { ErrorNote, SkeletonRows } from "../components/States";
 import {
   countLabel,
+  describeEvent,
   eventLabel,
-  fieldText,
   formatDate,
   formatDateTime,
   initials,
   reasonLabel,
-  stepLabel,
-  tagLabel,
 } from "../format";
 import { useUnauthorized } from "../useUnauthorized";
 import { SCENARIO_LABELS } from "../config";
@@ -152,49 +150,13 @@ export function RunDetailPage({
             ) : (
               <ol className="timeline">
                 {query.data.events.map((event, index) => {
-                  const step = fieldText(event.fields["step"]);
-                  const previous = fieldText(event.fields["previous_step"]);
-                  const stepTitle = fieldText(event.fields["step_title"]);
-                  const current = stepTitle ?? (step ? stepLabel(step) : null);
-                  const reason = fieldText(event.fields["reason"]);
-                  const rawTags = event.fields["tags"];
-                  const tags = Array.isArray(rawTags)
-                    ? rawTags.map((tag) => tagLabel(String(tag))).join(", ")
-                    : fieldText(rawTags);
-                  const reasons = fieldText(event.fields["reasons"]);
-                  const level = fieldText(event.fields["level"]);
-                  const risk =
-                    event.name === "risk_assessed"
-                      ? [
-                          level
-                            ? `уровень: ${
-                                level === "high"
-                                  ? "высокий"
-                                  : level === "medium"
-                                    ? "средний"
-                                    : level
-                              }`
-                            : null,
-                          tags ? `темы: ${tags}` : null,
-                          reasons,
-                        ].filter((value): value is string => Boolean(value))
-                      : [];
-                  const details = [
-                    step && previous
-                      ? `${stepLabel(previous)} → ${current ?? step}`
-                      : current,
-                    ...risk,
-                    reason ? reasonLabel(reason) : null,
-                    fieldText(event.fields["accepted"]) === "false" ? "не принят" : null,
-                  ].filter((value): value is string => Boolean(value));
+                  const details = describeEvent(event.name, event.fields);
                   return (
                     <li key={`${event.at}-${event.name}-${index}`}>
                       <time dateTime={event.at}>{formatDateTime(event.at)}</time>
                       <div>
                         <p className="timeline-name">{eventLabel(event.name)}</p>
-                        {details.length > 0 ? (
-                          <p className="timeline-detail">{details.join(" · ")}</p>
-                        ) : null}
+                        {details ? <p className="timeline-detail">{details}</p> : null}
                       </div>
                     </li>
                   );

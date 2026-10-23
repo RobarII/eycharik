@@ -142,3 +142,48 @@ export const stepLabels: Record<string, string> = {
 export function stepLabel(step: string): string {
   return stepLabels[step] ?? step;
 }
+
+const RISK_LEVELS: Record<string, string> = {
+  low: "низкий",
+  medium: "средний",
+  high: "высокий",
+};
+
+/**
+ * One line of the run timeline: what happened, in the recruiter's words.
+ *
+ * Lives here rather than in the page because the rules are the interesting part — a step name is
+ * translated, a risk event carries level, topics and reasons, a rejected answer says so — and they
+ * deserve a test without mounting React.
+ */
+export function describeEvent(name: string, fields: Record<string, unknown>): string {
+  const step = fieldText(fields["step"]);
+  const previous = fieldText(fields["previous_step"]);
+  const stepTitle = fieldText(fields["step_title"]);
+  const current = stepTitle ?? (step ? stepLabel(step) : null);
+  const reason = fieldText(fields["reason"]);
+  const rawTags = fields["tags"];
+  const tags = Array.isArray(rawTags)
+    ? rawTags.map((tag) => tagLabel(String(tag))).join(", ")
+    : fieldText(rawTags);
+  const reasons = fieldText(fields["reasons"]);
+  const level = fieldText(fields["level"]);
+
+  const risk =
+    name === "risk_assessed"
+      ? [
+          level ? `уровень: ${RISK_LEVELS[level] ?? level}` : null,
+          tags ? `темы: ${tags}` : null,
+          reasons,
+        ]
+      : [];
+
+  return [
+    step && previous ? `${stepLabel(previous)} → ${current ?? step}` : current,
+    ...risk,
+    reason ? reasonLabel(reason) : null,
+    fieldText(fields["accepted"]) === "false" ? "не принят" : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+}

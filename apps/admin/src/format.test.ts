@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { daysSince, formatDate, formatDateTime, reasonLabel } from "./format";
+import { daysSince, describeEvent, formatDate, formatDateTime, reasonLabel } from "./format";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -48,5 +48,37 @@ describe("reasonLabel", () => {
   it("translates a known reason and passes an unknown one through", () => {
     expect(reasonLabel("no_sources")).toBe("Нет источника");
     expect(reasonLabel("vendor_specific")).toBe("vendor_specific");
+  });
+});
+
+describe("describeEvent", () => {
+  it("translates a step transition into both step names", () => {
+    expect(
+      describeEvent("step_transition", {
+        step: "documents",
+        previous_step: "welcome",
+        step_title: "Документы",
+      }),
+    ).toBe("Знакомство → Документы");
+  });
+
+  it("spells out a risk assessment", () => {
+    expect(
+      describeEvent("risk_assessed", {
+        level: "high",
+        tags: ["workload"],
+        reasons: "много сверхурочных",
+      }),
+    ).toBe("уровень: высокий · темы: Нагрузка · много сверхурочных");
+  });
+
+  it("says when an answer was rejected and why", () => {
+    expect(
+      describeEvent("answer_rejected", { reason: "no_sources", accepted: "false" }),
+    ).toBe("Нет источника · не принят");
+  });
+
+  it("stays empty when the event carries nothing readable", () => {
+    expect(describeEvent("run_started", {})).toBe("");
   });
 });

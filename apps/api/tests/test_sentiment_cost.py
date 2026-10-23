@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import httpx
+import pytest
 from pydantic import SecretStr
 
 from onboarding.app.clock import FrozenClock
@@ -32,12 +33,15 @@ CASES = (
 )
 
 
-def answers(tokens: int) -> dict[str, object]:
+def answers(tokens: int, *, cost: float | None = None) -> dict[str, object]:
     rubric = RubricLibrary(PROMPTS, CONTRACTS / "jev-rubric.schema.json").load(
         "sentiment-jev@1"
     )
+    usage: dict[str, object] = {"input_tokens": tokens}
+    if cost is not None:
+        usage["cost"] = cost
     return {
-        "usage": {"input_tokens": tokens},
+        "usage": usage,
         "answers": {
             "sentiment": {
                 "type": "choice",
@@ -90,6 +94,43 @@ async def test_a_run_reports_its_measured_spend() -> None:
     assert report.cost_rub == 0.1
     assert report.cost_per_1k_calls == 100.0
     assert "## Cost" in render_markdown(report, command="cmd", note="")
+
+
+async def test_the_provider_reported_cost_is_the_number_that_is_reported() -> None:
+    """OpenRouter charges in USD per call; a ruble price in a profile would be a guess."""
+    audit = CountingAudit()
+    choice = choice_for(lambda _: httpx.Response(200, json=answers(200, cost=0.0000055)), audit)
+
+    report = await evaluate(
+        CASES,
+        choice.classifier,
+        provider="jev",
+        audit=audit,
+        identity=choice,
+    )
+
+    assert report.cost_usd == pytest.approx(0.0000055)
+    assert report.priced_calls == 1
+    assert report.cost_usd_per_1k_calls == pytest.approx(0.0055)
+    table = render_markdown(report, command="cmd", note="")
+    assert "`cost_usd_per_1k_calls`" in table
+
+
+async def test_a_provider_that_reports_no_cost_is_not_priced_by_arithmetic() -> None:
+    audit = CountingAudit()
+    choice = choice_for(lambda _: httpx.Response(200, json=answers(200)), audit)
+
+    report = await evaluate(
+        CASES,
+        choice.classifier,
+        provider="jev",
+        audit=audit,
+        identity=choice,
+    )
+
+    assert report.cost_usd == 0.0
+    assert report.priced_calls == 0
+    assert report.cost_rub == 0.1
 
 
 async def test_the_artifact_keeps_the_price_and_the_identity(tmp_path: Path) -> None:

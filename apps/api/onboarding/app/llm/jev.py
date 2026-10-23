@@ -180,6 +180,7 @@ class JevSentimentClassifier:
             )
             return await self._fallback(text, source, reason="jev_format")
         input_tokens = _input_tokens(payload)
+        cost_usd = _reported_cost(payload)
         await self._audit.record(
             "sentiment_classified",
             source=source,
@@ -194,6 +195,9 @@ class JevSentimentClassifier:
             input_tokens=input_tokens,
             latency_ms=int(elapsed_s * 1000),
             cost_rub=round(input_tokens / 1000 * self._profile.price_input_rub_per_1k, 6),
+            # The provider's own number, when it sends one (OpenRouter does). A price we did not
+            # measure is a guess; this is the ledger.
+            cost_usd=None if cost_usd is None else round(cost_usd, 9),
         )
         return RiskSignal(
             source=source,
@@ -246,6 +250,15 @@ class JevSentimentClassifier:
         return await fallback_signal(
             self._audit, text, source, provider="jev", reason=reason
         )
+
+
+def _reported_cost(payload: Any) -> float | None:
+    """``usage.cost`` in USD, reported by OpenRouter; ``None`` on an endpoint that omits it."""
+    usage = payload.get("usage") if isinstance(payload, dict) else None
+    cost = usage.get("cost") if isinstance(usage, dict) else None
+    if isinstance(cost, bool) or not isinstance(cost, int | float):
+        return None
+    return float(cost)
 
 
 def _input_tokens(payload: Any) -> int:

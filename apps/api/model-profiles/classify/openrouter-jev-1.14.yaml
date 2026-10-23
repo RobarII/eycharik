@@ -1,0 +1,15 @@
+name: openrouter-jev-1.14
+role: classify
+description: "TypeSafe Jev through OpenRouter: the same System One API, billed to the OpenRouter account."
+note: >
+  Same wire shape as the direct endpoint, so the adapter needs no branch: JEV_BASE_URL points at
+  https://openrouter.ai/api/v1 and the path stays /systemone. The model page lists
+  $0.042 per 1M input tokens and free output; that price is in USD, and this file is priced in
+  rubles, so it stays 0 here and the run reports usage.cost, the number the provider actually
+  charged. Box questions and images need 1.14; a 1.13 class handles text only.
+family: typesafe-jev
+model: typesafe/jev-1.14
+rubric: sentiment-jev@1
+timeout_s: 8.0
+max_retries: 2
+price_input_rub_per_1k: 0.0

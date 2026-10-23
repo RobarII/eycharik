@@ -57,6 +57,17 @@ Cost accounting now flows: the `sentiment_classified` audit event carries `model
 and the prompt version instead of hard-coding `rubric_version: 1`, and `--from-artifact` reads them
 back.
 
+### Two surfaces, one adapter
+
+Jev is also served through OpenRouter at `POST /api/v1/systemone`, which is the same path this
+adapter already builds from `JEV_BASE_URL`, so the switch is configuration and not code:
+`JEV_BASE_URL=https://openrouter.ai/api/v1`, `JEV_API_KEY` as the OpenRouter key, and
+`CLASSIFY_PROFILE=openrouter-jev-1.14` (model `typesafe/jev-1.14`). OpenRouter reports the charge
+per call in `usage.cost`, in USD. The profile price stays `0` rather than converting dollars at an
+invented exchange rate, and the run reports `cost_usd_total` and `priced_calls` from the provider's
+own number. A ruble price is still the only honest way to price the direct endpoint, which reports
+tokens and nothing else.
+
 ## Measured
 
 Nothing new. No `JEV_API_KEY` exists in this environment, and a structure change is not a quality

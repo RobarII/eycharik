@@ -133,6 +133,8 @@ class Report:
     prompt_version: int | None = None
     input_tokens: int = 0
     cost_rub: float = 0.0
+    cost_usd: float = 0.0
+    priced_calls: int = 0
 
     @property
     def cases(self) -> tuple[Case, ...]:
@@ -274,6 +276,11 @@ class Report:
     def cost_per_1k_calls(self) -> float:
         """What a thousand labels would cost at this run's measured spend, not at a sticker."""
         return self.cost_rub / len(self.results) * 1000 if self.results else 0.0
+
+    @property
+    def cost_usd_per_1k_calls(self) -> float:
+        """What the provider actually charged, scaled. Zero until a priced call appears."""
+        return self.cost_usd / len(self.results) * 1000 if self.results else 0.0
 
     @property
     def p50_latency_ms(self) -> float:
@@ -468,6 +475,8 @@ class CountingAudit:
         self.reasons: Counter[str] = Counter()
         self.input_tokens = 0
         self.cost_rub = 0.0
+        self.cost_usd = 0.0
+        self.priced_calls = 0
 
     async def record(self, name: str, **fields: Any) -> None:
         if name == "sentiment_classified":
@@ -477,6 +486,10 @@ class CountingAudit:
                 self.input_tokens += tokens
             if isinstance(cost, int | float) and not isinstance(cost, bool):
                 self.cost_rub += float(cost)
+            charged = fields.get("cost_usd")
+            if isinstance(charged, int | float) and not isinstance(charged, bool):
+                self.cost_usd += float(charged)
+                self.priced_calls += 1
         if name == "sentiment_fallback":
             self.fallbacks += 1
             reason = fields.get("reason")
@@ -521,6 +534,8 @@ async def evaluate(
         prompt_version=identity.prompt_version if identity else None,
         input_tokens=audit.input_tokens,
         cost_rub=audit.cost_rub,
+        cost_usd=audit.cost_usd,
+        priced_calls=audit.priced_calls,
     )
 
 
@@ -574,6 +589,9 @@ def render_markdown(
         f"| `cost_rub_total` | {report.cost_rub:.4f} |",
         f"| `cost_rub_per_1k_calls` | {report.cost_per_1k_calls:.4f} |",
         f"| `input_tokens_total` | {report.input_tokens} |",
+        f"| `cost_usd_total` | {report.cost_usd:.6f} |",
+        f"| `cost_usd_per_1k_calls` | {report.cost_usd_per_1k_calls:.6f} |",
+        f"| `priced_calls` | {report.priced_calls} / {len(report.results)} |",
         "",
         "## Latency",
         "",
@@ -798,6 +816,8 @@ def load_artifact(path: Path) -> Report:
         prompt_version=header.get("prompt_version"),
         input_tokens=int(header.get("input_tokens", 0)),
         cost_rub=float(header.get("cost_rub", 0.0)),
+        cost_usd=float(header.get("cost_usd", 0.0)),
+        priced_calls=int(header.get("priced_calls", 0)),
     )
 
 
@@ -814,6 +834,8 @@ def render_artifact(report: Report, *, command: str) -> str:
         "model": report.model or None,
         "input_tokens": report.input_tokens,
         "cost_rub": round(report.cost_rub, 6),
+        "cost_usd": round(report.cost_usd, 9),
+        "priced_calls": report.priced_calls,
         "command": command,
         "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "cases": len(report.cases),

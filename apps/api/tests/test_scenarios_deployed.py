@@ -8,6 +8,7 @@ from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.core.models import QuestionKind, StepKind
 
 SCENARIOS = Path(__file__).resolve().parents[1] / "onboarding" / "scenarios"
+ASSETS = Path(__file__).resolve().parents[1] / "onboarding" / "assets" / "scenario"
 
 
 def catalog() -> ScenarioCatalog:
@@ -40,6 +41,18 @@ def test_every_scale_question_can_ask_for_a_reason() -> None:
             if question.kind is QuestionKind.SCALE:
                 assert question.low_threshold is not None
                 assert question.reason_prompt
+
+
+def test_every_scenario_image_is_bundled() -> None:
+    referenced = 0
+    for scenario_id in ("onboarding_default", "onboarding_plant"):
+        scenario = catalog().active(scenario_id)
+        for step in scenario.steps.values():
+            if step.image is None:
+                continue
+            referenced += 1
+            assert (ASSETS / step.image).is_file(), f"{scenario_id}.{step.id}: {step.image}"
+    assert referenced >= 30
 
 
 def test_the_plant_variant_skips_the_remote_work_question() -> None:

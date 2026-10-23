@@ -167,7 +167,7 @@ holds state, vectors, queue, outbox, questions, and audit; the workload does not
 | `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base |
 | `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop |
 | `apps/api/onboarding/app/llm/` | provider adapters, model profile loader, gateway with retry/breaker/cost, offline extractive provider, embeddings |
-| `apps/api/model-profiles/` | one YAML file per model, validated by `docs/contracts/model-profile.schema.json`, and reader configuration under `extract/` |
+| `apps/api/model-profiles/` | one YAML file per model (`answer/`, `embed/`, `rerank/`) and per reader configuration (`extract/`), validated at startup |
 | `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |
 | `apps/api/onboarding/app/knowledge/extract/` | readers (pdfium, python-pptx), quality gate, recognizer, routing composite, profile loader, markdown assembly |
 | `apps/api/onboarding/scenarios/` | versioned scenario YAML |

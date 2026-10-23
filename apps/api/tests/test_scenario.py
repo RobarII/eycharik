@@ -19,6 +19,26 @@ def test_parses_a_valid_document(scenario: Any) -> None:
     assert scenario.step("done").kind is StepKind.TERMINAL
 
 
+def test_parses_a_bundled_image_on_a_send_and_a_terminal_step() -> None:
+    document = scenario_document()
+    document["steps"][0]["image"] = "welcome.jpg"
+    document["steps"][3]["image"] = "goodbye.jpg"
+
+    scenario = parse_scenario(document)
+
+    assert scenario.step("welcome").image == "welcome.jpg"
+    assert scenario.step("done").image == "goodbye.jpg"
+
+
+@pytest.mark.parametrize("name", ["../secret.jpg", "welcome.gif", "Welcome.jpg", "a/b.jpg"])
+def test_rejects_an_image_outside_the_bundle(name: str) -> None:
+    document = scenario_document()
+    document["steps"][0]["image"] = name
+
+    with pytest.raises(ScenarioError, match="bundled jpg/png name"):
+        parse_scenario(document)
+
+
 def test_steps_mapping_is_read_only(scenario: Any) -> None:
     with pytest.raises(TypeError):
         scenario.steps["x"] = scenario.step("done")  # type: ignore[index]

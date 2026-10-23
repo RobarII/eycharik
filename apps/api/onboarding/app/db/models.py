@@ -138,6 +138,7 @@ class MessageRow(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
+    image: Mapped[str | None] = mapped_column(String(80))
     keyboard: Mapped[list[list[dict[str, str]]]] = mapped_column(
         JSONB, server_default=sql_text("'[]'::jsonb")
     )

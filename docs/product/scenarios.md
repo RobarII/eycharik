@@ -59,6 +59,22 @@ later step all keep it. Any step may carry `informal_message`; with the informal
 sends it instead of `message`, otherwise the default is used. A tone map on a step without buttons
 is a deployment error, and so is a map that names a button the step does not have.
 
+## Images
+
+A step may name one bundled image with `image:`. The name is a file in
+`apps/api/onboarding/assets/scenario/`, never a path or a URL. The parser accepts only
+`^[a-z][a-z0-9_]*\.(jpg|jpeg|png)$`, so a hand-edited scenario cannot read a file outside the
+bundle; the MAX adapter repeats that check before it reads a byte.
+
+The image travels with the step message and with a `remind` copy of it. A timeout that escalates
+sends the escalation copy without the image. A `terminal` step may carry a farewell image, which
+is attached to the completion message. The image is uploaded to MAX once per process and the media
+token is cached by asset name; the outbox stores the asset name, not the token.
+
+The current mapping and the source captions live in
+[scenario-images.md](scenario-images.md). A missing asset is a deployment error caught by
+`apps/api/tests/test_scenarios_deployed.py`, not a silent text-only message.
+
 ## Surveys
 
 A `survey` step asks its `questions` one at a time and stores every answer in the run. Three
@@ -100,3 +116,5 @@ message to a newcomer stays with the bot's scenario messages and the human HR ch
 4. Escalation never blocks the scenario: the run continues when the answer arrives.
 5. A survey answer is stored before the next question is sent; a repeated delivery must not lose it.
 6. Copy is Russian, in the company voice, second person plural ("вы"), no emoji in scenario text.
+7. A step image is a bundled asset named in the scenario; the source file is not edited in place,
+   and a new image gets a row in `docs/product/scenario-images.md`.

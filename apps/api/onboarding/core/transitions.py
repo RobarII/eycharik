@@ -80,7 +80,7 @@ def advance(scenario: Scenario, state: StepState, event: Event) -> Transition:
     if step.kind is StepKind.SEND:
         raise ScenarioRunError(f"step {step.id!r} is a send step and is left by the engine")
     if step.kind is StepKind.TERMINAL:
-        action = Action(kind=ActionKind.COMPLETE, outcome=step.outcome)
+        action = Action(kind=ActionKind.COMPLETE, outcome=step.outcome, image=step.image)
         return Transition(state=state, actions=(action,), reminder=CancelReminder())
 
     if step.kind is StepKind.SURVEY:
@@ -114,6 +114,7 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
                 Action(
                     kind=ActionKind.SEND,
                     text=_message(step, current.tone),
+                    image=step.image,
                     keyboard=step.keyboard,
                 )
             )
@@ -128,6 +129,7 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
                     Action(
                         kind=ActionKind.SEND,
                         text=_message(step, current.tone),
+                        image=step.image,
                         keyboard=step.keyboard,
                     )
                 )
@@ -139,7 +141,13 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
             )
         if step.kind is StepKind.SURVEY:
             if step.message is not None:
-                actions.append(Action(kind=ActionKind.SEND, text=_message(step, current.tone)))
+                actions.append(
+                    Action(
+                        kind=ActionKind.SEND,
+                        text=_message(step, current.tone),
+                        image=step.image,
+                    )
+                )
             actions.append(_ask(step.questions[0]))
             reminder = _schedule(step, now)
             return Transition(
@@ -147,7 +155,7 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
                 actions=tuple(actions),
                 reminder=reminder,
             )
-        actions.append(Action(kind=ActionKind.COMPLETE, outcome=step.outcome))
+        actions.append(Action(kind=ActionKind.COMPLETE, outcome=step.outcome, image=step.image))
         completed.append(step.id)
         return Transition(
             state=replace(current, completed_steps=tuple(completed)),
@@ -326,6 +334,7 @@ def _on_timeout(scenario: Scenario, state: StepState, event: Event) -> Transitio
         action = Action(
             kind=ActionKind.SEND,
             text=_message(step, state.tone),
+            image=step.image,
             keyboard=step.keyboard,
             note="reminder",
         )

@@ -47,6 +47,30 @@ def test_start_emits_the_initial_send_chain(scenario: Scenario) -> None:
     assert reminder.action is TimeoutAction.REMIND
 
 
+def test_images_follow_their_step_actions() -> None:
+    document = scenario_document()
+    document["steps"][0]["image"] = "welcome.jpg"
+    document["steps"][1]["image"] = "reminder.jpg"
+    document["steps"][3]["image"] = "goodbye.jpg"
+    scenario = parse_scenario(document)
+
+    started = start(scenario, RunId("run-1"), "employee-1", NOW)
+    reminder = advance(
+        scenario,
+        started.state,
+        Event(kind=EventKind.TIMEOUT, at=NOW + timedelta(hours=48)),
+    )
+    completed = advance(
+        scenario,
+        replace(started.state, step_id="documents"),
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+
+    assert [action.image for action in started.actions] == ["welcome.jpg", "reminder.jpg"]
+    assert reminder.actions[0].image == "reminder.jpg"
+    assert completed.actions[0].image == "goodbye.jpg"
+
+
 def test_button_moves_the_run_and_sends_the_next_step(scenario: Scenario, state: StepState) -> None:
     event = Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="done")
 

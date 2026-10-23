@@ -77,6 +77,12 @@
           "minLength": 1,
           "maxLength": 4000
         },
+        "image": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.(jpg|jpeg|png)$",
+          "maxLength": 80,
+          "description": "Bundled image asset sent with the step message, for example `welcome.jpg`."
+        },
         "informal_message": {
           "type": "string",
           "minLength": 1,

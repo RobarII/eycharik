@@ -59,12 +59,14 @@ async def test_send_uses_the_scenario_text_and_keyboard() -> None:
     action = Action(
         kind=ActionKind.SEND,
         text="Первый день",
+        image="party.jpg",
         keyboard=((Button(id="done", text="Готово"),),),
     )
 
     await executor.execute(action, ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20)))
 
     assert messaging.sent[0].text == "Первый день"
+    assert messaging.sent[0].image == "party.jpg"
     assert messaging.sent[0].keyboard[0][0].id == "done"
 
 
@@ -93,7 +95,7 @@ async def test_escalation_sends_copy_and_records_an_event() -> None:
 
 async def test_completion_sends_the_completion_copy() -> None:
     executor, messaging, _, audit = build()
-    action = Action(kind=ActionKind.COMPLETE, outcome=Outcome.COMPLETED)
+    action = Action(kind=ActionKind.COMPLETE, outcome=Outcome.COMPLETED, image="goodbye.jpg")
 
     await executor.execute(
         action,
@@ -101,6 +103,7 @@ async def test_completion_sends_the_completion_copy() -> None:
     )
 
     assert messaging.sent[0].text == COPY.completion
+    assert messaging.sent[0].image == "goodbye.jpg"
     assert audit.names() == ["run_completed"]
     assert audit.events[0][1]["employee_id"] == str(EMPLOYEE)
 

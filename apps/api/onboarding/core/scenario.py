@@ -7,6 +7,7 @@ failed, so a rejected document is fixable without a debugger.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import timedelta
 from types import MappingProxyType
@@ -37,6 +38,7 @@ _STEP_KEYS = {
     "kind",
     "title",
     "message",
+    "image",
     "keyboard",
     "expects",
     "routes",
@@ -71,6 +73,8 @@ _FORBIDDEN_BY_KIND = {
 _QUESTION_KEYS = {"id", "kind", "prompt", "options", "low_threshold", "reason_prompt"}
 _MAX_KEYBOARD_ROWS = 3
 _MAX_BUTTONS_PER_ROW = 3
+_MAX_IMAGE_CHARS = 80
+_IMAGE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.(?:jpg|jpeg|png)$")
 
 
 def parse_scenario(raw: Mapping[str, Any]) -> Scenario:
@@ -122,6 +126,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         raise ScenarioError(f"{path}: step kind {kind.value!r} forbids {sorted(forbidden)}")
 
     message = _text(raw, "message", path) if "message" in raw else None
+    image = _image(raw, path)
     informal_message = (
         _text(raw, "informal_message", path) if "informal_message" in raw else None
     )
@@ -166,6 +171,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         kind=kind,
         title=title,
         message=message,
+        image=image,
         keyboard=keyboard,
         expects=expects,
         routes=routes,
@@ -177,6 +183,17 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         informal_message=informal_message,
         tone_routes=tone_routes,
     )
+
+
+def _image(raw: Mapping[str, Any], path: str) -> str | None:
+    if "image" not in raw:
+        return None
+    name = _text(raw, "image", path)
+    if len(name) > _MAX_IMAGE_CHARS or _IMAGE_PATTERN.fullmatch(name) is None:
+        raise ScenarioError(
+            f"{path}.image: expected a bundled jpg/png name like 'welcome.jpg', got {name!r}"
+        )
+    return name
 
 
 def _parse_keyboard(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Keyboard:

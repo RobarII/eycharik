@@ -61,6 +61,7 @@ class ActionExecutor:
                     OutboundMessage(
                         chat_id=context.chat_id,
                         text=text,
+                        image=action.image,
                         keyboard=action.keyboard,
                     )
                 )
@@ -82,7 +83,11 @@ class ActionExecutor:
                 )
             case ActionKind.COMPLETE:
                 await self._messaging.send(
-                    OutboundMessage(chat_id=context.chat_id, text=self._copy.completion)
+                    OutboundMessage(
+                        chat_id=context.chat_id,
+                        text=self._copy.completion,
+                        image=action.image,
+                    )
                 )
                 await self._audit.record(
                     "run_completed",

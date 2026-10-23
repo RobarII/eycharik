@@ -24,11 +24,33 @@ a PEM file; when it is unset the adapter uses the default `httpx` verification.
 |---|---|---|---|
 | `POST` | `/messages?chat_id={id}` | send a message | dispatcher |
 | `PUT` | `/messages/{messageId}` | edit a message | adapter only, unused today |
+| `POST` | `/uploads?type=image` | reserve a media upload URL | `MaxClient` before the first image |
+| `POST` | `{upload_url}` | upload image bytes as multipart | `MaxClient` before the first image |
 | `POST` | `/subscriptions` | register the webhook | `onboarding.cli subscribe` |
 | `GET` | `/me` | bot identity | adapter only, unused today |
 
-`POST /messages` body: `text` ≤ 4000 characters, `attachments` with `inline_keyboard`, optional
-`link` for a reply. `format` is omitted; the copy is plain text.
+`POST /messages` body: `text` ≤ 4000 characters, `attachments` with `inline_keyboard` and/or
+`image`, optional `link` for a reply. `format` is omitted; the copy is plain text.
+
+## Images
+
+Source: <https://dev.max.ru/docs-api/use-cases/sending-messages/media> and
+<https://dev.max.ru/docs-api/methods/POST/uploads> (read 2026-10-23).
+
+| Fact | Value |
+|---|---|
+| Upload | `POST /uploads?type=image` returns `url` and optionally `token` |
+| Bytes | `POST` the returned `url` with `Content-Type: multipart/form-data`, one file in `data` |
+| Token | the upload answer carries `photos.photoIds.token`; the adapter also accepts a top-level `token` |
+| Message | `{"type": "image", "payload": {"token": "..."}}` in `attachments` |
+| Reuse | one token maps to one uploaded file and may be reused for later messages |
+| Processing | `400 attachment.not.ready` means the file is not processed yet; retry with backoff |
+| Limits | JPG, JPEG, PNG, GIF, TIFF, BMP, HEIC; at most 50 MB and 7680 × 7680 px; at most 12 images per message |
+| URL alternative | `{"type": "image", "payload": {"url": "https://..."}}` exists, but the adapter uses tokens because external hosting can disappear |
+
+The adapter uploads each bundled asset once per process and caches the token by asset name. A
+restart uploads again; the token itself is reusable, but persisting it would add a cache table for
+no product value at this scale.
 
 ## Webhook
 
@@ -70,7 +92,7 @@ starts using callback buttons.
 
 - The exact `message_callback` body is not pinned by an example in the docs we read. The parser is
   defensive until a real payload is captured in `apps/api/tests/`.
-- File upload is a separate two-step flow and is not implemented. The documents scenario explains
-  where to send files; it does not accept them in the chat.
+- Outbound images use the documented two-step upload. Incoming files are still not accepted: the
+  documents scenario explains where to send them; it does not accept them in the chat.
 - `bot_stopped` is parsed as a no-op. Unsubscribing a newcomer is a product decision that has not
   been made.

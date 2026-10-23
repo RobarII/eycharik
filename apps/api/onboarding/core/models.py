@@ -105,6 +105,7 @@ class Step:
     kind: StepKind
     title: str | None = None
     message: str | None = None
+    image: str | None = None
     keyboard: Keyboard = ()
     expects: Expects | None = None
     routes: Mapping[str, str] = field(default_factory=dict)
@@ -181,6 +182,7 @@ class StepState:
 class Action:
     kind: ActionKind
     text: str | None = None
+    image: str | None = None
     keyboard: Keyboard = ()
     reason: EscalationReason | None = None
     outcome: Outcome | None = None

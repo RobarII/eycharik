@@ -7,6 +7,7 @@ start: welcome
 
 steps:
   - id: welcome
+    image: welcome.jpg
     kind: wait
     title: Знакомство
     message: >-
@@ -30,6 +31,7 @@ steps:
       action: remind
 
   - id: documents_checklist
+    image: documents.jpg
     kind: wait
     title: Документы
     message: >-
@@ -47,6 +49,7 @@ steps:
       action: remind
 
   - id: day_before
+    image: reminder.jpg
     kind: wait
     title: Готовность к первому дню
     message: >-
@@ -65,6 +68,7 @@ steps:
       action: remind
 
   - id: first_day
+    image: party.jpg
     kind: send
     title: Первый день
     message: >-
@@ -73,6 +77,7 @@ steps:
     next: access_check
 
   - id: access_check
+    image: support.jpg
     kind: wait
     title: Проверка доступов
     message: >-
@@ -92,6 +97,7 @@ steps:
       action: remind
 
   - id: access_help
+    image: error.jpg
     kind: wait
     title: Проблема с доступами
     message: >-
@@ -115,6 +121,7 @@ steps:
     next: lunch
 
   - id: lunch
+    image: lunch.jpg
     kind: send
     title: Обед
     message: >-
@@ -123,6 +130,7 @@ steps:
     next: contacts
 
   - id: contacts
+    image: contacts.jpg
     kind: send
     title: Контакты
     message: >-
@@ -139,6 +147,7 @@ steps:
     next: first_day_end
 
   - id: first_day_end
+    image: progress.jpg
     kind: send
     title: Итог первого дня
     message: >-
@@ -147,6 +156,7 @@ steps:
     next: day_three_plan
 
   - id: day_three_plan
+    image: calm.jpg
     kind: send
     title: План адаптации
     message: >-
@@ -155,6 +165,7 @@ steps:
     next: day_three_survey
 
   - id: day_three_survey
+    image: questions.jpg
     kind: survey
     title: Опрос третьего дня
     message: >-
@@ -185,6 +196,7 @@ steps:
       action: remind
 
   - id: week_two_plan
+    image: calm.jpg
     kind: send
     title: Вторая неделя
     message: >-
@@ -249,6 +261,7 @@ steps:
       action: remind
 
   - id: month_two_plan
+    image: congrats.jpg
     kind: send
     title: Второй месяц
     message: >-
@@ -257,6 +270,7 @@ steps:
     next: month_two_survey
 
   - id: month_two_survey
+    image: questions.jpg
     kind: survey
     title: Опрос второго месяца
     message: >-
@@ -279,6 +293,7 @@ steps:
       action: remind
 
   - id: probation_reminder
+    image: reminder.jpg
     kind: send
     title: Испытательный срок
     message: >-
@@ -287,6 +302,7 @@ steps:
     next: probation_survey
 
   - id: probation_survey
+    image: thanks.jpg
     kind: survey
     title: Итоги испытательного срока
     message: >-
@@ -327,6 +343,7 @@ steps:
       action: remind
 
   - id: done
+    image: goodbye.jpg
     kind: terminal
     title: Завершение
     outcome: completed

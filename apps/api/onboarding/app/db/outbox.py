@@ -31,6 +31,7 @@ class PendingMessage:
     id: int
     chat_id: ChatId
     text: str
+    image: str | None
     keyboard: tuple[tuple[tuple[str, str], ...], ...]
     attempts: int
 
@@ -47,6 +48,7 @@ class OutboxMessaging:
             row = MessageRow(
                 chat_id=int(message.chat_id),
                 text=message.text,
+                image=message.image,
                 keyboard=_keyboard_json(message.keyboard),
             )
             session.add(row)
@@ -105,6 +107,7 @@ class MessageDispatcher:
                     id=row.id,
                     chat_id=ChatId(row.chat_id),
                     text=row.text,
+                    image=row.image,
                     keyboard=tuple(
                         tuple((button["id"], button["text"]) for button in line)
                         for line in row.keyboard
@@ -124,6 +127,7 @@ class MessageDispatcher:
                 OutboundMessage(
                     chat_id=message.chat_id,
                     text=message.text,
+                    image=message.image,
                     keyboard=keyboard,
                 )
             )

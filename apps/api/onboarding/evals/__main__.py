@@ -1,7 +1,9 @@
 """Run the golden set against the configured database and provider.
 
 Retrieval-only mode is deterministic and needs no model key. Full mode adds generation,
-citation support, escalation correctness, latency, and cost.
+citation support, escalation correctness, latency, and cost. Every run writes two artifacts: the
+Markdown measurement and a JSONL file with one line per case, because a comparison needs the
+cases, not the averages.
 """
 
 from __future__ import annotations
@@ -21,14 +23,24 @@ from onboarding.evals.runner import (
     Case,
     GoldenSetError,
     Report,
+    baseline_json,
+    case_record,
+    compare_records,
+    derive_baseline,
     evaluate,
+    load_baseline,
     load_cases,
+    load_jsonl,
+    render_comparison,
     render_markdown,
     summarise,
+    write_jsonl,
 )
+from onboarding.evals.stats import PairedDelta
 from onboarding.ports import SearchQuery
 
 ROOT = Path(__file__).resolve().parents[4]
+BASELINE = ROOT / "docs" / "evals" / "baseline.json"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,6 +52,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--write", action="store_true", help="write a measurement file")
     parser.add_argument("--label", default="", help="suffix for the measurement file name")
     parser.add_argument("--note", default="", help="caveat to record in the measurement file")
+    parser.add_argument(
+        "--baseline",
+        type=Path,
+        default=BASELINE,
+        help="pinned gates; derived from a known-good run with --write-baseline",
+    )
+    parser.add_argument(
+        "--write-baseline",
+        action="store_true",
+        help="pin this run as the baseline: gate = Wilson lower bound of what it measured",
+    )
+    parser.add_argument(
+        "--compare",
+        type=Path,
+        default=None,
+        help="JSONL artifact of an earlier run; reports a paired bootstrap against it",
+    )
+    parser.add_argument(
+        "--fail-on-regression",
+        action="store_true",
+        help="exit non-zero when a compared metric regressed with the interval excluding zero",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -59,6 +93,7 @@ async def _run(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
         print("LLM_API_KEY is not set; pass --retrieval-only", file=sys.stderr)
         return 2
 
+    baseline = load_baseline(args.baseline) if args.baseline else None
     on_date = datetime.now(UTC).date()
     container = build_container(settings)
     try:
@@ -82,11 +117,36 @@ async def _run(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
     finally:
         await container.aclose()
 
-    report = summarise(results, generated=generated)
+    report = summarise(results, generated=generated, baseline=baseline)
     print(_console_table(report))
+    print(_console_strata(report))
+
+    comparison: tuple[PairedDelta, ...] = ()
+    if args.compare is not None:
+        comparison = _compare(args.compare, report)
+        print("\ncomparison against " + str(args.compare))
+        print(render_comparison(comparison))
+
     if args.write:
-        _write(report, args, settings, on_date)
+        _write(report, args, settings, on_date, comparison)
+    if args.write_baseline:
+        pinned = derive_baseline(report, commit=_commit())
+        args.baseline.parent.mkdir(parents=True, exist_ok=True)
+        args.baseline.write_text(baseline_json(pinned), encoding="utf-8")
+        print(f"wrote baseline {args.baseline} (commit {pinned.commit})")
+    if args.fail_on_regression and any(delta.regression for delta in comparison):
+        return 1
     return 1 if report.failures else 0
+
+
+def _compare(path: Path, report: Report) -> tuple[PairedDelta, ...]:
+    try:
+        earlier = load_jsonl(path)
+    except (OSError, GoldenSetError) as error:
+        print(f"cannot compare: {error}", file=sys.stderr)
+        return ()
+    current = {result.case.id: case_record(result) for result in report.results}
+    return compare_records(current, earlier)
 
 
 def _console_table(report: Report) -> str:
@@ -100,11 +160,41 @@ def _console_table(report: Report) -> str:
     return "\n".join(lines)
 
 
-def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date: date) -> None:
+def _console_strata(report: Report) -> str:
+    if not report.strata:
+        return ""
+    lines = [
+        "",
+        f"{'stratum':<14}{'cases':>7}{'recall':>9}{'escal':>8}{'contains':>10}",
+    ]
+    for stratum, metrics in report.strata.items():
+        lines.append(
+            f"{stratum:<14}{report.counts[stratum]:>7}"
+            f"{_cell(metrics.get('recall_at_5'), 9)}"
+            f"{_cell(metrics.get('escalation_correctness'), 8)}"
+            f"{_cell(metrics.get('answer_contains'), 10)}"
+        )
+    return "\n".join(lines)
+
+
+def _cell(value: float | None, width: int) -> str:
+    return f"{'-':>{width}}" if value is None else f"{value:>{width}.2f}"
+
+
+def _write(
+    report: Report,
+    args: argparse.Namespace,
+    settings: Settings,
+    on_date: date,
+    comparison: tuple[PairedDelta, ...] = (),
+) -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     scope = "retrieval" if args.retrieval_only else "full"
     suffix = f"-{args.label}" if args.label else ""
-    path = args.out_dir / f"{on_date.isoformat()}-eval-{scope}{suffix}.md"
+    stem = f"{on_date.isoformat()}-eval-{scope}{suffix}"
+    path = args.out_dir / f"{stem}.md"
+    artifact = args.out_dir / f"{stem}.jsonl"
+    write_jsonl(report, artifact)
     command = " ".join(["python -m onboarding.evals", *sys.argv[1:]]).strip()
     note = args.note.strip() or None
     if settings.llm_provider == "extractive":
@@ -123,10 +213,13 @@ def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date
             note=note,
             on_date=on_date,
             retrieval=_retrieval_label(settings),
+            artifact=artifact.name,
+            comparison=comparison,
         ),
         encoding="utf-8",
     )
     print(f"wrote {path}")
+    print(f"wrote {artifact}")
 
 
 def _model_label(settings: Settings, *, retrieval_only: bool) -> str:

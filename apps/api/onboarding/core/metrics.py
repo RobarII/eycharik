@@ -44,3 +44,21 @@ def percentile(values: Sequence[float], *, p: float) -> float:
 
 def mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
+
+
+def wilson_lower_bound(share: float, n: int, *, z: float = 1.96) -> float:
+    """Lower edge of the Wilson score interval for a share observed on ``n`` cases.
+
+    This is what a gate may claim, not what was measured. At ``share = 1.0`` the bound is
+    ``n / (n + z²)``: 0.76 on 12 cases, 0.96 on 100, 0.99 on 400. A gate above that number would
+    be arithmetic, not evidence.
+    """
+    if n < 1:
+        return 0.0
+    if not 0.0 <= share <= 1.0:
+        raise ValueError("share must be within [0, 1]")
+    z2 = z * z
+    denominator = 1.0 + z2 / n
+    centre = share + z2 / (2.0 * n)
+    margin = z * math.sqrt(share * (1.0 - share) / n + z2 / (4.0 * n * n))
+    return max(0.0, min(1.0, (centre - margin) / denominator))

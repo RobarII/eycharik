@@ -82,6 +82,8 @@ def test_expected_fragments_are_a_gate() -> None:
         answer="28 дней",
         escalated=False,
         reason="answered",
+        retrieved_citations=1,
+        accepted_citations=1,
     )
     bad = CaseResult(
         case=case,
@@ -91,6 +93,8 @@ def test_expected_fragments_are_a_gate() -> None:
         answer="нет данных",
         escalated=False,
         reason="answered",
+        retrieved_citations=1,
+        accepted_citations=1,
     )
 
     assert summarise((good,), generated=True).metrics["answer_contains"] == 1.0
@@ -120,14 +124,56 @@ def test_escalation_must_match_the_expected_reason() -> None:
 
 
 def test_latency_gate_is_an_upper_bound() -> None:
-    fast = Report(metrics={"p95_latency_ms": 1200.0}, results=(), generated=True)
-    slow = Report(metrics={"p95_latency_ms": 9000.0}, results=(), generated=True)
+    fast = Report(metrics={"p95_completion_ms": 1200.0}, results=(), generated=True)
+    slow = Report(metrics={"p95_completion_ms": 9000.0}, results=(), generated=True)
+    crawling = Report(metrics={"p95_answer_ms": 20000.0}, results=(), generated=True)
     weak = Report(metrics={"recall_at_5": 0.5}, results=(), generated=True)
 
     assert fast.failures == ()
-    assert slow.failures == ("p95_latency_ms",)
+    assert slow.failures == ("p95_completion_ms",)
+    assert crawling.failures == ("p95_answer_ms",)
     assert weak.failures == ("recall_at_5",)
 
 
-def test_latency_gate_matches_the_documented_budget() -> None:
-    assert MAXIMUMS["p95_latency_ms"] == 8000.0
+def test_the_completion_budget_matches_the_documented_one() -> None:
+    assert MAXIMUMS["p95_completion_ms"] == 8000.0
+
+
+def test_the_answer_budget_is_wider_than_the_completion_budget() -> None:
+    """The whole answer adds retrieval, rerank, and generation to the provider call."""
+    assert MAXIMUMS["p95_answer_ms"] > MAXIMUMS["p95_completion_ms"]
+
+
+def test_an_answer_without_a_citation_does_not_pass_citation_support() -> None:
+    case = Case(
+        id="uncited",
+        question="q",
+        audience="all",
+        expect_docs=("a",),
+        expect_contains=(),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    uncited = CaseResult(
+        case=case,
+        retrieved_docs=("a",),
+        recall=1.0,
+        rr=1.0,
+        answer="28 дней",
+        escalated=False,
+        reason="answered",
+    )
+    cited = CaseResult(
+        case=case,
+        retrieved_docs=("a",),
+        recall=1.0,
+        rr=1.0,
+        answer="28 дней",
+        escalated=False,
+        reason="answered",
+        retrieved_citations=1,
+        accepted_citations=1,
+    )
+
+    assert summarise((uncited,), generated=True).metrics["citation_support"] == 0.0
+    assert summarise((cited,), generated=True).metrics["citation_support"] == 1.0

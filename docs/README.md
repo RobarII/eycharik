@@ -57,7 +57,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | The provider is blocked from this network — how do I still measure? | [runbooks/provider-tunnel.md](runbooks/provider-tunnel.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
-| How is answer quality measured? | [evals/README.md](evals/README.md) |
+| How is answer quality measured? | [evals/README.md](evals/README.md), case contract [contracts/golden.schema.json](contracts/golden.schema.json) |
 | How is the risk radar scored, and what does a label mean? | [evals/sentiment-guide.md](evals/sentiment-guide.md) |
 | How is the retrieval corpus built, and what can it prove? | [evals/corpus-design.md](evals/corpus-design.md) |
 | Where do measured numbers live? | [measurements/TEMPLATE.md](measurements/TEMPLATE.md) |

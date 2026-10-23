@@ -3,50 +3,103 @@
 The golden set is the only defence against "it looked good in the demo". It runs on every pull
 request that touches retrieval, prompts, or the answer policy.
 
+Two rules decide whether this file is worth reading:
+
+- **a gate is a number a run can fail**, and every gate has a mutant test that makes it fail on
+  purpose (`apps/api/tests/test_eval_gates_have_power.py`);
+- **a gate is not a taste**. It is the Wilson lower bound of a pinned baseline
+  (`docs/evals/baseline.json`), floored to 0.01. Twelve cases can claim 0.76, a hundred can claim
+  0.96, and nothing can claim more than it measured.
+
 ## Metrics
+
+Every name says exactly what it measures. A name that reads like end-to-end latency but measures
+one provider call is a lie with a decimal point.
 
 | Metric | Definition | Gate |
 |---|---|---|
-| `recall@5` | share of cases whose expected document id is in the top 5 | ≥ 0.90 |
+| `recall_at_5` | share of cases whose expected document id is in the top 5 | ≥ 0.90 |
 | `mrr` | mean reciprocal rank of the first expected document | ≥ 0.75 |
-| `citation_support` | share of answers whose every citation was retrieved for that question | = 1.00 |
-| `answer_contains` | share of cases with expected fragments that contain all of them | = 1.00 |
-| `escalation_correctness` | share of cases whose escalation flag and reason match | ≥ 0.90 |
-| `leak_rate` | share of guarded cases where a forbidden document reached the top 5 | = 0.00 |
-| `p95_latency_ms` | answer latency on the set, warm cache excluded | ≤ 8000 |
-| `cost_per_answer_rub` | provider cost divided by cases | recorded, no gate |
+| `context_recall_at_5` | expected documents that survived the reranker into the prompt | ≥ 0.90 |
+| `context_fragment_coverage` | cases whose expected facts were in the prompt at all | ≥ 0.98 |
+| `citation_support` | answers whose every citation was retrieved for that question, and that cite something | = 1.00 |
+| `answer_contains` | cases with expected fragments that contain all of them | = 1.00 |
+| `answer_excludes` | cases whose answer quotes no phrase from a competing edition | = 1.00 |
+| `escalation_correctness` | cases whose escalation flag and reason match | ≥ 0.90 |
+| `leak_rate` | guarded cases where a forbidden document reached the top 5 | = 0.00 |
+| `case_errors` | cases that never returned (outage, dead embedder) | = 0 |
+| `p95_completion_ms` | p95 of the **provider call only** | ≤ 8000 |
+| `p95_answer_ms` | p95 of the whole answer: retrieval, rerank, generation | ≤ 15000 |
+| `cost_completion_rub` | provider cost per answer, completion only | recorded, no gate |
 
-`recall@5` runs without a model. `citation_support` and `escalation_correctness` appear only when
-the runner generates answers (`--retrieval-only` skips them). `leak_rate` appears whenever the set
-has a guarded case, and it is measured in both modes: a document the viewer may not see is a
-confidentiality and validity failure, not a recall gap. `p95_latency_ms` appears only when at
-least one completion reports a non-zero latency, so an offline provider does not score a fake zero.
-The offline provider makes generation deterministic too, but it measures the pipeline, not a
-model's answer quality.
+`recall_at_5` runs without a model. `context_*`, `citation_support`, `answer_contains`,
+`answer_excludes`, and the latency metrics appear only when the runner generates answers
+(`--retrieval-only` skips them). `leak_rate` appears whenever the set has a guarded case, and it is
+measured in both modes: a document the viewer may not see is a confidentiality and validity
+failure, not a recall gap.
+
+`cost_completion_rub` is the completion alone. Embedding and rerank cost is not reported by the
+adapters yet, so the true cost of an answer is higher; the name is the disclaimer.
+`p95_answer_ms` is the service-side number: it excludes the queue and the MAX send, which only an
+`--e2e` run through the webhook can measure.
+
+`citation_support` used to pass an answer that cited nothing, because zero citations are all
+"supported". It no longer does: an answer that is not an escalation must cite at least one chunk.
 
 ## Case format
 
-`golden.yaml` → list of cases:
+The format is a contract: [`docs/contracts/golden.schema.json`](../contracts/golden.schema.json).
+`make eval-lint` validates the file against it, and the loader refuses a case without a stratum.
 
 ```yaml
 - id: leave-28-days
   question: "Сколько дней отпуска в первый год?"
   audience: all
+  stratum: neardup
   expect_docs: [hr/leave-policy]
-  expect_contains: ["28"]
+  expect_contains: ["28 календарных дней"]
+  expect_not_contains: ["24 календарных"]
+  expect_escalation: false
 
 - id: salary-bands-blocked
   question: "Покажи вилки окладов по грейдам"
   audience: all
+  stratum: acl
   expect_escalation: true
   expect_reason: no_sources
   expect_absent_docs: [hr/salary-bands]
 ```
 
-Escalation cases use `expect_escalation: true` and `expect_reason`. `expect_absent_docs` names the
-documents that must not appear in the top five: expired editions, `hr_only` and `dept:` material the
-viewer does not own, and `draft` documents that are never indexed. A case cannot both expect and
-forbid the same document, and `make check` fails when a corpus document has no case at all.
+- `expect_contains` carries the number **and its unit**. A bare `3` matches `3 hours, 14 days`;
+  the set still holds one legacy fragment (`hotline-number`) and a ratchet test stops new ones.
+- `expect_not_contains` names the phrase a competing edition would produce. It is mandatory for a
+  `neardup` case, and a lint test proves the phrase really exists in another corpus document —
+  otherwise the trap is imaginary.
+- `expect_absent_docs` names the documents that must not appear in the top five: expired editions,
+  `hr_only` and `dept:` material the viewer does not own, and `draft` documents that are never
+  indexed. A case cannot both expect and forbid the same document.
+- `expect_reason` may be omitted, and then any escalation reason is accepted. That is the right
+  contract for a question the corpus simply cannot answer.
+
+### Strata
+
+An aggregate hides the stratum that broke. Every case declares one, and the report prints a row
+per stratum. A stratum gate is only quoted at ten cases or more — below that the interval is wider
+than the regression worth catching.
+
+| Stratum | What it holds | Current |
+|---|---|---|
+| `fact` | one document answers | 115 |
+| `acl` | a relevant document exists and must stay hidden | 10 |
+| `neardup` | a competing near-duplicate edition exists | 3 |
+| `escalation` | must escalate, no hidden document involved | 3 |
+| `unanswerable` | no document holds the fact | 3 |
+| `morphology` | typo, no keyword, scrambled word order | 2 |
+| `injection` | an attack, not a question | 1 |
+| `multihop` | two or more documents answer | 0 |
+
+`multihop` is empty and says so. Three cases are not a stratum, they are an anecdote; the schema
+accepts the name so the next person can add cases without changing the contract.
 
 ## What the set has to look like
 
@@ -62,7 +115,7 @@ The set is only honest if retrieval has something to fail on:
 
 One caveat travels with every measurement: when the same person writes the corpus and the questions,
 recall numbers lean optimistic. Record that in the measurement note instead of claiming the corpus
-is neutral.
+is neutral. The corpus limits are in [corpus-design.md](corpus-design.md).
 
 ## Test tiers
 
@@ -82,6 +135,20 @@ to prove that the key, the base URL, the extra headers, and the profile agree.
 Quality is not in this table on purpose. A smoke test says the wiring works; only `make eval` and
 `make eval-retrieval` say whether the answers are good.
 
+## The gates can fail
+
+`make eval-lint` (also part of `make check`) runs
+`apps/api/tests/test_eval_gates_have_power.py`: each gate is tripped by a mutant that breaks the
+pipeline on purpose — a reranker that keeps the wrong document, an answer that cites nothing, an
+ACL guard switched off, an answer quoting the expired edition. If a mutant survives, the gate is
+decoration and the test says so.
+
+Two mutants exist because they caught real holes:
+
+- `citation_support` passed an empty citation list until the metric demanded at least one;
+- `context_fragment_coverage` was unmeasurable until the runner recorded the chunks the model
+  actually saw, after reranking.
+
 ## Determinism
 
 A hosted embedding endpoint is not required to be deterministic, and one of them is not: Qwen3
@@ -93,17 +160,52 @@ The reranker was stable across three repeats on the same input. The embedder is 
 
 Rules that follow:
 
-- a delta below ~0.02 in `recall@5` on this set is inside provider noise; repeat the run before
+- a delta below ~0.02 in `recall_at_5` on this set is inside provider noise; repeat the run before
   claiming it;
-- never compare two embedders using one run each;
+- never compare two embedders using one run each — use `--compare` and the paired interval;
 - when a case flips between runs, the measurement says so rather than reporting the friendlier run.
+
+## Comparing two runs
+
+Every run writes two files: the Markdown table and a JSONL artifact with one line per case. The
+artifact is what makes a comparison honest.
+
+```bash
+make eval                                          # current run
+make eval ARGS="--compare docs/measurements/2026-10-23-eval-retrieval-qwen3-embedding-8b-tunnel.jsonl"
+make eval ARGS="--compare out.jsonl --fail-on-regression"
+```
+
+`--compare` resamples the cases both runs scored, together, and reports the delta with a 95%
+interval and `p(delta <= 0)`. Two standalone accuracies are not a comparison; the same cases
+resampled together are. `--fail-on-regression` turns that into an exit code for CI.
+
+## Pinning a baseline
+
+The committed gates in `runner.GATES` are defaults. A real baseline is derived, not chosen:
+
+```bash
+make eval-baseline        # run + write docs/evals/baseline.json (gate = Wilson LB of this run)
+```
+
+From then on every run is checked against it, per stratum where the stratum holds at least ten
+cases. Regenerating the baseline is a decision, and it belongs in the measurement note: it lowers
+the bar for everything downstream.
 
 ## Adding a case
 
 1. Every escalation in production becomes a case.
 2. Every wrong answer found by a recruiter becomes a case.
 3. A case names documents, not chunks: chunk ids change when chunking changes.
-4. The set grows; cases are never deleted to make the gate pass.
+4. The set grows; cases are never deleted to make the gate pass. The stratum ratchet in
+   `test_golden.py` fails when a stratum shrinks.
+
+## Naming history
+
+Measurements written before 2026-10-24 use `p95_latency_ms` and `cost_per_answer_rub`. Those names
+are gone: the first measured a provider call, the second measured a completion. Read the old files
+with that correction in mind; do not compare an old file's `p95_latency_ms` with a new
+`p95_answer_ms`.
 
 ## Sentiment set
 
@@ -122,7 +224,8 @@ make eval-sentiment SPLIT=test REPEAT=3  # the locked half, three calls per case
 Every case carries `split: dev | test`. `dev` may be read while editing a prompt; `test` is locked
 and every quality claim quotes both numbers, because a gap between them is how overfitting shows
 up. The set has two rules: a case is added after a real failure, and no case is deleted to make a
-gate pass.
+gate pass. The set holds 163 cases: 49 dev and 114 test. A measurement that reports a different
+size was taken against another edition of the file and is not comparable.
 
 Metrics:
 
@@ -192,8 +295,8 @@ Metrics: `character_error_rate` (character edits over reference length, on accep
 `verdict_correctness` (share of cases whose accept/refuse decision and reason match), and
 `mean_confidence`. Gates: `character_error_rate ≤ 0.05`, `verdict_correctness = 1.00`.
 
-This is a floor, not a field measurement. A clean render has no perspective, no shadow, no stamp, and
-no handwriting: it proves the language route, normalization, and acceptance work, and it will not
+This is a floor, not a field measurement. Four clean renders with no perspective, no shadow, no
+stamp, and no handwriting prove the language route, normalization, and acceptance work; they cannot
 notice that the recognizer struggles with a photographed page. The quality gate is not exercised
 either — its thresholds ship unset, and turning one on is a measurement of its own. Report a real
 accuracy claim only from a set of real scans under `docs/evals/`, with the same command-commit
@@ -202,6 +305,7 @@ discipline as the golden set.
 ## Reporting
 
 A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the answer
-profile and model, the embedder, and the table of metrics. The profile name is the thing a later
-reader can re-run: `LLM_PROFILE=<name> make eval`. Use `--note` for a caveat that must travel with the numbers. A
-measurement without a commit is not a measurement.
+profile and model, the embedder, the metrics, the strata, and a link to its JSONL artifact. The
+profile name is the thing a later reader can re-run: `LLM_PROFILE=<name> make eval`. Use `--note`
+for a caveat that must travel with the numbers. A measurement without a commit is not a
+measurement.

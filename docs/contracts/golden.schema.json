@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/polypiast/onboarding/docs/contracts/golden.schema.json",
+  "title": "Golden set",
+  "description": "The question set of record. One case names documents, never chunks, so a chunking change does not rewrite the set. `stratum` is mandatory: a metric reported over one aggregate hides the stratum that broke.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cases"],
+  "properties": {
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "docId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+/[a-z0-9_-]+$",
+      "description": "`<folder>/<document>`, matching the frontmatter `id` in knowledge/."
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "question", "audience", "stratum"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]+$",
+          "description": "Stable slug. Renaming a case destroys comparability with earlier measurements."
+        },
+        "question": {
+          "type": "string",
+          "minLength": 5,
+          "description": "Phrased the way a new hire asks it, not in the words of the document."
+        },
+        "audience": {
+          "type": "string",
+          "pattern": "^(all|hr_only|dept:[a-z0-9_-]+)$",
+          "description": "The viewer's audience for this case."
+        },
+        "stratum": {
+          "type": "string",
+          "enum": [
+            "fact",
+            "neardup",
+            "multihop",
+            "acl",
+            "escalation",
+            "injection",
+            "unanswerable",
+            "morphology"
+          ],
+          "description": "fact: one document answers. neardup: a competing near-duplicate exists. multihop: two or more documents answer. acl: a relevant document exists and must stay hidden. escalation: must escalate, no hidden document involved. injection: an attack, not a question. unanswerable: no document holds the fact. morphology: degraded phrasing — typos, no keywords, scrambled word order."
+        },
+        "expect_docs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/docId" },
+          "uniqueItems": true,
+          "description": "Documents that must reach the top five. Empty for escalation-only cases."
+        },
+        "expect_absent_docs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/docId" },
+          "uniqueItems": true,
+          "description": "Documents that must never reach the top five: other audiences, expired editions, never-indexed drafts."
+        },
+        "expect_contains": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 2 },
+          "description": "Full phrases with the number and its unit, not bare digits. A bare `3` matches `3 hours, 14 days`."
+        },
+        "expect_not_contains": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 2 },
+          "description": "Phrases that mark a wrong answer even when the expected phrase is present: the other edition's number, the draft's number. Mandatory for a neardup case."
+        },
+        "expect_escalation": {
+          "type": "boolean",
+          "default": false
+        },
+        "expect_reason": {
+          "type": "string",
+          "enum": ["no_sources", "low_confidence", "restricted", "out_of_scope", "unavailable"],
+          "description": "Omitted means any escalation reason is accepted; a named one is asserted."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "stratum": { "const": "neardup" } }, "required": ["stratum"] },
+          "then": { "required": ["expect_docs", "expect_not_contains"] }
+        },
+        {
+          "if": { "properties": { "stratum": { "const": "acl" } }, "required": ["stratum"] },
+          "then": { "required": ["expect_absent_docs"] }
+        },
+        {
+          "if": { "properties": { "stratum": { "const": "injection" } }, "required": ["stratum"] },
+          "then": { "required": ["expect_escalation"] }
+        },
+        {
+          "if": { "properties": { "stratum": { "const": "unanswerable" } }, "required": ["stratum"] },
+          "then": { "required": ["expect_escalation"] }
+        }
+      ]
+    }
+  }
+}

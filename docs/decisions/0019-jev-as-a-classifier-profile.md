@@ -1,6 +1,6 @@
 # 0019 — Jev is a classifier profile, not a special case
 
-Date: 2026-10-28
+Date: 2026-10-24
 Status: proposed — the structure shipped, quality still unmeasured (no `JEV_API_KEY`)
 Supersedes: 0011 (partially: model selection, envelope, and prices leave the adapter)
 
@@ -76,8 +76,9 @@ runs with a key and writes `docs/measurements/<date>-sentiment-jev-<profile>.md`
   and a dead endpoint opens the shared breaker.
 - One fallback policy, one set of limits (`MAX_TAGS`, `MAX_ANSWER_CHARS`) shared with the prompt
   classifier. The sentiment contract's `maxItems` and the code constant are pinned by a test.
-- The eval runner can finally report price per case, which is one of the two questions ADR 0011
-  said adoption depends on.
+- The eval runner reports `cost_rub_per_1k_calls` from the classifier's own usage, which is one of
+  the two questions ADR 0011 said adoption depends on. It stays `0` until a price is committed to
+  the profile.
 - Breaking change for an existing deployment: `SENTIMENT_PROVIDER=jev` now needs
   `CLASSIFY_PROFILE` (or an explicit `SENTIMENT_RUBRIC`), because the rubric selector is data and
   the adapter no longer carries a version. `JEV_TIMEOUT_S` and `JEV_MAX_RETRIES` become overrides

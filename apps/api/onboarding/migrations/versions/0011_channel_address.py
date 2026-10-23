@@ -1,0 +1,67 @@
+"""Every conversation remembers which messenger it belongs to.
+
+``chat_id`` alone was enough while MAX was the only client. A second channel makes it ambiguous:
+the dispatcher cannot pick an API from a number, and two messengers can hand out the same chat id.
+The ``channel`` column fixes the address.
+
+``channel_identities`` replaces the implicit rule "a MAX user id is an employee id". A person is
+linked to an employee once; the webhook resolves the link, and an unlinked sender is refused
+(ADR 0019). The backfill reproduces the old rule exactly, so an existing deployment keeps working.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = "0011_channel_address"
+down_revision: str | None = "0010_messages_retention"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    for table in ("messages", "questions", "runs"):
+        op.add_column(
+            table,
+            sa.Column("channel", sa.String(16), nullable=False, server_default=sa.text("'max'")),
+        )
+    # Offboarding deletes a conversation's rows; the address is now a pair.
+    op.create_index("messages_channel_chat_idx", "messages", ["channel", "chat_id"])
+    op.drop_index("messages_chat_idx", table_name="messages")
+
+    op.create_table(
+        "channel_identities",
+        sa.Column("channel", sa.String(16), primary_key=True),
+        sa.Column("external_id", sa.String(64), primary_key=True),
+        sa.Column(
+            "employee_id",
+            sa.String(64),
+            sa.ForeignKey("employees.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
+        sa.Column(
+            "linked_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+    )
+    op.create_index("channel_identities_employee_idx", "channel_identities", ["employee_id"])
+
+    # Before channels existed, a MAX user id was the employee id. Keep that link working.
+    op.execute(
+        "INSERT INTO channel_identities (channel, external_id, employee_id) "
+        "SELECT 'max', id, id FROM employees ON CONFLICT DO NOTHING"
+    )
+
+
+def downgrade() -> None:
+    op.drop_index("channel_identities_employee_idx", table_name="channel_identities")
+    op.drop_table("channel_identities")
+    op.create_index("messages_chat_idx", "messages", ["chat_id"])
+    op.drop_index("messages_channel_chat_idx", table_name="messages")
+    for table in ("messages", "questions", "runs"):
+        op.drop_column(table, "channel")

@@ -11,6 +11,7 @@ from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from onboarding.app.audit import NullAudit
+from onboarding.app.llm.sentiment import SentimentClassifier
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.worker.actions import ActionContext, ActionExecutor
 from onboarding.core.models import (
@@ -19,12 +20,15 @@ from onboarding.core.models import (
     ChatId,
     EmployeeId,
     Event,
+    Question,
+    RiskSignal,
     RunId,
     Scenario,
     StepState,
+    SurveyAnswer,
     Transition,
 )
-from onboarding.core.risk import assess, survey_signals
+from onboarding.core.risk import assess, keyword_signal, scale_signal
 from onboarding.core.transitions import advance, start
 from onboarding.ports import (
     AuditLog,
@@ -53,6 +57,7 @@ class OnboardingService:
         clock: Clock,
         directory: Directory,
         audit: AuditLog | None = None,
+        classifier: SentimentClassifier | None = None,
         scenario_id: str = "onboarding_default",
     ) -> None:
         self._runs = runs
@@ -61,6 +66,7 @@ class OnboardingService:
         self._clock = clock
         self._directory = directory
         self._audit = audit or NullAudit()
+        self._classifier = classifier
         self._scenario_id = scenario_id
 
     async def start(self, employee_id: EmployeeId, chat_id: ChatId) -> ServiceResult:
@@ -149,7 +155,8 @@ class OnboardingService:
         fresh = transition.state.answers[len(previous.answers) :]
         if not fresh:
             return False
-        assessment = assess(survey_signals(step.questions, fresh))
+        signals = await self._signals(step.questions, fresh)
+        assessment = assess(signals)
         await self._audit.record(
             "risk_assessed",
             employee_id=str(employee_id),
@@ -169,6 +176,28 @@ class OnboardingService:
             level=assessment.level.value,
         )
         return True
+
+    async def _signals(
+        self, questions: tuple[Question, ...], answers: tuple[SurveyAnswer, ...]
+    ) -> tuple[RiskSignal, ...]:
+        """Turn stored answers into the one shape the risk rules understand."""
+        by_id = {question.id: question for question in questions}
+        signals: list[RiskSignal] = []
+        for answer in answers:
+            question = by_id.get(answer.question_id)
+            if question is None:
+                continue
+            source = f"survey:{answer.question_id}"
+            scale = scale_signal(question, answer, source=source)
+            if scale is not None:
+                signals.append(scale)
+            if not answer.text:
+                continue
+            if self._classifier is not None:
+                signals.append(await self._classifier.classify(answer.text, source=source))
+            else:
+                signals.append(keyword_signal(answer.text, source=source))
+        return tuple(signals)
 
     def _now(self) -> datetime:
         now = self._clock.now()

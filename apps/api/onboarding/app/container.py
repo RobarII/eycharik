@@ -27,6 +27,7 @@ from onboarding.app.db.session import Database
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
 from onboarding.app.llm.rerank import RemoteReranker
+from onboarding.app.llm.sentiment import SentimentClassifier
 from onboarding.app.max.client import MaxClient
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.scenarios import ScenarioCatalog
@@ -120,6 +121,11 @@ def build_container(settings: Settings) -> Container:
         audit=audit,
         questions=DatabaseQuestionLog(database),
     )
+    classifier = (
+        SentimentClassifier(llm=llm, prompts=prompts, audit=audit)
+        if settings.is_llm_configured
+        else None
+    )
     service = OnboardingService(
         runs=DatabaseRunRepository(database),
         catalog=catalog,
@@ -127,6 +133,7 @@ def build_container(settings: Settings) -> Container:
         clock=clock,
         directory=directory,
         audit=audit,
+        classifier=classifier,
     )
     return Container(
         settings=settings,

@@ -16,7 +16,10 @@ from onboarding.core.models import (
     EmployeeId,
     Event,
     EventKind,
+    RiskSignal,
     ScheduleReminder,
+    Sentiment,
+    SignalTag,
 )
 from onboarding.ports import StoredRun
 
@@ -227,7 +230,23 @@ async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
     assert stored.state.step_id == "meet_the_team"
 
 
-def _build_survey(tmp_path: Path) -> tuple[OnboardingService, InMemoryRuns, RecordingAudit]:
+class RecordingClassifier:
+    def __init__(self, sentiment: Sentiment, tags: tuple[SignalTag, ...]) -> None:
+        self.sentiment = sentiment
+        self.tags = tags
+        self.calls: list[tuple[str, str]] = []
+
+    async def classify(self, text: str, *, source: str) -> RiskSignal:
+        self.calls.append((text, source))
+        return RiskSignal(
+            source=source, sentiment=self.sentiment, tags=self.tags, confidence=0.9, text=text
+        )
+
+
+def _build_survey(
+    tmp_path: Path,
+    classifier: object | None = None,
+) -> tuple[OnboardingService, InMemoryRuns, RecordingAudit]:
     document = {
         "id": "survey_demo",
         "version": 1,
@@ -269,6 +288,7 @@ def _build_survey(tmp_path: Path) -> tuple[OnboardingService, InMemoryRuns, Reco
         clock=FrozenClock(NOW),
         directory=StaticDirectory({EMPLOYEE: profile()}),
         audit=audit,
+        classifier=classifier,  # type: ignore[arg-type]
         scenario_id="survey_demo",
     )
     return service, runs, audit
@@ -307,6 +327,26 @@ async def test_angry_reason_escalates_the_survey(tmp_path: Path) -> None:
         ),
     )
 
+    assert result.escalated
+    escalated = next(fields for name, fields in audit.events if name == "risk_escalated")
+    assert escalated["to"] == "recruiter"
+
+
+async def test_the_classifier_labels_free_text_answers(tmp_path: Path) -> None:
+    labeler = RecordingClassifier(Sentiment.NEGATIVE, (SignalTag.MANAGER,))
+    service, _, audit = _build_survey(tmp_path, labeler)
+    await service.start(EMPLOYEE, ChatId(1))
+    await service.handle(
+        EMPLOYEE, ChatId(1), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ChatId(1),
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Нормально, но руководитель занят"),
+    )
+
+    assert labeler.calls == [("Нормально, но руководитель занят", "survey:manager_available")]
     assert result.escalated
     escalated = next(fields for name, fields in audit.events if name == "risk_escalated")
     assert escalated["to"] == "recruiter"

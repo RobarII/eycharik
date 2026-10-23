@@ -137,6 +137,22 @@ def assess_text(text: str, *, source: str, confidence: float = 0.5) -> RiskAsses
     return assess((keyword_signal(text, source=source, confidence=confidence),))
 
 
+def scale_signal(
+    question: Question, answer: SurveyAnswer, *, source: str = "survey"
+) -> RiskSignal | None:
+    """A numeric answer as a signal. No words, so only the distance to the threshold matters."""
+    if answer.score is None or question.low_threshold is None:
+        return None
+    return RiskSignal(
+        source=source,
+        sentiment=Sentiment.NEUTRAL,
+        tags=(),
+        confidence=0.9,
+        score=answer.score,
+        low_threshold=question.low_threshold,
+    )
+
+
 def survey_signals(
     questions: Sequence[Question],
     answers: Sequence[SurveyAnswer],
@@ -156,17 +172,9 @@ def survey_signals(
         if question is None:
             continue
         source = f"{source_prefix}:{answer.question_id}"
-        if answer.score is not None and question.low_threshold is not None:
-            signals.append(
-                RiskSignal(
-                    source=source,
-                    sentiment=Sentiment.NEUTRAL,
-                    tags=(),
-                    confidence=0.9,
-                    score=answer.score,
-                    low_threshold=question.low_threshold,
-                )
-            )
+        scale = scale_signal(question, answer, source=source)
+        if scale is not None:
+            signals.append(scale)
         if answer.text:
             signals.append(
                 keyword_signal(answer.text, source=source, confidence=confidence)

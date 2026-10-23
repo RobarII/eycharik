@@ -160,6 +160,27 @@ shape, so v1 was corrected in place rather than superseded.
   against 1.14 probabilities, and a threshold does not transfer between model versions without the
   same measurement.
 
+### The cascade this measurement rejects
+
+A third arrangement is possible without new code: Jev answers, and when its `confidence` is low the
+prompt model answers instead. Estimated offline from the two 114-case artifacts, no new calls:
+
+| gate | calls sent on | accuracy | vs Jev alone | 95% CI | `p(delta <= 0)` |
+|---|---|---|---|---|---|
+| `confidence < 0.5` | 11% | 0.901 | +0.018 | [+0.000, +0.041] | 0.048 |
+| `confidence < 0.6` | 18% | 0.906 | +0.023 | [−0.009, +0.061] | 0.092 |
+| `confidence < 0.7` | 26% | 0.924 | +0.041 | [−0.003, +0.091] | 0.038 |
+
+The best cell is not a finding. It was chosen after looking at four thresholds plus the crisis
+subset, its interval touches zero exactly, and the three cases it fixes are three discordant pairs
+(`p = 0.25` on its own). Worse, it is tuned on the test split, which `docs/evals/sentiment-guide.md`
+forbids, so the number is not even admissible as evidence.
+
+The cost is real, though: sending 11% of calls to a chat model puts the p95 back near 3000 ms — the
+operational advantage Jev has — and pays twice for the same answer. A tie-breaking 1.8 points does
+not buy that. Rejected until a dev-split run picks the threshold and a confirmatory test run
+reproduces the gain.
+
 ## Alternatives
 
 - Keep the adapter's own envelope and only add a breaker — rejected: two retry policies, two
@@ -171,3 +192,6 @@ shape, so v1 was corrected in place rather than superseded.
   belongs where every other model lives.
 - Version the rubric in code (`RUBRIC_VERSION = 2`) — rejected: that is a code change for a
   wording change, and it makes a measurement ambiguous about which file ran.
+- Run both models per answer and vote, or cascade one into the other — rejected for now: measured
+  above, the gain is inside the noise of the set that produced it, and the cost is the tail latency
+  that is Jev's only measured advantage.

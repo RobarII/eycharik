@@ -222,3 +222,67 @@ def test_me_reports_the_full_hr_capability_set_and_expiry() -> None:
 def test_me_requires_a_token() -> None:
     with client() as http:
         assert http.get("/admin/api/me").status_code == 401
+
+
+def session_client(raw: str = "rec:recruiter:rec-1") -> TestClient:
+    app = create_app(
+        Settings(_env_file=None, admin_tokens_raw=raw, max_webhook_secret="secret")
+    )
+    return TestClient(app)
+
+
+def test_session_trades_a_token_for_an_httponly_cookie() -> None:
+    with session_client() as http:
+        response = http.post("/admin/api/session", json={"token": "rec"})
+
+    assert response.status_code == 204
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith("onboarding_session=rec;")
+    assert "HttpOnly" in cookie
+    assert "SameSite=strict" in cookie.replace("samesite", "SameSite")
+    assert "Path=/admin/api" in cookie
+    # A local stack is served over plain http, so the cookie must not demand TLS there.
+    assert "Secure" not in cookie
+
+
+def test_the_cookie_alone_authenticates() -> None:
+    with session_client() as http:
+        http.post("/admin/api/session", json={"token": "rec"})
+        http.headers.pop("Authorization", None)
+        response = http.get("/admin/api/me")
+
+    assert response.status_code == 200
+    assert response.json()["subject"] == "rec-1"
+
+
+def test_a_bad_token_opens_no_session() -> None:
+    with session_client() as http:
+        response = http.post("/admin/api/session", json={"token": "nope"})
+
+    assert response.status_code == 401
+    assert "set-cookie" not in response.headers
+
+
+def test_expired_token_opens_no_session() -> None:
+    with session_client("old:hr_admin:hr-1:2020-01-01") as http:
+        response = http.post("/admin/api/session", json={"token": "old"})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "token expired"
+
+
+def test_signing_out_clears_the_cookie_without_a_valid_token() -> None:
+    with session_client() as http:
+        response = http.delete("/admin/api/session")
+
+    assert response.status_code == 204
+    assert 'onboarding_session=""' in response.headers["set-cookie"]
+    assert "Max-Age=0" in response.headers["set-cookie"]
+
+
+def test_api_responses_forbid_sniffing_and_caching_of_identity() -> None:
+    with session_client() as http:
+        response = http.get("/admin/api/me", headers={"Authorization": "Bearer rec"})
+
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Referrer-Policy"] == "no-referrer"

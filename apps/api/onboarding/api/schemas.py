@@ -8,6 +8,12 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
+class SessionRequest(BaseModel):
+    """The one place a raw token travels in a body instead of a header."""
+
+    token: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+
+
 class AdminScope(BaseModel):
     """The rows the caller may see. ``None`` means "not narrowed by this dimension"."""
 

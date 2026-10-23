@@ -21,16 +21,34 @@ or a malformed date refuses to start the process.
 | `manager` | employees of one department: the token's subject is the department name |
 | `hr_admin` | every employee and every question |
 
-There is no session and no cookie. Tokens are compared in constant time. An unknown, missing or
-expired token answers `401`; ten failed attempts from one peer within a minute answer `429` for the
-next minute. A run outside the caller's scope answers `404`, so the existence of another
-recruiter's employee is not disclosed.
+A token is compared in constant time. An unknown, missing or expired token answers `401`; ten
+failed attempts from one peer within a minute answer `429` for the next minute. A run outside the
+caller's scope answers `404`, so the existence of another recruiter's employee is not disclosed.
+
+### Session cookie
+
+The cabinet never stores the token in script-reachable storage. It trades it once:
+
+```http
+POST /admin/api/session
+Content-Type: application/json
+
+{"token": "dev-recruiter-token"}
+```
+
+`204` with `Set-Cookie: onboarding_session=<token>; HttpOnly; SameSite=Strict; Path=/admin/api;
+Max-Age=43200`, plus `Secure` outside `local`. Every later request may authenticate with that cookie
+alone. `DELETE /admin/api/session` clears it and needs no valid token. The `Authorization` header
+stays accepted and wins over the cookie when both are present; `docs/decisions/0018` records why the
+cookie exists at all.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/admin/api/me` | the caller's role, scope, capabilities and token expiry |
+| `POST` | `/admin/api/session` | trade a bearer token for an HttpOnly session cookie |
+| `DELETE` | `/admin/api/session` | clear the session cookie |
 | `GET` | `/admin/api/runs?limit=50` | active and completed runs, newest activity first |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |

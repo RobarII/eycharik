@@ -8,6 +8,7 @@ business.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -20,11 +21,19 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
+    Response,
     UploadFile,
     status,
 )
 
-from onboarding.api.auth import AdminPrincipal, current_admin
+from onboarding.api.auth import (
+    SESSION_COOKIE,
+    SESSION_PATH,
+    SESSION_TTL,
+    AdminPrincipal,
+    authenticate,
+    current_admin,
+)
 from onboarding.api.schemas import (
     AdminIdentity,
     AdminScope,
@@ -46,6 +55,7 @@ from onboarding.api.schemas import (
     RunDetail,
     RunList,
     RunSummary,
+    SessionRequest,
     TagCount,
 )
 from onboarding.app.admin.actions import (
@@ -69,6 +79,8 @@ from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 from onboarding.app.worker.jobs import EXTRACT_DOCUMENT
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
+
+log = logging.getLogger("onboarding.api.admin")
 
 Admin = Annotated[AdminPrincipal, Depends(current_admin)]
 
@@ -103,6 +115,42 @@ async def whoami(principal: Admin) -> AdminIdentity:
         capabilities=list(principal.capabilities),
         expires_at=principal.expires_at,
     )
+
+
+@router.post("/session", status_code=status.HTTP_204_NO_CONTENT)
+async def open_session(request: Request, body: SessionRequest, response: Response) -> None:
+    """Trade a token for an HttpOnly session cookie.
+
+    The token is never stored by the page: it arrives once in a JSON body and leaves as a cookie the
+    script cannot read. A wrong token is throttled here exactly like a wrong bearer header.
+    """
+    principal = await authenticate(request, body.token)
+    container = request.app.state.container
+    response.set_cookie(
+        SESSION_COOKIE,
+        body.token,
+        max_age=int(SESSION_TTL.total_seconds()),
+        path=SESSION_PATH,
+        httponly=True,
+        samesite="strict",
+        secure=container.settings.environment != "local",
+    )
+    log.info(
+        json.dumps(
+            {"event": "admin_session_opened", "role": principal.role, "subject": principal.subject},
+            ensure_ascii=False,
+        )
+    )
+
+
+@router.delete("/session", status_code=status.HTTP_204_NO_CONTENT)
+async def close_session(request: Request, response: Response) -> None:
+    """Clear the cookie.
+
+    Open by design: signing out must work even for a token that just expired.
+    """
+    response.delete_cookie(SESSION_COOKIE, path=SESSION_PATH)
+    log.info(json.dumps({"event": "admin_session_closed"}, ensure_ascii=False))
 
 
 @router.get("/runs", response_model=RunList)

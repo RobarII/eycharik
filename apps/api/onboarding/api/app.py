@@ -75,6 +75,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         metrics.observe("onboarding_http_request_seconds", elapsed, labels=labels)
         response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if route.startswith("/admin/"):
+            # Identity, questions and transcripts must not land in a shared cache.
+            response.headers["Cache-Control"] = "no-store"
         if route not in _QUIET_PATHS:
             log.info(
                 json.dumps(

@@ -13,14 +13,16 @@ from this table. If a question is not answered here, the answer does not exist y
 | How do we write code, tests, and commits? | [conventions.md](conventions.md) |
 | What exactly does the MAX API give us? | [contracts/max-api.md](contracts/max-api.md) |
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
-| What exactly does the model see? | [prompts/answer/v3.md](prompts/answer/v3.md) (current), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
+| What exactly does the model see? | [prompts/answer/v4.md](prompts/answer/v4.md) (current), [v3](prompts/answer/v3.md), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
 | How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
 | What is the Jev classifier pilot? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md), rubric [prompts/sentiment-jev/v1.yaml](prompts/sentiment-jev/v1.yaml) |
+| How is a chunk given context before embedding? | [prompts/context/v1.md](prompts/context/v1.md) |
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
 | What does the sentiment layer return? | [contracts/sentiment.schema.json](contracts/sentiment.schema.json) |
 | Which model runs, and what does it allow? | [contracts/model-profile.schema.json](contracts/model-profile.schema.json), profiles in `apps/api/model-profiles/` |
 | What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
+| Which mascot image belongs to which step? | [product/scenario-images.md](product/scenario-images.md) |
 | How do I demo this in five minutes? | [product/demo-script.md](product/demo-script.md) |
 | Who may see what? | [product/roles.md](product/roles.md) |
 | Why is the code split into core and app? | [decisions/0001-functional-core.md](decisions/0001-functional-core.md) |
@@ -39,6 +41,8 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why does the cabinet write through the outbox, and what does leaving delete? | [decisions/0014-cabinet-writes-through-the-outbox.md](decisions/0014-cabinet-writes-through-the-outbox.md) |
 | Why is extraction an adapter, and how does an uploaded PDF become a document? | [decisions/0015-extraction-is-an-adapter.md](decisions/0015-extraction-is-an-adapter.md) |
 | Why is contextual retrieval written but switched off? | [decisions/0016-contextual-retrieval.md](decisions/0016-contextual-retrieval.md) |
+| How is the sentiment eval measured, and why does it abort on an outage? | [decisions/0017-sentiment-eval-v2.md](decisions/0017-sentiment-eval-v2.md) |
+| Why does the cabinet hold a cookie instead of a token? | [decisions/0018-session-cookie-for-the-cabinet.md](decisions/0018-session-cookie-for-the-cabinet.md) |
 | How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
 | An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |
 | How is OCR quality measured? | [evals/ocr.yaml](evals/ocr.yaml), `make eval-ocr` |

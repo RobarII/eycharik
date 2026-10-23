@@ -18,6 +18,7 @@ from onboarding.core.models import (
     Scenario,
     ScheduleReminder,
     StepState,
+    SurveyAnswer,
     TimeoutAction,
 )
 from onboarding.core.scenario import parse_scenario
@@ -271,3 +272,164 @@ def test_a_confirmation_at_a_message_step_advances_it(scenario: Scenario, state:
 )
 def test_is_question(text: str | None, expected: bool) -> None:
     assert is_question(text) is expected
+
+
+SURVEY_DOCUMENT = {
+    "id": "survey_demo",
+    "version": 1,
+    "title": "Опрос",
+    "start": "intro",
+    "segments": ["GrPP"],
+    "steps": [
+        {"id": "intro", "kind": "send", "message": "Привет", "next": "check"},
+        {
+            "id": "check",
+            "kind": "survey",
+            "title": "Чек через две недели",
+            "message": "Пара вопросов",
+            "questions": [
+                {
+                    "id": "manager_available",
+                    "kind": "scale",
+                    "prompt": "Насколько доступен руководитель?",
+                    "low_threshold": 8,
+                    "reason_prompt": "Что мешает?",
+                },
+                {
+                    "id": "colleagues",
+                    "kind": "choice",
+                    "prompt": "Как встретили коллеги?",
+                    "options": [
+                        {"id": "great", "text": "Отлично"},
+                        {"id": "bad", "text": "Никак"},
+                    ],
+                },
+                {"id": "advice", "kind": "open", "prompt": "Что улучшить?"},
+            ],
+            "next": "done",
+            "escalate_to": "recruiter",
+            "timeout": {"after_hours": 24, "action": "remind"},
+        },
+        {"id": "done", "kind": "terminal", "outcome": "completed"},
+    ],
+}
+
+
+@pytest.fixture
+def survey() -> Scenario:
+    return parse_scenario(SURVEY_DOCUMENT)
+
+
+def _survey_state() -> StepState:
+    return StepState(
+        run_id=RunId("run-2"),
+        employee_id="employee-2",
+        scenario_id="survey_demo",
+        scenario_version=1,
+        step_id="check",
+        entered_at=NOW,
+    )
+
+
+def test_survey_enter_asks_the_first_question(survey: Scenario) -> None:
+    transition = start(survey, RunId("run-2"), "employee-2", NOW)
+
+    assert [action.kind for action in transition.actions] == [
+        ActionKind.SEND,
+        ActionKind.SEND,
+        ActionKind.SEND,
+    ]
+    assert transition.actions[0].text == "Привет"
+    assert transition.actions[1].text == "Пара вопросов"
+    assert transition.actions[2].text == "Насколько доступен руководитель?"
+    assert transition.state.step_id == "check"
+    assert isinstance(transition.reminder, ScheduleReminder)
+
+
+def test_low_score_asks_a_reason_before_moving_on(survey: Scenario) -> None:
+    answered = advance(
+        survey, _survey_state(), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="6")
+    )
+
+    assert answered.state.step_id == "check"
+    assert answered.state.question_index == 0
+    assert answered.state.pending_reason == "manager_available"
+    assert [action.text for action in answered.actions] == ["Что мешает?"]
+    assert answered.state.answers == (SurveyAnswer(question_id="manager_available", score=6),)
+
+
+def test_reason_is_stored_and_the_next_question_is_asked(survey: Scenario) -> None:
+    state = replace(
+        _survey_state(),
+        answers=(SurveyAnswer(question_id="manager_available", score=6),),
+        pending_reason="manager_available",
+    )
+
+    transition = advance(
+        survey,
+        state,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Руководитель в командировке"),
+    )
+
+    assert transition.state.question_index == 1
+    assert transition.state.pending_reason is None
+    assert transition.state.answers[-1] == SurveyAnswer(
+        question_id="manager_available", text="Руководитель в командировке"
+    )
+    assert transition.actions[0].text == "Как встретили коллеги?"
+    assert len(transition.actions[0].keyboard[0]) == 2
+
+
+def test_comfortable_score_moves_to_the_next_question(survey: Scenario) -> None:
+    transition = advance(
+        survey, _survey_state(), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="9")
+    )
+
+    assert transition.state.question_index == 1
+    assert transition.state.pending_reason is None
+    assert transition.actions[0].note == "survey:colleagues"
+
+
+def test_choice_is_read_from_the_button_id(survey: Scenario) -> None:
+    state = replace(_survey_state(), question_index=1)
+
+    transition = advance(
+        survey, state, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="q_colleagues_bad")
+    )
+
+    assert transition.state.question_index == 2
+    assert transition.state.answers == (SurveyAnswer(question_id="colleagues", option_id="bad"),)
+
+
+def test_invalid_answer_repeats_the_question_without_progress(survey: Scenario) -> None:
+    transition = advance(
+        survey, _survey_state(), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="много")
+    )
+
+    assert transition.state == _survey_state()
+    assert transition.actions[0].note == "survey:repeat"
+    assert transition.actions[0].text == "Насколько доступен руководитель?"
+
+
+def test_last_answer_leaves_the_survey(survey: Scenario) -> None:
+    state = replace(_survey_state(), question_index=2)
+
+    transition = advance(
+        survey, state, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Больше ясности")
+    )
+
+    assert transition.state.step_id == "done"
+    assert transition.state.completed_steps == ("check", "done")
+    assert transition.state.answers[-1].text == "Больше ясности"
+    assert [action.kind for action in transition.actions] == [ActionKind.COMPLETE]
+
+
+def test_survey_timeout_repeats_the_current_question(survey: Scenario) -> None:
+    transition = advance(
+        survey, _survey_state(), Event(kind=EventKind.TIMEOUT, at=NOW + timedelta(hours=24))
+    )
+
+    assert transition.state.question_index == 0
+    assert transition.actions[0].text == "Насколько доступен руководитель?"
+    assert isinstance(transition.reminder, ScheduleReminder)
+    assert transition.reminder.due_at == NOW + timedelta(hours=48)

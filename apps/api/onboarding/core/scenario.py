@@ -19,6 +19,8 @@ from .models import (
     Expects,
     Keyboard,
     Outcome,
+    Question,
+    QuestionKind,
     Scenario,
     ScenarioError,
     Step,
@@ -26,8 +28,9 @@ from .models import (
     Timeout,
     TimeoutAction,
 )
+from .survey import validate_survey
 
-_TOP_KEYS = {"id", "version", "title", "start", "steps"}
+_TOP_KEYS = {"id", "version", "title", "start", "steps", "segments"}
 _STEP_KEYS = {
     "id",
     "kind",
@@ -38,19 +41,31 @@ _STEP_KEYS = {
     "routes",
     "next",
     "timeout",
+    "questions",
     "escalate_to",
     "outcome",
 }
 _REQUIRED_BY_KIND = {
     StepKind.SEND: {"message", "next"},
     StepKind.WAIT: {"expects"},
+    StepKind.SURVEY: {"questions", "next"},
     StepKind.TERMINAL: {"outcome"},
 }
 _FORBIDDEN_BY_KIND = {
-    StepKind.SEND: {"expects", "routes", "timeout", "outcome"},
-    StepKind.WAIT: {"next", "outcome"},
-    StepKind.TERMINAL: {"message", "keyboard", "expects", "routes", "next", "timeout"},
+    StepKind.SEND: {"expects", "routes", "timeout", "outcome", "questions"},
+    StepKind.WAIT: {"next", "outcome", "questions"},
+    StepKind.SURVEY: {"expects", "routes", "outcome"},
+    StepKind.TERMINAL: {
+        "message",
+        "keyboard",
+        "expects",
+        "routes",
+        "next",
+        "timeout",
+        "questions",
+    },
 }
+_QUESTION_KEYS = {"id", "kind", "prompt", "options", "low_threshold", "reason_prompt"}
 _MAX_KEYBOARD_ROWS = 3
 _MAX_BUTTONS_PER_ROW = 3
 
@@ -62,6 +77,7 @@ def parse_scenario(raw: Mapping[str, Any]) -> Scenario:
     version = _integer(raw, "version", "scenario")
     title = _text(raw, "title", "scenario")
     start = _text(raw, "start", "scenario")
+    segments = _segments(raw)
     raw_steps = _list(raw, "steps", "scenario")
     if version < 1:
         raise ScenarioError("scenario.version must be at least 1")
@@ -87,6 +103,7 @@ def parse_scenario(raw: Mapping[str, Any]) -> Scenario:
         title=title,
         start=start,
         steps=MappingProxyType(steps),
+        segments=segments,
     )
 
 
@@ -110,6 +127,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         raise ScenarioError(f"{path}: title exceeds {MAX_TITLE_CHARS} characters")
 
     keyboard = _parse_keyboard(raw, path, button_ids)
+    questions = _questions(raw, path) if kind is StepKind.SURVEY else ()
     routes = _routes(raw, path)
     timeout = _timeout(raw, path)
     expects = Expects(raw["expects"]) if "expects" in raw else None
@@ -138,6 +156,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         routes=routes,
         next_step=_text(raw, "next", path) if "next" in raw else None,
         timeout=timeout,
+        questions=questions,
         escalate_to=escalate_to,
         outcome=outcome,
     )
@@ -205,6 +224,77 @@ def _routes(raw: Mapping[str, Any], path: str) -> Mapping[str, str]:
             raise ScenarioError(f"{path}.routes[{key!r}]: target must be a non-empty string")
         routes[key] = value
     return MappingProxyType(routes)
+
+
+def _segments(raw: Mapping[str, Any]) -> tuple[str, ...]:
+    if "segments" not in raw:
+        return ()
+    values = _list(raw, "segments", "scenario")
+    segments: list[str] = []
+    for position, value in enumerate(values):
+        if not isinstance(value, str) or not value.strip():
+            raise ScenarioError(f"scenario.segments[{position}] must be a non-empty string")
+        if value in segments:
+            raise ScenarioError(f"scenario.segments: duplicate segment {value!r}")
+        segments.append(value)
+    return tuple(segments)
+
+
+def _questions(raw: Mapping[str, Any], path: str) -> tuple[Question, ...]:
+    values = _list(raw, "questions", path)
+    questions: list[Question] = []
+    for position, raw_question in enumerate(values):
+        question_path = f"{path}.questions[{position}]"
+        item = _mapping(raw_question, question_path)
+        _reject_unknown(item, _QUESTION_KEYS, question_path)
+        kind_value = item.get("kind")
+        try:
+            kind = QuestionKind(str(kind_value))
+        except ValueError:
+            raise ScenarioError(
+                f"{question_path}.kind must be one of {[k.value for k in QuestionKind]}"
+            ) from None
+        options = _options(item, question_path) if kind is QuestionKind.CHOICE else ()
+        low_threshold = None
+        reason_prompt = None
+        if kind is QuestionKind.SCALE:
+            threshold = item.get("low_threshold")
+            if isinstance(threshold, bool) or not isinstance(threshold, int):
+                raise ScenarioError(f"{question_path}.low_threshold must be an integer")
+            low_threshold = threshold
+            reason_prompt = _text(item, "reason_prompt", question_path)
+        elif kind is QuestionKind.OPEN and "options" in item:
+            raise ScenarioError(
+                f"{question_path}: only a choice question takes options"
+            )
+        questions.append(
+            Question(
+                id=_text(item, "id", question_path),
+                prompt=_text(item, "prompt", question_path),
+                kind=kind,
+                options=options,
+                low_threshold=low_threshold,
+                reason_prompt=reason_prompt,
+            )
+        )
+    validate_survey(questions)
+    return tuple(questions)
+
+
+def _options(raw: Mapping[str, Any], path: str) -> tuple[Button, ...]:
+    values = _list(raw, "options", path)
+    options: list[Button] = []
+    seen: set[str] = set()
+    for position, raw_option in enumerate(values):
+        option_path = f"{path}.options[{position}]"
+        item = _mapping(raw_option, option_path)
+        _reject_unknown(item, {"id", "text"}, option_path)
+        option = Button(id=_text(item, "id", option_path), text=_text(item, "text", option_path))
+        if option.id in seen:
+            raise ScenarioError(f"{option_path}: duplicate option id {option.id!r}")
+        seen.add(option.id)
+        options.append(option)
+    return tuple(options)
 
 
 def _check_references(steps: Mapping[str, Step]) -> None:

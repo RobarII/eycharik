@@ -13,6 +13,7 @@ from datetime import datetime
 from .models import (
     Action,
     ActionKind,
+    Button,
     CancelReminder,
     EmployeeId,
     EscalationReason,
@@ -20,6 +21,9 @@ from .models import (
     EventKind,
     Expects,
     KeepReminder,
+    Keyboard,
+    Question,
+    QuestionKind,
     ReminderPlan,
     RunId,
     Scenario,
@@ -27,11 +31,14 @@ from .models import (
     Step,
     StepKind,
     StepState,
+    SurveyAnswer,
     TimeoutAction,
     Transition,
 )
+from .survey import needs_reason, parse_answer
 
 MAX_SEND_CHAIN = 32
+SURVEY_BUTTON_PREFIX = "q_"
 
 
 class ScenarioRunError(RuntimeError):
@@ -75,6 +82,12 @@ def advance(scenario: Scenario, state: StepState, event: Event) -> Transition:
         action = Action(kind=ActionKind.COMPLETE, outcome=step.outcome)
         return Transition(state=state, actions=(action,), reminder=CancelReminder())
 
+    if step.kind is StepKind.SURVEY:
+        return _on_survey(scenario, state, event, step)
+    return _on_event(scenario, state, event)
+
+
+def _on_event(scenario: Scenario, state: StepState, event: Event) -> Transition:
     match event.kind:
         case EventKind.EMPLOYEE_CREATED:
             return _idle(state, ActionKind.IGNORE)
@@ -113,6 +126,16 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
                 actions=tuple(actions),
                 reminder=reminder,
             )
+        if step.kind is StepKind.SURVEY:
+            if step.message is not None:
+                actions.append(Action(kind=ActionKind.SEND, text=step.message))
+            actions.append(_ask(step.questions[0]))
+            reminder = _schedule(step, now)
+            return Transition(
+                state=replace(current, completed_steps=tuple(completed)),
+                actions=tuple(actions),
+                reminder=reminder,
+            )
         actions.append(Action(kind=ActionKind.COMPLETE, outcome=step.outcome))
         completed.append(step.id)
         return Transition(
@@ -131,6 +154,149 @@ def _schedule(step: Step, now: datetime) -> ReminderPlan:
         due_at=now + step.timeout.after,
         step_id=step.id,
         action=step.timeout.action,
+    )
+
+
+def _ask(question: Question) -> Action:
+    return Action(
+        kind=ActionKind.SEND,
+        text=question.prompt,
+        keyboard=_question_keyboard(question),
+        note=f"survey:{question.id}",
+    )
+
+
+def _question_keyboard(question: Question) -> Keyboard:
+    if question.kind is not QuestionKind.CHOICE:
+        return ()
+    return (
+        tuple(
+            Button(id=f"{SURVEY_BUTTON_PREFIX}{question.id}_{option.id}", text=option.text)
+            for option in question.options
+        ),
+    )
+
+
+def _on_survey(scenario: Scenario, state: StepState, event: Event, step: Step) -> Transition:
+    if event.kind is EventKind.TIMEOUT:
+        return _on_survey_timeout(scenario, state, event, step)
+    if event.kind not in {EventKind.MESSAGE_RECEIVED, EventKind.BUTTON_PRESSED}:
+        return _idle(state, ActionKind.IGNORE)
+    if state.pending_reason is not None:
+        return _record_reason(scenario, state, event, step)
+    return _record_answer(scenario, state, event, step)
+
+
+def _record_reason(scenario: Scenario, state: StepState, event: Event, step: Step) -> Transition:
+    question_id = state.pending_reason
+    if question_id is None:
+        raise ScenarioRunError("survey reason arrived without a pending question")
+    reason = (event.text or "").strip()
+    if not reason:
+        return _ask_reason(state, step)
+    answered = replace(
+        state,
+        answers=(*state.answers, SurveyAnswer(question_id=question_id, text=reason)),
+        pending_reason=None,
+    )
+    return _continue_survey(scenario, answered, step, event)
+
+
+def _record_answer(scenario: Scenario, state: StepState, event: Event, step: Step) -> Transition:
+    question = step.questions[state.question_index]
+    answer = _read_answer(question, event)
+    if answer is None:
+        return _repeat(state, step, question.id)
+    answered = replace(state, answers=(*state.answers, answer))
+    if needs_reason(question, answer) and question.reason_prompt is not None:
+        return _ask_reason(replace(answered, pending_reason=question.id), step)
+    return _continue_survey(scenario, answered, step, event)
+
+
+def _ask_reason(state: StepState, step: Step) -> Transition:
+    reason_prompt = step.questions[state.question_index].reason_prompt
+    if reason_prompt is None:
+        raise ScenarioRunError(f"survey step {step.id!r} asks for a reason without a prompt")
+    return Transition(
+        state=state,
+        actions=(Action(kind=ActionKind.SEND, text=reason_prompt, note="survey:reason"),),
+        reminder=KeepReminder(),
+    )
+
+
+def _continue_survey(
+    scenario: Scenario, state: StepState, step: Step, event: Event
+) -> Transition:
+    next_index = state.question_index + 1
+    if next_index >= len(step.questions):
+        cleared = replace(state, question_index=0, pending_reason=None)
+        if step.next_step is None:
+            raise ScenarioRunError(f"survey step {step.id!r} has no next step")
+        return _leave(scenario, cleared, step.next_step, event.at)
+    advanced = replace(state, question_index=next_index, pending_reason=None)
+    return Transition(
+        state=advanced,
+        actions=(_ask(step.questions[next_index]),),
+        reminder=KeepReminder(),
+    )
+
+
+def _read_answer(question: Question, event: Event) -> SurveyAnswer | None:
+    try:
+        if question.kind is QuestionKind.CHOICE:
+            option_id = _option_from_button(question, event.button_id)
+            return parse_answer(question, option_id=option_id, text=event.text)
+        return parse_answer(question, text=event.text)
+    except ValueError:
+        return None
+
+
+def _option_from_button(question: Question, button_id: str | None) -> str | None:
+    if not button_id:
+        return None
+    prefix = f"{SURVEY_BUTTON_PREFIX}{question.id}_"
+    if not button_id.startswith(prefix):
+        return None
+    return button_id[len(prefix) :]
+
+
+def _repeat(state: StepState, step: Step, question_id: str) -> Transition:
+    question = next(item for item in step.questions if item.id == question_id)
+    return Transition(
+        state=state,
+        actions=(
+            Action(
+                kind=ActionKind.SEND,
+                text=question.prompt,
+                keyboard=_question_keyboard(question),
+                note="survey:repeat",
+            ),
+        ),
+        reminder=KeepReminder(),
+    )
+
+
+def _on_survey_timeout(
+    scenario: Scenario, state: StepState, event: Event, step: Step
+) -> Transition:
+    if step.timeout is None:
+        return _idle(state, ActionKind.IGNORE)
+    if step.timeout.action is TimeoutAction.ESCALATE:
+        action = Action(kind=ActionKind.ESCALATE, reason=EscalationReason.TIMEOUT, note=step.id)
+        if step.timeout.next_step is None:
+            return Transition(state=state, actions=(action,), reminder=CancelReminder())
+        moved = _leave(scenario, state, step.timeout.next_step, event.at)
+        return Transition(
+            state=moved.state, actions=(action, *moved.actions), reminder=moved.reminder
+        )
+    question_id = state.pending_reason or step.questions[state.question_index].id
+    repeated = _repeat(replace(state, pending_reason=None), step, question_id)
+    return Transition(
+        state=repeated.state,
+        actions=repeated.actions,
+        reminder=ScheduleReminder(
+            due_at=event.at + step.timeout.after, step_id=step.id, action=TimeoutAction.REMIND
+        ),
     )
 
 

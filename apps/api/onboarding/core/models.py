@@ -33,6 +33,7 @@ class EventKind(StrEnum):
 class StepKind(StrEnum):
     SEND = "send"
     WAIT = "wait"
+    SURVEY = "survey"
     TERMINAL = "terminal"
 
 
@@ -104,6 +105,7 @@ class Step:
     routes: Mapping[str, str] = field(default_factory=dict)
     next_step: str | None = None
     timeout: Timeout | None = None
+    questions: tuple[Question, ...] = ()
     escalate_to: str | None = None
     outcome: Outcome | None = None
 
@@ -115,6 +117,7 @@ class Scenario:
     title: str
     start: str
     steps: Mapping[str, Step]
+    segments: tuple[str, ...] = ()
 
     def step(self, step_id: str) -> Step:
         try:
@@ -160,6 +163,9 @@ class StepState:
     step_id: str
     entered_at: datetime
     completed_steps: tuple[str, ...] = ()
+    answers: tuple[SurveyAnswer, ...] = ()
+    question_index: int = 0
+    pending_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

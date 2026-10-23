@@ -64,6 +64,39 @@ def test_escalation_cases_do_not_drag_retrieval_metrics() -> None:
     assert "citation_support" not in report.metrics
 
 
+def test_expected_fragments_are_a_gate() -> None:
+    case = Case(
+        id="content",
+        question="q",
+        audience="all",
+        expect_docs=("a",),
+        expect_contains=("28",),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    good = CaseResult(
+        case=case,
+        retrieved_docs=("a",),
+        recall=1.0,
+        rr=1.0,
+        answer="28 дней",
+        escalated=False,
+        reason="answered",
+    )
+    bad = CaseResult(
+        case=case,
+        retrieved_docs=("a",),
+        recall=1.0,
+        rr=1.0,
+        answer="нет данных",
+        escalated=False,
+        reason="answered",
+    )
+
+    assert summarise((good,), generated=True).metrics["answer_contains"] == 1.0
+    assert summarise((bad,), generated=True).failures == ("answer_contains",)
+
+
 def test_escalation_must_match_the_expected_reason() -> None:
     case = Case(
         id="restricted",

@@ -34,7 +34,7 @@ from onboarding.ports import (
 )
 
 PROMPT_NAME = "answer"
-PROMPT_VERSION = 1
+PROMPT_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,10 +194,13 @@ class Answerer:
 
 
 def _render_context(chunks: tuple[ScoredChunk, ...]) -> str:
-    return "\n".join(
-        f'<doc id="{chunk.chunk.id}" source="{chunk.chunk.doc_id}">{chunk.chunk.text}</doc>'
-        for chunk in chunks
-    ) or "<doc/>"
+    return (
+        "\n".join(
+            f'<doc id="{chunk.chunk.id}" source="{chunk.chunk.doc_id}">{chunk.chunk.text}</doc>'
+            for chunk in chunks
+        )
+        or "<doc/>"
+    )
 
 
 def _escalation_reason(verdict: Verdict) -> EscalationReason:

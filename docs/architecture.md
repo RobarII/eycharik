@@ -43,9 +43,9 @@ They share code and the database, not memory. The reminder tick runs inside the 
    worst; it never loses a step.
 4. For a question, retrieval runs: ACL and validity predicates in SQL, vector and lexical search,
    reciprocal rank fusion, then one model call with a versioned prompt and a JSON answer contract.
-5. The answer is validated: every citation must be a chunk that retrieval returned, and confidence
-   must clear `ANSWER_MIN_CONFIDENCE`. Otherwise the decision degrades to escalation with the
-   matching copy.
+5. The answer is validated: every citation in the JSON list and every inline `[doc#N]` token
+   must be a chunk that retrieval returned, and confidence must clear `ANSWER_MIN_CONFIDENCE`.
+   Otherwise the decision degrades to escalation with the matching copy.
 6. A dispatcher sends outbox rows to MAX with per-chat pacing of 2 messages per second and
    exponential retry, up to 5 attempts. Delivery is at-least-once.
 7. The answerer writes an audit row: prompt version, retrieved count, citation count, tokens,
@@ -76,6 +76,14 @@ They share code and the database, not memory. The reminder tick runs inside the 
 | Postgres unavailable | webhook answers 503; MAX retries |
 | A scenario file is invalid | the process refuses to start |
 | A job payload is invalid | job fails, is retried, then parked with `last_error` |
+
+## Provider compatibility
+
+The gateway speaks the OpenAI chat-completions dialect. GigaChat and OpenAI need only a base URL
+and a key. Some OpenAI-compatible gateways also require static routing headers, supplied as a JSON
+object in `LLM_EXTRA_HEADERS`; authentication and content headers cannot be overridden there.
+A gateway may wrap the completion in `{"success": true, "data": {...}}`; the gateway unwraps it,
+rejects `success: false`, and keeps token usage from either level.
 
 ## Deliberately absent
 

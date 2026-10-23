@@ -29,6 +29,31 @@ def test_bad_admin_tokens_are_rejected(raw: str) -> None:
         _ = settings.admin_principals
 
 
+def test_extra_headers_come_from_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_EXTRA_HEADERS", '{"x-opencode-session": "secret-session"}')
+
+    settings = Settings(_env_file=None)
+
+    assert settings.llm_extra_headers == {"x-opencode-session": "secret-session"}
+    assert "secret-session" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "not json",
+        '["x"]',
+        '{"authorization": "Bearer stolen"}',
+        '{"x-test": "line\\nbreak"}',
+        '{"x-test": "кириллица"}',
+        '{"": "empty"}',
+    ],
+)
+def test_bad_extra_headers_are_rejected(raw: str) -> None:
+    with pytest.raises(ValueError, match="LLM_EXTRA_HEADERS"):
+        _ = Settings(_env_file=None, llm_extra_headers_raw=raw).llm_extra_headers
+
+
 def test_production_requires_secrets() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, environment="production")

@@ -48,6 +48,38 @@ def test_rejects_a_citation_that_was_not_retrieved() -> None:
     assert verdict.reason == RefusalReason.NO_SOURCES.value
 
 
+def test_rejects_an_inline_citation_that_was_not_retrieved() -> None:
+    verdict = judge(
+        draft(answer="Отпуск — 28 дней [hr/secret#9]"),
+        RETRIEVED,
+        min_confidence=MIN,
+    )
+
+    assert not verdict.accepted
+    assert verdict.reason == RefusalReason.NO_SOURCES.value
+
+
+def test_rejects_a_malformed_inline_citation() -> None:
+    for answer in (
+        "Отпуск — 28 дней [hr/leave-policy#0#0]",
+        "Отпуск — 28 дней [hr/leave-policy]",
+    ):
+        verdict = judge(draft(answer=answer), RETRIEVED, min_confidence=MIN)
+
+        assert not verdict.accepted, answer
+        assert verdict.reason == RefusalReason.NO_SOURCES.value
+
+
+def test_ignores_brackets_that_are_not_citations() -> None:
+    verdict = judge(
+        draft(answer="Отпуск — 28 дней [по трудовому кодексу] [hr/leave-policy#0]"),
+        RETRIEVED,
+        min_confidence=MIN,
+    )
+
+    assert verdict.accepted
+
+
 def test_rejects_low_confidence() -> None:
     verdict = judge(draft(confidence=0.1), RETRIEVED, min_confidence=MIN)
 

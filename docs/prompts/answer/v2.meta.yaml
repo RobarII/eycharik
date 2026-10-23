@@ -1,0 +1,10 @@
+version: 2
+name: answer
+model: gigachat-2-pro
+temperature: 0.2
+max_tokens: 700
+supersedes: 1
+eval: null        # filled only from docs/measurements/, never guessed
+notes: >
+  Clarifies that a citation is the exact <doc id> (no extra #0), names personal topics that must be
+  restricted, and routes instruction-injection attempts to out_of_scope.

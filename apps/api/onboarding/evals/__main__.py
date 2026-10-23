@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=0, help="run only the first N cases")
     parser.add_argument("--write", action="store_true", help="write a measurement file")
     parser.add_argument("--label", default="", help="suffix for the measurement file name")
+    parser.add_argument("--note", default="", help="caveat to record in the measurement file")
     args = parser.parse_args(argv)
 
     try:
@@ -104,7 +105,7 @@ def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date
     suffix = f"-{args.label}" if args.label else ""
     path = args.out_dir / f"{on_date.isoformat()}-eval-{scope}{suffix}.md"
     command = " ".join(["python -m onboarding.evals", *sys.argv[1:]]).strip()
-    note = None
+    note = args.note.strip() or None
     if settings.llm_provider == "extractive":
         note = (
             "the offline extractive provider returns zero latency and cost by construction; "
@@ -131,7 +132,7 @@ def _model_label(settings: Settings, *, retrieval_only: bool) -> str:
         return "n/a"
     if settings.llm_provider == "extractive":
         return "extractive (offline)"
-    return settings.llm_model
+    return f"{settings.llm_provider}/{settings.llm_model} @ {settings.llm_base_url}"
 
 
 def _commit() -> str:

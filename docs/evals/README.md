@@ -10,6 +10,7 @@ request that touches retrieval, prompts, or the answer policy.
 | `recall@5` | share of cases whose expected document id is in the top 5 | ≥ 0.90 |
 | `mrr` | mean reciprocal rank of the first expected document | ≥ 0.75 |
 | `citation_support` | share of answers whose every citation was retrieved for that question | = 1.00 |
+| `answer_contains` | share of cases with expected fragments that contain all of them | = 1.00 |
 | `escalation_correctness` | share of cases whose escalation flag and reason match | ≥ 0.90 |
 | `p95_latency_ms` | answer latency on the set, warm cache excluded | ≤ 3000 |
 | `cost_per_answer_rub` | provider cost divided by cases | recorded, no gate |
@@ -44,4 +45,5 @@ Escalation cases use `expect_escalation: true` and `expect_reason`.
 ## Reporting
 
 A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the model,
-and the table of metrics. A measurement without a commit is not a measurement.
+and the table of metrics. Use `--note` for a caveat that must travel with the numbers. A
+measurement without a commit is not a measurement.

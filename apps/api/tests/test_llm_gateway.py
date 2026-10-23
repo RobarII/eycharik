@@ -85,6 +85,64 @@ async def test_returns_a_completion_and_counts_cost() -> None:
     assert calls[0].headers["authorization"] == "Bearer sk-test"
 
 
+async def test_openai_provider_merges_extra_headers() -> None:
+    client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
+    provider = OpenAICompatibleProvider(
+        base_url="https://llm.test/v1",
+        api_key=SecretStr("sk-test"),
+        extra_headers={"x-opencode-session": "onboarding"},
+    )
+
+    prepared = await provider.prepare(client)
+
+    assert prepared.headers["x-opencode-session"] == "onboarding"
+    assert prepared.headers["Authorization"] == "Bearer sk-test"
+
+
+async def test_unwraps_a_gateway_response_envelope() -> None:
+    handler, _ = handler_returning((200, {"success": True, "data": completion_body()}))
+    gateway = build(handler)
+
+    result = await gateway.complete(REQUEST)
+
+    assert result.text == '{"answer": "ok"}'
+    assert result.input_tokens == 100
+
+
+async def test_rejects_an_unsuccessful_gateway_envelope() -> None:
+    handler, _ = handler_returning((200, {"success": False, "data": completion_body()}))
+    gateway = build(handler)
+
+    with pytest.raises(LLMResponseError, match="unsuccessful"):
+        await gateway.complete(REQUEST)
+
+
+async def test_rejects_a_gateway_envelope_without_data() -> None:
+    handler, _ = handler_returning((200, {"success": True, "data": None}))
+    gateway = build(handler)
+
+    with pytest.raises(LLMResponseError, match="choices"):
+        await gateway.complete(REQUEST)
+
+
+async def test_reads_envelope_level_usage() -> None:
+    body = {
+        "success": True,
+        "usage": {"prompt_tokens": 7, "completion_tokens": 3},
+        "data": {
+            "model": "test-model",
+            "choices": [{"message": {"content": '{"answer": "ok"}'}}],
+        },
+    }
+    handler, _ = handler_returning((200, body))
+    gateway = build(handler)
+
+    result = await gateway.complete(REQUEST)
+
+    assert result.input_tokens == 7
+    assert result.output_tokens == 3
+
+
 async def test_retries_a_retryable_status() -> None:
     handler, calls = handler_returning((503, {}), (200, completion_body()))
     gateway = build(handler, max_retries=1)

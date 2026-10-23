@@ -131,19 +131,31 @@ class GatewayLLM(LLM):
     def _parse(self, response: httpx.Response, started: datetime) -> Completion:
         try:
             body = response.json()
+            if not isinstance(body, dict):
+                raise KeyError("response is not an object")
+            outer_usage = body.get("usage")
+            if "choices" not in body:
+                # Some gateways (for example ClinePass) wrap the completion in
+                # {"success": true, "data": {...}}. A failed envelope is not a completion.
+                if body.get("success") is False:
+                    raise LLMResponseError("provider reported an unsuccessful response")
+                wrapped = body.get("data")
+                if not isinstance(wrapped, dict):
+                    raise KeyError("envelope has no data object")
+                body = wrapped
             content = body["choices"][0]["message"]["content"]
         except (ValueError, KeyError, IndexError, TypeError):
             raise LLMResponseError("provider response has no choices[0].message.content") from None
         if not isinstance(content, str) or not content.strip():
             raise LLMResponseError("provider returned empty content")
 
-        usage = body.get("usage") or {}
+        usage = body.get("usage") or outer_usage or {}
+        if not isinstance(usage, dict):
+            usage = {}
         input_tokens = _int_or_zero(usage.get("prompt_tokens"))
         output_tokens = _int_or_zero(usage.get("completion_tokens"))
         latency_ms = int((self._clock.now() - started).total_seconds() * 1000)
-        cost = (
-            input_tokens / 1000 * self._price_in + output_tokens / 1000 * self._price_out
-        )
+        cost = input_tokens / 1000 * self._price_in + output_tokens / 1000 * self._price_out
         return Completion(
             text=content,
             input_tokens=input_tokens,
@@ -172,6 +184,7 @@ def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> LL
         provider = OpenAICompatibleProvider(
             base_url=settings.llm_base_url,
             api_key=settings.llm_api_key,
+            extra_headers=settings.llm_extra_headers,
         )
     return GatewayLLM(
         provider,

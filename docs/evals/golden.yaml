@@ -42,11 +42,17 @@ cases:
     expect_contains: ["hr@polypiast.ru"]
     expect_escalation: false
 
+  - id: mentor-assignment
+    question: "Что делает наставник?"
+    audience: all
+    expect_docs: [hr/probation]
+    expect_contains: ["наставник"]
+
   - id: contract-timing
     question: "Когда со мной заключат трудовой договор?"
     audience: all
     expect_escalation: true
-    expect_reason: no_sources
+    expect_reason: restricted
 
   - id: mentor-who
     question: "Кто мой наставник?"

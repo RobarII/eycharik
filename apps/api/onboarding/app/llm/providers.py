@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -33,12 +34,14 @@ class Provider(Protocol):
 class OpenAICompatibleProvider:
     base_url: str
     api_key: SecretStr
+    extra_headers: Mapping[str, str] = field(default_factory=dict)
 
     async def prepare(self, client: httpx.AsyncClient) -> PreparedRequest:
         del client
         return PreparedRequest(
             url=f"{self.base_url.rstrip('/')}/chat/completions",
             headers={
+                **self.extra_headers,
                 "Authorization": f"Bearer {self.api_key.get_secret_value()}",
                 "Content-Type": "application/json",
             },

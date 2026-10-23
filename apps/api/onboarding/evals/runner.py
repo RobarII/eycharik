@@ -21,6 +21,7 @@ GATES = {
     "recall_at_5": 0.90,
     "mrr": 0.75,
     "citation_support": 1.0,
+    "answer_contains": 1.0,
     "escalation_correctness": 0.90,
 }
 MAXIMUMS = {"p95_latency_ms": 3000.0}
@@ -201,6 +202,11 @@ def summarise(results: tuple[CaseResult, ...], *, generated: bool) -> Report:
         metrics["escalation_correctness"] = mean(
             [1.0 if result.escalation_correct else 0.0 for result in results]
         )
+        content_cases = [result for result in results if result.case.expect_contains]
+        if content_cases:
+            metrics["answer_contains"] = mean(
+                [1.0 if result.contains_expected else 0.0 for result in content_cases]
+            )
         if latency:
             metrics["p95_latency_ms"] = percentile(latency, p=95)
         metrics["cost_per_answer_rub"] = mean([result.cost_rub for result in results])

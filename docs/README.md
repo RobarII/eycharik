@@ -12,7 +12,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | How do we write code, tests, and commits? | [conventions.md](conventions.md) |
 | What exactly does the MAX API give us? | [contracts/max-api.md](contracts/max-api.md) |
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
-| What exactly does the model see? | [prompts/answer/v1.md](prompts/answer/v1.md) |
+| What exactly does the model see? | [prompts/answer/v2.md](prompts/answer/v2.md) (current), [v1](prompts/answer/v1.md) (superseded) |
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
 | How do I demo this in five minutes? | [product/demo-script.md](product/demo-script.md) |

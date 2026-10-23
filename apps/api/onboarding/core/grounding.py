@@ -7,9 +7,18 @@ the model sounds. The check is code, not a second model call.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection
 
 from .models import AnswerDraft, ChunkId, RefusalReason, Verdict
+
+_INLINE_CITATION = re.compile(r"\[([^\[\]\s]+)\]")
+
+
+def inline_citations(answer: str) -> tuple[str, ...]:
+    """Document ids the model wrote inside the answer text, in order, without duplicates."""
+    tokens = (match.group(1) for match in _INLINE_CITATION.finditer(answer))
+    return tuple(dict.fromkeys(token for token in tokens if "#" in token or "/" in token))
 
 
 def judge(
@@ -32,6 +41,11 @@ def judge(
 
     unseen = tuple(citation for citation in draft.citations if citation not in retrieved)
     if unseen:
+        return _refuse(draft, RefusalReason.NO_SOURCES)
+    invented = tuple(
+        citation for citation in inline_citations(draft.answer) if citation not in retrieved
+    )
+    if invented:
         return _refuse(draft, RefusalReason.NO_SOURCES)
 
     if not 0.0 <= draft.confidence <= 1.0:

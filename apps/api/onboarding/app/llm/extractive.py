@@ -31,6 +31,7 @@ RESTRICTED = (
     "мой оклад",
     "мой договор",
     "договор со мной",
+    "со мной",
     "конфликт с",
     "по здоровью",
     "со здоровьем",
@@ -82,12 +83,12 @@ class ExtractiveLLM:
         if any(marker in lowered for marker in INJECTION):
             return _completion(_payload(EscalationReason.OUT_OF_SCOPE, escalate=True), prompt)
 
+        if any(marker in lowered for marker in RESTRICTED):
+            return _completion(_payload(EscalationReason.RESTRICTED, escalate=True), prompt)
+
         docs = [(match["id"], _clean(match["text"])) for match in DOC.finditer(prompt)]
         if not docs:
             return _completion(_payload(EscalationReason.NO_SOURCES, escalate=True), prompt)
-
-        if any(marker in lowered for marker in RESTRICTED):
-            return _completion(_payload(EscalationReason.RESTRICTED, escalate=True), prompt)
 
         terms = _terms(question)
         scored = sorted(

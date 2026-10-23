@@ -5,8 +5,9 @@ Secrets are ``SecretStr`` so a stray log call prints ``**********`` instead of t
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
     llm_breaker_cooldown_s: float = 30.0
     llm_price_input_rub_per_1k: float = 0.0
     llm_price_output_rub_per_1k: float = 0.0
+    llm_extra_headers_raw: SecretStr = Field(default=SecretStr(""), alias="LLM_EXTRA_HEADERS")
 
     embed_provider: Literal["openai", "gigachat", "hashing"] = "hashing"
     embed_model: str = "Embeddings"
@@ -55,9 +57,7 @@ class Settings(BaseSettings):
     rerank_limit: int = 5
     max_question_chars: int = 1000
 
-    database_url: str = (
-        "postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding"
-    )
+    database_url: str = "postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding"
     admin_tokens_raw: str = Field(default="", alias="ADMIN_TOKENS")
     admin_page_size: int = 50
 
@@ -76,6 +76,10 @@ class Settings(BaseSettings):
             raise ValueError("LLM_TIMEOUT_S must be positive")
         if self.recall_limit < self.rerank_limit:
             raise ValueError("RECALL_LIMIT must be at least RERANK_LIMIT")
+        if any(char in name for name in self.llm_extra_headers for char in "\r\n"):
+            raise ValueError("LLM_EXTRA_HEADERS names must not contain newlines")
+        if any(char in value for value in self.llm_extra_headers.values() for char in "\r\n"):
+            raise ValueError("LLM_EXTRA_HEADERS values must not contain newlines")
         if self.environment == "production" and self.llm_provider == "extractive":
             raise ValueError("LLM_PROVIDER=extractive is only for local demos")
         if self.environment == "production" and self.embed_provider == "hashing":
@@ -96,6 +100,34 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def llm_extra_headers(self) -> dict[str, str]:
+        """Static headers for an OpenAI-compatible gateway, parsed from a JSON object.
+
+        The raw value is a ``SecretStr`` because a gateway may require a session or tracing token.
+        Authentication headers are never overridable from here; the provider owns them.
+        """
+        raw = self.llm_extra_headers_raw.get_secret_value().strip()
+        if not raw:
+            return {}
+        try:
+            value: Any = json.loads(raw)
+        except json.JSONDecodeError:
+            raise ValueError("LLM_EXTRA_HEADERS must be a JSON object") from None
+        if not isinstance(value, dict) or not all(
+            isinstance(name, str) and isinstance(header, str) for name, header in value.items()
+        ):
+            raise ValueError("LLM_EXTRA_HEADERS must be a JSON object of strings")
+        forbidden = {"authorization", "content-type", "content-length", "host"}
+        if any(
+            not name or not name.isascii() or not header.isascii() for name, header in value.items()
+        ):
+            raise ValueError("LLM_EXTRA_HEADERS names and values must be non-empty ASCII")
+        conflict = sorted(name for name in value if name.lower() in forbidden)
+        if conflict:
+            raise ValueError(f"LLM_EXTRA_HEADERS may not override {conflict}")
+        return {str(name): str(header) for name, header in value.items()}
+
+    @property
     def admin_principals(self) -> dict[str, tuple[str, str]]:
         """``ADMIN_TOKENS`` as ``token:role:subject`` entries.
 
@@ -112,9 +144,7 @@ class Settings(BaseSettings):
                 raise ValueError("ADMIN_TOKENS entries must be token:role:subject")
             token, role, subject = parts
             if not token or role not in {"recruiter", "hr_admin"} or not subject:
-                raise ValueError(
-                    "ADMIN_TOKENS must be comma-separated token:role:subject entries"
-                )
+                raise ValueError("ADMIN_TOKENS must be comma-separated token:role:subject entries")
             principals[token] = (role, subject)
         return principals
 

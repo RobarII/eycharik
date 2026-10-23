@@ -9,7 +9,7 @@ import pytest
 from onboarding.app.copy import load_copy
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
-from onboarding.app.worker.answerer import Answerer
+from onboarding.app.worker.answerer import PROMPT_NAME, PROMPT_VERSION, Answerer
 from onboarding.core.models import ChunkId, EmployeeId, EscalationReason
 from onboarding.ports import LLMUnavailableError
 
@@ -163,9 +163,7 @@ async def test_empty_question_escalates() -> None:
 
 async def test_audience_follows_the_profile() -> None:
     answerer, _, kb, _ = build([answer_json()], (scored_chunk(),))
-    hr_profile = profile(
-        EmployeeId("hr-1"), department="HR", audience=("all", "hr_only")
-    )
+    hr_profile = profile(EmployeeId("hr-1"), department="HR", audience=("all", "hr_only"))
 
     await answerer.answer("отпуск", hr_profile, ON_DATE)
 
@@ -179,3 +177,9 @@ async def test_citation_is_kept_in_the_outcome(citation: str) -> None:
     outcome = await answerer.answer("отпуск", profile(), ON_DATE)
 
     assert outcome.citations == (ChunkId(citation),)
+
+
+def test_the_answerer_uses_an_existing_prompt_version() -> None:
+    prompt = PromptLibrary(PROMPTS).load(PROMPT_NAME, PROMPT_VERSION)
+
+    assert prompt.version == PROMPT_VERSION

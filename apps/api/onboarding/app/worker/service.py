@@ -59,6 +59,7 @@ class OnboardingService:
         audit: AuditLog | None = None,
         classifier: SentimentClassifier | None = None,
         scenario_id: str = "onboarding_default",
+        scenario_version: int | None = None,
     ) -> None:
         self._runs = runs
         self._catalog = catalog
@@ -68,13 +69,19 @@ class OnboardingService:
         self._audit = audit or NullAudit()
         self._classifier = classifier
         self._scenario_id = scenario_id
+        self._scenario_version = scenario_version
+
+    def _scenario(self) -> Scenario:
+        if self._scenario_version is not None:
+            return self._catalog.get(self._scenario_id, self._scenario_version)
+        return self._catalog.active(self._scenario_id)
 
     async def start(self, employee_id: EmployeeId, chat_id: ChatId) -> ServiceResult:
         if await self._runs.find_active_by_employee(employee_id) is not None:
             await self._audit.record("run_already_active", employee_id=str(employee_id))
             return ServiceResult(handled=False)
 
-        scenario = self._catalog.active(self._scenario_id)
+        scenario = self._scenario()
         now = self._now()
         transition = start(scenario, RunId(str(uuid4())), employee_id, now)
         try:

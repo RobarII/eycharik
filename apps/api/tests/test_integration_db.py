@@ -140,6 +140,7 @@ def build_service(
         clock=FrozenClock(NOW),
         directory=SqlDirectory(db),
         audit=DatabaseAuditLog(db),
+        scenario_version=1,
     )
 
 
@@ -427,3 +428,55 @@ async def test_completion_is_attached_to_the_employee(database: Database) -> Non
 
     events = await AdminQueries(database).events(str(EMPLOYEE))
     assert "run_completed" in [event.name for event in events]
+
+
+async def test_analytics_and_digest_follow_the_risk_audit(database: Database) -> None:
+    service = build_service(
+        database,
+        messaging=RecordingMessaging(),
+        knowledge=FakeKnowledgeBase(chunks=(scored_chunk(),)),
+    )
+    await service.start(EMPLOYEE, ChatId(1))
+    audit = DatabaseAuditLog(database)
+    await audit.record(
+        "risk_assessed",
+        employee_id=str(EMPLOYEE),
+        step="week_two_survey",
+        level="high",
+        tags=["manager"],
+        reasons=["конфликт с руководителем"],
+    )
+    await audit.record(
+        "risk_assessed",
+        employee_id=str(EMPLOYEE),
+        step="day_three_survey",
+        level="medium",
+        tags=["access"],
+        reasons=["доступ не выдали"],
+    )
+    queries = AdminQueries(database)
+
+    overview = await queries.overview(
+        recruiter_id="rec-1", department=None, since=datetime(2026, 10, 1, tzinfo=UTC)
+    )
+
+    assert (overview.active_runs, overview.completed_runs) == (1, 0)
+    assert (overview.high_risk, overview.medium_risk) == (1, 1)
+    assert dict(overview.top_tags) == {"access": 1, "manager": 1}
+
+    digest = await queries.digest(
+        recruiter_id="rec-1", department=None, since=datetime(2026, 10, 1, tzinfo=UTC)
+    )
+    assert [item.level for item in digest] == ["medium", "high"]
+    assert digest[1].reasons == ("конфликт с руководителем",)
+
+    assert (
+        await queries.digest(
+            recruiter_id="someone-else", department=None, since=datetime(2026, 10, 1, tzinfo=UTC)
+        )
+        == ()
+    )
+    by_department = await queries.digest(
+        recruiter_id=None, department="ИТ", since=datetime(2026, 10, 1, tzinfo=UTC)
+    )
+    assert len(by_department) == 2

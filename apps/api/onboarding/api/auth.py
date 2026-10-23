@@ -22,6 +22,11 @@ class AdminPrincipal:
     def is_hr(self) -> bool:
         return self.role == "hr_admin"
 
+    @property
+    def is_manager(self) -> bool:
+        """A department head sees one department and nothing else."""
+        return self.role == "manager"
+
 
 async def current_admin(
     request: Request,

@@ -57,3 +57,40 @@ class RunDetail(RunSummary):
 
 class QuestionList(BaseModel):
     items: list[Question]
+
+
+class TagCount(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    tag: str
+    count: int
+
+
+class AnalyticsOverview(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    active_runs: int
+    completed_runs: int
+    high_risk: int
+    medium_risk: int
+    unanswered_questions: int
+    top_tags: list[TagCount]
+    since: datetime
+
+
+class DigestItem(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: str
+    employee_name: str
+    department: str
+    step_id: str
+    level: str
+    reasons: list[str]
+    tags: list[str]
+    at: datetime
+
+
+class DigestList(BaseModel):
+    items: list[DigestItem]
+    since: datetime

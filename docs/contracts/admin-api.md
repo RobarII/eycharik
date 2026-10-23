@@ -14,6 +14,7 @@ ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
 | Role | Scope |
 |---|---|
 | `recruiter` | employees whose `recruiter_id` equals the token's subject |
+| `manager` | employees of one department: the token's subject is the department name |
 | `hr_admin` | every employee and every question |
 
 There is no session and no cookie. Tokens are compared in constant time. An unknown or missing
@@ -27,6 +28,8 @@ recruiter's employee is not disclosed.
 | `GET` | `/admin/api/runs?limit=50` | active and completed runs, newest activity first |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
+| `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
+| `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
 | `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
 
 `limit` is bounded to `1..200`. There is no cursor pagination yet: the cabinet asks for the newest
@@ -72,6 +75,47 @@ and `questions`. Its questions are only that employee's, limited to the newest 2
   "asked_at": "2026-10-23T07:12:00Z"
 }
 ```
+
+`AnalyticsOverview`:
+
+```json
+{
+  "active_runs": 12,
+  "completed_runs": 4,
+  "high_risk": 2,
+  "medium_risk": 5,
+  "unanswered_questions": 3,
+  "top_tags": [{"tag": "access", "count": 4}, {"tag": "manager", "count": 2}],
+  "since": "2026-10-16T09:00:00Z"
+}
+```
+
+The counts cover the window that starts at `since` and come from the audit log, not from a
+materialised table: the cabinet is read-only, and a wrong number must be traceable to events.
+
+`DigestList`:
+
+```json
+{
+  "items": [
+    {
+      "employee_id": "1001",
+      "employee_name": "Анна Смирнова",
+      "department": "Производство",
+      "step_id": "week_two_survey",
+      "level": "high",
+      "reasons": ["конфликт с руководителем"],
+      "tags": ["manager"],
+      "at": "2026-10-22T15:30:00Z"
+    }
+  ],
+  "since": "2026-10-16T09:00:00Z"
+}
+```
+
+Only `high` and `medium` levels appear. `reasons` and `tags` are the classifier's short phrases,
+never the full answer text: the digest is a list of leads, not a transcript. A manager sees the
+same shape, scoped to one department.
 
 ## Errors
 

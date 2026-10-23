@@ -7,18 +7,23 @@ business.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from onboarding.api.auth import AdminPrincipal, current_admin
 from onboarding.api.schemas import (
+    AnalyticsOverview,
     AuditEvent,
+    DigestItem,
+    DigestList,
     Question,
     QuestionList,
     RunDetail,
     RunList,
     RunSummary,
+    TagCount,
 )
 from onboarding.app.admin.queries import AdminQueries, QuestionRecord, RunRecord
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
@@ -33,7 +38,12 @@ def _queries(request: Request) -> AdminQueries:
 
 
 def _scope(principal: AdminPrincipal) -> str | None:
-    return None if principal.is_hr else principal.subject
+    """The recruiter id predicate; HR is unscoped and a manager is scoped by department."""
+    return principal.subject if principal.role == "recruiter" else None
+
+
+def _department(principal: AdminPrincipal) -> str | None:
+    return principal.subject if principal.is_manager else None
 
 
 @router.get("/runs", response_model=RunList)
@@ -43,14 +53,18 @@ async def list_runs(
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> RunList:
     catalog = request.app.state.container.catalog
-    records = await _queries(request).runs(recruiter_id=_scope(principal), limit=limit)
+    records = await _queries(request).runs(
+        recruiter_id=_scope(principal), department=_department(principal), limit=limit
+    )
     return RunList(items=[_summary(record, catalog) for record in records])
 
 
 @router.get("/runs/{run_id}", response_model=RunDetail)
 async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDetail:
     queries = _queries(request)
-    record = await queries.run(run_id, recruiter_id=_scope(principal))
+    record = await queries.run(
+        run_id, recruiter_id=_scope(principal), department=_department(principal)
+    )
     if record is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
 
@@ -66,6 +80,7 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
     events = await queries.events(record.employee_id)
     questions = await queries.questions(
         recruiter_id=_scope(principal),
+        department=_department(principal),
         answered=None,
         limit=20,
         employee_id=record.employee_id,
@@ -91,7 +106,10 @@ async def list_questions(
 ) -> QuestionList:
     answered = {"unanswered": False, "answered": True, "all": None}[status]
     records = await _queries(request).questions(
-        recruiter_id=_scope(principal), answered=answered, limit=limit
+        recruiter_id=_scope(principal),
+        department=_department(principal),
+        answered=answered,
+        limit=limit,
     )
     return QuestionList(items=[_question(record) for record in records])
 
@@ -132,4 +150,49 @@ def _question(record: QuestionRecord) -> Question:
         reason=record.reason,
         citations=record.citations,
         asked_at=record.asked_at,
+    )
+
+
+@router.get("/analytics/overview", response_model=AnalyticsOverview)
+async def analytics_overview(request: Request, principal: Admin) -> AnalyticsOverview:
+    since = request.app.state.container.clock.now() - timedelta(days=7)
+    record = await _queries(request).overview(
+        recruiter_id=_scope(principal), department=_department(principal), since=since
+    )
+    return AnalyticsOverview(
+        active_runs=record.active_runs,
+        completed_runs=record.completed_runs,
+        high_risk=record.high_risk,
+        medium_risk=record.medium_risk,
+        unanswered_questions=record.unanswered_questions,
+        top_tags=[TagCount(tag=tag, count=count) for tag, count in record.top_tags],
+        since=since,
+    )
+
+
+@router.get("/digest/weekly", response_model=DigestList)
+async def weekly_digest(
+    request: Request,
+    principal: Admin,
+    days: Annotated[int, Query(ge=1, le=31)] = 7,
+) -> DigestList:
+    since = request.app.state.container.clock.now() - timedelta(days=days)
+    records = await _queries(request).digest(
+        recruiter_id=_scope(principal), department=_department(principal), since=since
+    )
+    return DigestList(
+        items=[
+            DigestItem(
+                employee_id=record.employee_id,
+                employee_name=record.employee_name,
+                department=record.department,
+                step_id=record.step_id,
+                level=record.level,
+                reasons=list(record.reasons),
+                tags=list(record.tags),
+                at=record.at,
+            )
+            for record in records
+        ],
+        since=since,
     )

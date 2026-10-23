@@ -24,6 +24,7 @@ webhook resolves it once, on entry. An unlinked sender is refused with an audit 
 ```python
 class Ingress(Protocol):
     channel: Channel
+    configured: bool        # False -> the route answers 503, not 401
 
     def verify(self, headers: Mapping[str, str], body: bytes) -> bool:
         """True when this delivery comes from the messenger. Constant-time compare."""
@@ -73,8 +74,8 @@ Failures are two:
 
 | Error | Meaning | Dispatcher |
 |---|---|---|
-| `ChannelUnavailable` | transport failure or a 5xx | row returns to `pending` with backoff |
-| `ChannelRejected` | a 4xx the messenger will repeat | row is parked as `failed` |
+| `ChannelUnavailableError` | transport failure or a 5xx | row returns to `pending` with backoff |
+| `ChannelRejectedError` | a 4xx the messenger will repeat | row is parked as `failed` |
 
 The dispatcher catches nothing else silently. An unexpected exception is a bug and is parked with
 its type in `last_error`.

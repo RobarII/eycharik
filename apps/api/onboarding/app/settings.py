@@ -15,6 +15,8 @@ from typing import Any, Literal
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from onboarding.core.models import Channel
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 _PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
 
@@ -39,12 +41,26 @@ class Settings(BaseSettings):
     environment: Literal["local", "staging", "production"] = "local"
     log_level: str = "INFO"
 
+    # Enabled channels, comma separated. A channel without credentials is not served at all, so a
+    # half-configured messenger answers 404 instead of failing deliveries (ADR 0019).
+    channels_raw: str = Field(default="max", alias="CHANNELS")
+
     max_base_url: str = "https://platform-api2.max.ru"
     max_bot_token: SecretStr = SecretStr("")
     max_webhook_secret: SecretStr = SecretStr("")
     max_ca_bundle: Path | None = None
     max_messages_per_second: float = 2.0
     max_callbacks_enabled: bool = False
+
+    telegram_base_url: str = "https://api.telegram.org"
+    telegram_bot_token: SecretStr = SecretStr("")
+    telegram_webhook_secret: SecretStr = SecretStr("")
+
+    vk_base_url: str = "https://api.vk.com"
+    vk_api_version: str = "5.199"
+    vk_access_token: SecretStr = SecretStr("")
+    vk_webhook_secret: SecretStr = SecretStr("")
+    vk_confirmation_code: SecretStr = SecretStr("")
 
     llm_provider: Literal["openai", "gigachat", "extractive"] = "openai"
     llm_profile: str = ""
@@ -111,6 +127,9 @@ class Settings(BaseSettings):
     data_retention_days: int = 365
 
     prompts_dir: Path = Field(default=REPO_ROOT / "docs" / "prompts")
+    channel_profiles_dir: Path = Field(
+        default=REPO_ROOT / "apps" / "api" / "channel-profiles"
+    )
     model_profiles_dir: Path = Field(default=REPO_ROOT / "apps" / "api" / "model-profiles")
     knowledge_dir: Path = Field(default=REPO_ROOT / "knowledge")
     contracts_dir: Path = Field(default=REPO_ROOT / "docs" / "contracts")
@@ -123,6 +142,17 @@ class Settings(BaseSettings):
         self._check_experiments()
         self._check_production()
         return self
+
+    @property
+    def channels(self) -> tuple[Channel, ...]:
+        """The channels this deployment serves, in the configured order."""
+        names = [part.strip() for part in self.channels_raw.split(",") if part.strip()]
+        if not names:
+            raise ValueError("CHANNELS must name at least one channel")
+        try:
+            return tuple(Channel(name) for name in names)
+        except ValueError as error:
+            raise ValueError(f"CHANNELS: {error}") from None
 
     def _check_experiments(self) -> None:
         if self.contextual_prompt_version < 1:
@@ -164,6 +194,8 @@ class Settings(BaseSettings):
             raise ValueError("LLM_EXTRA_HEADERS names must not contain newlines")
         if any(char in value for value in self.llm_extra_headers.values() for char in "\r\n"):
             raise ValueError("LLM_EXTRA_HEADERS values must not contain newlines")
+        if any(char in self.channels_raw for char in " \t"):
+            raise ValueError("CHANNELS must be a comma separated list of names, not a sentence")
         if self.data_retention_days < 1:
             raise ValueError("DATA_RETENTION_DAYS must be at least 1")
         if not _PROFILE_NAME.fullmatch(self.extraction_profile):

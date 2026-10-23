@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from onboarding.core.models import (
+    Address,
+    Channel,
     ChatId,
     Chunk,
     ChunkId,
@@ -35,6 +37,7 @@ from onboarding.ports import (
 
 NOW = datetime(2026, 10, 20, 9, 0, tzinfo=UTC)
 EMPLOYEE = EmployeeId("employee-1")
+ADDRESS = Address(channel=Channel.MAX, chat_id=ChatId(1))
 
 
 @dataclass
@@ -66,12 +69,16 @@ class FakeKnowledgeBase:
 class RecordingMessaging:
     sent: list[OutboundMessage] = field(default_factory=list)
     edited: list[tuple[str, str]] = field(default_factory=list)
+    channel: Channel = Channel.MAX
 
     async def send(self, message: OutboundMessage) -> str:
         self.sent.append(message)
         return f"mid-{len(self.sent)}"
 
-    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None:
+    async def edit(
+        self, address: Address, message_id: str, text: str, keyboard: Keyboard = ()
+    ) -> None:
+        del address, keyboard
         self.edited.append((message_id, text))
 
 
@@ -165,7 +172,7 @@ def stored_run(
         step_id=step_id,
         entered_at=NOW,
     )
-    return StoredRun(state=state, reminder=reminder or KeepReminder(), chat_id=ChatId(1))
+    return StoredRun(state=state, reminder=reminder or KeepReminder(), address=ADDRESS)
 
 
 @dataclass

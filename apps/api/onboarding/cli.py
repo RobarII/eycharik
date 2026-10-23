@@ -16,11 +16,12 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import make_url
 
+from onboarding.app.channels.max.client import MaxClient, Subscription
 from onboarding.app.clock import SystemClock
 from onboarding.app.container import Container, build_container
 from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.kb import PostgresKnowledgeWriter
-from onboarding.app.db.models import EmployeeRow
+from onboarding.app.db.models import ChannelIdentityRow, EmployeeRow
 from onboarding.app.db.repos import DatabaseQuestionLog, DatabaseRunRepository
 from onboarding.app.knowledge.contextual import LlmContextualizer
 from onboarding.app.knowledge.extract.media import media_type_for
@@ -30,7 +31,6 @@ from onboarding.app.knowledge.extract.pptx import PptxReader
 from onboarding.app.knowledge.extract.profiles import ExtractionProfileLibrary
 from onboarding.app.knowledge.extract.router import RoutingExtraction
 from onboarding.app.knowledge.pipeline import ingest
-from onboarding.app.max.client import MaxClient, Subscription
 from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import AnswerOutcome
@@ -38,6 +38,8 @@ from onboarding.app.worker.service import OnboardingService
 from onboarding.core.extraction import accept
 from onboarding.core.models import (
     Accepted,
+    Address,
+    Channel,
     ChatId,
     EmployeeId,
     EmployeeProfile,
@@ -51,11 +53,17 @@ from onboarding.core.models import (
 from onboarding.ports import (
     DocumentRef,
     ExtractionUnavailableError,
-    Messaging,
     OutboundMessage,
+    Sender,
 )
 
 ROOT = Path(__file__).resolve().parents[3]
+# The demo walks the scenario through the MAX adapter's address: seeded employees are MAX users.
+DEMO_CHANNEL = Channel.MAX
+
+
+def _address(chat_id: ChatId) -> Address:
+    return Address(channel=DEMO_CHANNEL, chat_id=chat_id)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -147,12 +155,13 @@ async def _subscribe(settings: Settings, args: argparse.Namespace) -> int:
         raise SystemExit("MAX_WEBHOOK_SECRET is not set")
     container = build_container(settings)
     try:
-        if not isinstance(container.sender, MaxClient):
-            raise SystemExit("sender is not a MAX client")
+        sender = container.senders.get(Channel.MAX)
+        if not isinstance(sender, MaxClient):
+            raise SystemExit("the MAX channel is not configured")
         secret = settings.max_webhook_secret
         if secret is None:
             raise SystemExit("MAX_WEBHOOK_SECRET is not set")
-        await container.sender.subscribe(
+        await sender.subscribe(
             Subscription(
                 url=args.url,
                 update_types=tuple(part.strip() for part in args.types.split(",") if part),
@@ -198,15 +207,15 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
             if await DatabaseRunRepository(container.database).find_active_by_employee(employee):
                 print(f"skip {name}: already has an active run")
                 continue
-            if not (await service.start(employee, chat_id)).handled:
+            if not (await service.start(employee, _address(chat_id))).handled:
                 continue
-            await _drive(container, service, employee, chat_id, target=target, now=now)
+            await _drive(container, service, employee, _address(chat_id), target=target, now=now)
             if target is not None and target.endswith("_survey"):
                 await _answer_survey(
                     container,
                     service,
                     employee,
-                    chat_id,
+                    _address(chat_id),
                     score=3 if employee_id == "1002" else 6,
                     free_text=(
                         "руководитель не отвечает третий день, нет доступа к 1С"
@@ -294,7 +303,7 @@ async def _demo_question(
         raise SystemExit(f"demo question {text!r}: expected citation {expect_doc}, got {citations}")
     await questions.record_question(
         employee_id=employee_id,
-        chat_id=chat_id,
+        address=_address(chat_id),
         text=text,
         answered=not outcome.escalated,
         reason=outcome.reason,
@@ -326,7 +335,7 @@ async def _answer_survey(
     container: Container,
     service: OnboardingService,
     employee: EmployeeId,
-    chat_id: ChatId,
+    address: Address,
     *,
     score: int,
     free_text: str,
@@ -367,14 +376,14 @@ async def _answer_survey(
                 event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text=str(score))
             else:
                 event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text=free_text)
-        await service.handle(employee, chat_id, event)
+        await service.handle(employee, address, event)
 
 
 async def _drive(
     container: Container,
     service: OnboardingService,
     employee: EmployeeId,
-    chat_id: ChatId,
+    address: Address,
     *,
     target: str | None,
     now: datetime,
@@ -402,7 +411,7 @@ async def _drive(
             )
         else:
             event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text="готово")
-        await service.handle(employee, chat_id, event)
+        await service.handle(employee, address, event)
     raise SystemExit(f"demo run for {employee} did not reach {target or 'the terminal step'}")
 
 
@@ -423,15 +432,17 @@ def _demo_service(container: Container) -> OnboardingService:
     )
 
 
-class _Discard(Messaging):
+class _Discard(Sender):
     """The demo writes state, not chat history: nothing leaves the process."""
 
     async def send(self, message: OutboundMessage) -> str:
         del message
         return "demo"
 
-    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None:
-        del message_id, text, keyboard
+    async def edit(
+        self, address: Address, message_id: str, text: str, keyboard: Keyboard = ()
+    ) -> None:
+        del address, message_id, text, keyboard
 
 
 async def _seed(settings: Settings, path: Path) -> int:
@@ -455,6 +466,24 @@ async def _seed(settings: Settings, path: Path) -> int:
                         "audience": statement.excluded.audience,
                         "scenario_id": statement.excluded.scenario_id,
                     },
+                )
+            )
+            # A seeded employee talks through one MAX account whose id is the employee id, which is
+            # the rule the migration backfills (ADR 0019).
+            await session.execute(
+                insert(ChannelIdentityRow)
+                .values(
+                    [
+                        {
+                            "channel": DEMO_CHANNEL.value,
+                            "external_id": str(row["id"]),
+                            "employee_id": str(row["id"]),
+                        }
+                        for row in rows
+                    ]
+                )
+                .on_conflict_do_nothing(
+                    index_elements=[ChannelIdentityRow.channel, ChannelIdentityRow.external_id]
                 )
             )
     finally:

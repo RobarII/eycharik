@@ -24,7 +24,7 @@ BACKTICK = re.compile(r"`([^`]+)`")
 
 SKIP = {"README.md"}
 # Internal surfaces: the MAX webhook, the scrape endpoint, and FastAPI's own pages.
-UNDOCUMENTED = {"/webhook", "/metrics", "/docs", "/openapi.json", "/redoc", "/docs/oauth2-redirect"}
+UNDOCUMENTED = {"/webhook/{channel}", "/metrics", "/docs", "/openapi.json", "/redoc", "/docs/oauth2-redirect"}
 
 
 def main() -> int:

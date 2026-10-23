@@ -49,7 +49,7 @@ rate(onboarding_http_requests_total{status=~"5.."}[5m]) > 0
 increase(onboarding_answer_cost_rub_total[1h]) > 100
 ```
 
-The first two are the product signals: latency and refusal. A 5xx burst on `/webhook` is a MAX
+The first two are the product signals: latency and refusal. A 5xx burst on `/webhook/max` is a MAX
 delivery problem, not an answer problem.
 
 ## What is not collected

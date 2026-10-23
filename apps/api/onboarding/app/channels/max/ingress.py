@@ -1,25 +1,73 @@
-"""Map a MAX ``Update`` payload to a typed inbound event.
+"""MAX webhook payloads to typed inbound messages.
 
 Parsing is defensive: an unknown update type is ignored, a missing field degrades to ``None``
 rather than an exception, and an unknown callback payload still produces a button event. MAX can
 add fields without breaking delivery.
 
 The payload shapes are pinned in ``docs/contracts/max-api.md``; tests use synthetic payloads until
-a captured one exists.
+a captured one exists. The port this implements is ``docs/contracts/channel.md``.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from onboarding.core.models import ChatId, Event, EventKind
+from pydantic import SecretStr
+
+from onboarding.core.models import Address, Channel, ChatId, Event, EventKind
+from onboarding.ports import InboundMessage
 
 HANDLED_TYPES = frozenset({"message_created", "message_callback", "bot_started"})
+SECRET_HEADER = "X-Max-Bot-Api-Secret"  # noqa: S105 - a header name, not a secret
+
+
+class MaxIngress:
+    """MAX inbound: one shared secret header, one payload shape."""
+
+    channel = Channel.MAX
+
+    def __init__(self, secret: SecretStr) -> None:
+        self._secret = secret
+
+    @property
+    def configured(self) -> bool:
+        return bool(self._secret.get_secret_value())
+
+    def verify(self, headers: Mapping[str, str], body: bytes) -> bool:
+        del body
+        expected = self._secret.get_secret_value()
+        if not expected:
+            return False
+        presented = headers.get(SECRET_HEADER, "") or headers.get(SECRET_HEADER.lower(), "")
+        return hmac.compare_digest(presented, expected)
+
+    def handshake(self, body: bytes) -> str | None:
+        del body
+        return None
+
+    def parse(self, body: bytes, *, received_at: datetime) -> InboundMessage | None:
+        try:
+            payload: Any = json.loads(body)
+        except ValueError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        update = parse_update(payload, received_at=received_at)
+        if update is None or update.user_id is None:
+            return None
+        return InboundMessage(
+            dedupe_key=f"{self.channel.value}:{update.event_id}",
+            address=Address(channel=self.channel, chat_id=update.chat_id),
+            sender=str(update.user_id),
+            event=update.event,
+            starts_run=update.update_type == "bot_started",
+        )
 
 
 @dataclass(frozen=True, slots=True)

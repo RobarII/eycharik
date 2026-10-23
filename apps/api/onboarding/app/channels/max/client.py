@@ -15,20 +15,25 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
-from onboarding.app.max.keyboards import to_attachments
-from onboarding.core.models import Keyboard
-from onboarding.ports import Messaging, OutboundMessage
+from onboarding.app.channels.max.render import to_attachments
+from onboarding.core.models import Address, Channel, Keyboard
+from onboarding.ports import (
+    ChannelRejectedError,
+    ChannelUnavailableError,
+    Messaging,
+    OutboundMessage,
+)
 
 
 class MaxError(RuntimeError):
     """Base class for MAX API failures."""
 
 
-class MaxUnavailableError(MaxError):
+class MaxUnavailableError(ChannelUnavailableError):
     """Transport failure or a 5xx: worth retrying later."""
 
 
-class MaxRejectedError(MaxError):
+class MaxRejectedError(ChannelRejectedError):
     """4xx: the request is wrong and a retry will not help."""
 
 
@@ -40,6 +45,8 @@ class Subscription:
 
 
 class MaxClient(Messaging):
+    channel = Channel.MAX
+
     def __init__(
         self,
         *,
@@ -58,7 +65,7 @@ class MaxClient(Messaging):
         self._lock = asyncio.Lock()
 
     async def send(self, message: OutboundMessage) -> str:
-        await self._pace(int(message.chat_id))
+        await self._pace(int(message.address.chat_id))
         body: dict[str, Any] = {"text": message.text}
         attachments = to_attachments(message.keyboard)
         if attachments:
@@ -68,7 +75,7 @@ class MaxClient(Messaging):
         payload = await self._request(
             "POST",
             "/messages",
-            params={"chat_id": int(message.chat_id)},
+            params={"chat_id": int(message.address.chat_id)},
             json=body,
         )
         mid = _get(payload, "message", "body", "mid")
@@ -76,7 +83,10 @@ class MaxClient(Messaging):
             raise MaxError("MAX response has no message.body.mid")
         return mid
 
-    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None:
+    async def edit(
+        self, address: Address, message_id: str, text: str, keyboard: Keyboard = ()
+    ) -> None:
+        del address
         body: dict[str, Any] = {"text": text}
         attachments = to_attachments(keyboard)
         if attachments:

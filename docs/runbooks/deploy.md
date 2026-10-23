@@ -38,7 +38,7 @@
 
    ```bash
    uv run python -m onboarding.cli subscribe \
-     --url "https://$HOST/webhook" \
+     --url "https://$HOST/webhook/max" \
      --types message_created,bot_started
    ```
 

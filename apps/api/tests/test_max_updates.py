@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from onboarding.app.max.updates import parse_update
+from onboarding.app.channels.max.ingress import parse_update
 from onboarding.core.models import ChatId, EventKind
 
 RECEIVED = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)

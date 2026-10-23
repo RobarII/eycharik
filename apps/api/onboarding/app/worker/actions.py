@@ -15,19 +15,19 @@ from onboarding.app.worker.answerer import Answerer
 from onboarding.core.models import (
     Action,
     ActionKind,
-    ChatId,
+    Address,
     EmployeeId,
     EmployeeProfile,
     EscalationReason,
 )
-from onboarding.ports import AuditLog, Messaging, OutboundMessage, QuestionLog
+from onboarding.ports import AuditLog, OutboundMessage, QuestionLog, Sender
 
 MAX_LOGGED_QUESTION = 2000
 
 
 @dataclass(frozen=True, slots=True)
 class ActionContext:
-    chat_id: ChatId
+    address: Address
     on_date: date
     employee_id: EmployeeId | None = None
     profile: EmployeeProfile | None = None
@@ -38,7 +38,7 @@ class ActionExecutor:
     def __init__(
         self,
         *,
-        messaging: Messaging,
+        messaging: Sender,
         answerer: Answerer,
         copy: Copy,
         audit: AuditLog | None = None,
@@ -59,7 +59,7 @@ class ActionExecutor:
                 )
                 await self._messaging.send(
                     OutboundMessage(
-                        chat_id=context.chat_id,
+                        address=context.address,
                         text=text,
                         keyboard=action.keyboard,
                     )
@@ -70,7 +70,7 @@ class ActionExecutor:
                 reason = action.reason or EscalationReason.MANUAL
                 await self._messaging.send(
                     OutboundMessage(
-                        chat_id=context.chat_id,
+                        address=context.address,
                         text=self._copy.escalation_for(reason),
                     )
                 )
@@ -82,7 +82,7 @@ class ActionExecutor:
                 )
             case ActionKind.COMPLETE:
                 await self._messaging.send(
-                    OutboundMessage(chat_id=context.chat_id, text=self._copy.completion)
+                    OutboundMessage(address=context.address, text=self._copy.completion)
                 )
                 await self._audit.record(
                     "run_completed",
@@ -104,14 +104,16 @@ class ActionExecutor:
         if self._questions is not None:
             await self._questions.record_question(
                 employee_id=context.profile.employee_id,
-                chat_id=context.chat_id,
+                address=context.address,
                 text=context.question[:MAX_LOGGED_QUESTION],
                 answered=not outcome.escalated,
                 reason=outcome.reason,
                 citations=[str(citation) for citation in outcome.citations],
                 latency_ms=outcome.completion.latency_ms if outcome.completion else None,
             )
-        await self._messaging.send(OutboundMessage(chat_id=context.chat_id, text=outcome.text))
+        await self._messaging.send(
+            OutboundMessage(address=context.address, text=outcome.text)
+        )
 
 
 def _employee(context: ActionContext) -> str | None:

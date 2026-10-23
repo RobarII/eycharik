@@ -12,12 +12,11 @@ from onboarding.core.models import (
     Action,
     ActionKind,
     Button,
-    ChatId,
     EscalationReason,
     Outcome,
 )
 
-from .fakes import EMPLOYEE, RecordingAudit, RecordingMessaging, profile
+from .fakes import ADDRESS, EMPLOYEE, RecordingAudit, RecordingMessaging, profile
 
 ROOT = Path(__file__).resolve().parents[3]
 COPY = load_copy(ROOT / "docs" / "product" / "copy.yaml")
@@ -62,7 +61,7 @@ async def test_send_uses_the_scenario_text_and_keyboard() -> None:
         keyboard=((Button(id="done", text="Готово"),),),
     )
 
-    await executor.execute(action, ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20)))
+    await executor.execute(action, ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)))
 
     assert messaging.sent[0].text == "Первый день"
     assert messaging.sent[0].keyboard[0][0].id == "done"
@@ -72,7 +71,7 @@ async def test_reminder_is_prefixed_from_copy() -> None:
     executor, messaging, _, _ = build()
     action = Action(kind=ActionKind.SEND, text="Пришлите документы", note="reminder")
 
-    await executor.execute(action, ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20)))
+    await executor.execute(action, ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)))
 
     assert messaging.sent[0].text == f"{COPY.reminder_prefix}Пришлите документы"
 
@@ -83,7 +82,7 @@ async def test_escalation_sends_copy_and_records_an_event() -> None:
 
     await executor.execute(
         action,
-        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20), employee_id=EMPLOYEE),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20), employee_id=EMPLOYEE),
     )
 
     assert messaging.sent[0].text == COPY.escalation_for(EscalationReason.TIMEOUT)
@@ -97,7 +96,7 @@ async def test_completion_sends_the_completion_copy() -> None:
 
     await executor.execute(
         action,
-        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 20), employee_id=EMPLOYEE),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20), employee_id=EMPLOYEE),
     )
 
     assert messaging.sent[0].text == COPY.completion
@@ -109,7 +108,7 @@ async def test_answer_calls_the_assistant_with_the_employee_context() -> None:
     executor, messaging, answerer, _ = build()
     action = Action(kind=ActionKind.ANSWER)
     context = ActionContext(
-        chat_id=ChatId(1),
+        address=ADDRESS,
         on_date=date(2026, 10, 23),
         profile=profile(),
         question="Сколько дней отпуска?",
@@ -128,7 +127,7 @@ async def test_answer_without_a_question_is_skipped_and_recorded() -> None:
     await executor.execute(
         action,
         ActionContext(
-            chat_id=ChatId(1),
+            address=ADDRESS,
             on_date=date(2026, 10, 23),
             employee_id=EMPLOYEE,
             profile=profile(),
@@ -146,7 +145,7 @@ async def test_ignore_sends_nothing() -> None:
 
     await executor.execute(
         Action(kind=ActionKind.IGNORE),
-        ActionContext(chat_id=ChatId(1), on_date=date(2026, 10, 23), employee_id=EMPLOYEE),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 23), employee_id=EMPLOYEE),
     )
 
     assert messaging.sent == []

@@ -1,67 +1,98 @@
-"""MAX webhook: verify, deduplicate, persist a job, answer 200.
+"""The webhook for every messenger: verify, deduplicate, persist a job, answer 200.
 
-The webhook does no business work. MAX retries a slow or failed delivery, so the only correct
+The route knows nothing about a messenger's payload. It looks the ``Ingress`` up by channel name
+and does the same six things for everybody, which is why a second channel adds no branch here
+(ADR 0019).
+
+The webhook does no business work. Messengers retry a slow or failed delivery, so the only correct
 answer is a fast acknowledgement after the event is durably queued.
 """
 
 from __future__ import annotations
 
-import hmac
 import json
-from typing import Any
+from typing import cast
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.responses import PlainTextResponse
 
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import SqlEventDeduper
-from onboarding.app.max.updates import parse_update
-from onboarding.core.models import EmployeeId
+from onboarding.core.models import Channel
+from onboarding.ports import Ingress
 
 router = APIRouter()
 
 MAX_BODY_BYTES = 1_000_000
 
 
-@router.post("/webhook", include_in_schema=False)
-async def receive(request: Request) -> Response:
+def _ingress(request: Request, name: str) -> Ingress:
     container = request.app.state.container
-    expected = container.settings.max_webhook_secret.get_secret_value()
-    if not expected:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "webhook secret is not configured"
-        )
-    presented = request.headers.get("X-Max-Bot-Api-Secret", "")
-    if not hmac.compare_digest(presented, expected):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad webhook secret")
+    try:
+        channel = Channel(name)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown channel") from None
+    ingress = container.ingress.get(channel)
+    if ingress is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown channel")
+    return cast(Ingress, ingress)
 
+
+async def _body(request: Request) -> bytes:
     declared = request.headers.get("content-length")
     if declared is not None and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "body too large")
-
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
         if len(body) > MAX_BODY_BYTES:
             raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "body too large")
+    return bytes(body)
+
+
+@router.post("/webhook/{channel}", include_in_schema=False)
+async def receive(channel: str, request: Request) -> Response:
+    container = request.app.state.container
+    ingress = _ingress(request, channel)
+    if not ingress.configured:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "webhook secret is not configured"
+        )
+    body = await _body(request)
+    headers = {name.lower(): value for name, value in request.headers.items()}
+    if not ingress.verify(headers, body):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad webhook secret")
+
+    # Every supported messenger posts JSON. A body that is not JSON is a misconfiguration, and
+    # saying so is cheaper than an adapter guessing.
     try:
-        payload: Any = json.loads(body)
+        json.loads(body)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid json") from None
-    if not isinstance(payload, dict):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "expected an object")
 
-    inbound = parse_update(payload, received_at=container.clock.now())
+    confirmation = ingress.handshake(body)
+    if confirmation is not None:
+        return PlainTextResponse(confirmation)
+
+    inbound = ingress.parse(body, received_at=container.clock.now())
     if inbound is None:
         return Response(status_code=status.HTTP_200_OK)
-    if inbound.user_id is None:
-        await container.audit.record("webhook_without_sender", update=inbound.update_type)
+
+    employee_id = await container.directory.resolve(inbound.address.channel, inbound.sender)
+    if employee_id is None:
+        # Access is a company fact, not a chat fact: an unlinked account gets no run (ADR 0019).
+        await container.audit.record(
+            "unlinked_channel_user",
+            channel=inbound.address.channel.value,
+            chat_id=int(inbound.address.chat_id),
+        )
         return Response(status_code=status.HTTP_200_OK)
 
-    employee_id = EmployeeId(str(inbound.user_id))
-    kind = "start" if inbound.update_type == "bot_started" else "message"
-    job = {
+    kind = "start" if inbound.starts_run else "message"
+    job: dict[str, object] = {
         "employee_id": str(employee_id),
-        "chat_id": int(inbound.chat_id),
+        "channel": inbound.address.channel.value,
+        "chat_id": int(inbound.address.chat_id),
         "event": {
             "kind": inbound.event.kind.value,
             "at": inbound.event.at.isoformat(),
@@ -71,7 +102,7 @@ async def receive(request: Request) -> Response:
     }
 
     async with container.database.session() as session:
-        if not await SqlEventDeduper(session).first_sighting(inbound.event_id):
+        if not await SqlEventDeduper(session).first_sighting(inbound.dedupe_key):
             return Response(status_code=status.HTTP_200_OK)
         await JobQueue.enqueue(session, kind, job)
     return Response(status_code=status.HTTP_200_OK)

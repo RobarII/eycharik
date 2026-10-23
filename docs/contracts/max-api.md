@@ -34,7 +34,7 @@ a PEM file; when it is unset the adapter uses the default `httpx` verification.
 
 | Fact | Value |
 |---|---|
-| Route | `POST /webhook` on our side |
+| Route | `POST /webhook/max` on our side |
 | Method | `HTTPS POST`, port 443 only, no port in the URL |
 | Secret header | `X-Max-Bot-Api-Secret`, compared in constant time |
 | Empty secret | `503`, so a misconfigured deployment fails loudly instead of accepting unsigned calls |

@@ -11,6 +11,9 @@ from pathlib import Path
 
 import httpx
 
+from onboarding.app.channels.max.client import MaxClient
+from onboarding.app.channels.max.ingress import MaxIngress
+from onboarding.app.channels.profiles import ChannelProfileLibrary
 from onboarding.app.clock import SystemClock
 from onboarding.app.copy import Copy, load_copy
 from onboarding.app.db.blobs import PostgresBlobStore
@@ -40,7 +43,6 @@ from onboarding.app.llm.gateway import build_llm
 from onboarding.app.llm.jev import build_jev_classifier
 from onboarding.app.llm.rerank import build_reranker
 from onboarding.app.llm.sentiment import SentimentClassifier
-from onboarding.app.max.client import MaxClient
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.settings import Settings
@@ -48,17 +50,21 @@ from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.service import OnboardingService
+from onboarding.core.channels import ChannelProfile
+from onboarding.core.models import Channel
 from onboarding.ports import (
     LLM,
     AuditLog,
     Clock,
     Embedder,
+    Ingress,
     KnowledgeBase,
     Messaging,
     SentimentAnalysis,
 )
 
 SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
+CHANNEL_PROFILES_DIR = Path(__file__).resolve().parents[1] / "channel-profiles"
 
 
 @dataclass(slots=True)
@@ -74,7 +80,9 @@ class Container:
     copy: Copy
     catalog: ScenarioCatalog
     directory: SqlDirectory
-    sender: Messaging
+    profiles: dict[Channel, ChannelProfile]
+    senders: dict[Channel, Messaging]
+    ingress: dict[Channel, Ingress]
     outbox: OutboxMessaging
     answerer: Answerer
     executor: ActionExecutor
@@ -134,13 +142,23 @@ def build_container(settings: Settings) -> Container:
     directory = SqlDirectory(database)
     audit = DatabaseAuditLog(database)
 
-    sender = MaxClient(
-        base_url=settings.max_base_url,
-        token=settings.max_bot_token,
-        client=http,
-        messages_per_second=settings.max_messages_per_second,
-    )
-    outbox = OutboxMessaging(database, sender)
+    profiles = ChannelProfileLibrary(
+        settings.channel_profiles_dir,
+        settings.contracts_dir / "channel-profile.schema.json",
+    ).load_all()
+    enabled = set(settings.channels)
+    senders: dict[Channel, Messaging] = {}
+    ingress: dict[Channel, Ingress] = {}
+    if Channel.MAX in enabled:
+        senders[Channel.MAX] = MaxClient(
+            base_url=settings.max_base_url,
+            token=settings.max_bot_token,
+            client=http,
+            messages_per_second=profiles[Channel.MAX].messages_per_second,
+        )
+        ingress[Channel.MAX] = MaxIngress(settings.max_webhook_secret)
+
+    outbox = OutboxMessaging(database, senders, profiles)
     reranker = build_reranker(settings, http)
     answerer = Answerer(
         knowledge=knowledge,
@@ -168,11 +186,11 @@ def build_container(settings: Settings) -> Container:
         audit=audit,
         classifier=classifier,
     )
-    profiles = ExtractionProfileLibrary(
+    extraction_profiles = ExtractionProfileLibrary(
         settings.extraction_profiles_dir,
         settings.contracts_dir / "extraction-profile.schema.json",
     )
-    extraction_profile = profiles.load(settings.extraction_profile)
+    extraction_profile = extraction_profiles.load(settings.extraction_profile)
     blobs = PostgresBlobStore(database, max_bytes=settings.extraction_max_upload_bytes)
     extraction_cache = PostgresExtractionCache(database)
     extractor = DocumentExtractor(
@@ -201,13 +219,15 @@ def build_container(settings: Settings) -> Container:
         copy=copy,
         catalog=catalog,
         directory=directory,
-        sender=sender,
+        profiles=profiles,
+        senders=senders,
+        ingress=ingress,
         outbox=outbox,
         answerer=answerer,
         executor=executor,
         service=service,
         queue=JobQueue(database),
-        dispatcher=MessageDispatcher(database, sender),
+        dispatcher=MessageDispatcher(database, senders),
         scheduler=ReminderScheduler(database),
         audit=audit,
         blobs=blobs,

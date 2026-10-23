@@ -12,7 +12,7 @@ from datetime import datetime
 from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.payload import JobPayloadError
 from onboarding.app.worker.service import OnboardingService
-from onboarding.core.models import ChatId, EmployeeId, Event, EventKind
+from onboarding.core.models import Address, Channel, ChatId, EmployeeId, Event, EventKind
 from onboarding.ports import AuditLog, Clock, JobSink
 
 EXTRACT_DOCUMENT = "extract_document"
@@ -57,9 +57,12 @@ class JobRunner:
             await self._extractor.run(payload)
             return
         employee_id = EmployeeId(_text(payload, "employee_id"))
-        chat_id = ChatId(_integer(payload, "chat_id"))
+        address = Address(
+            channel=Channel(_text(payload, "channel")),
+            chat_id=ChatId(_integer(payload, "chat_id")),
+        )
         if kind == "start":
-            await self._service.start(employee_id, chat_id)
+            await self._service.start(employee_id, address)
             return
         if kind == "message":
             event = _event(payload.get("event"))
@@ -67,7 +70,7 @@ class JobRunner:
             event = Event(kind=EventKind.TIMEOUT, at=self._clock.now())
         else:
             raise JobPayloadError(f"unknown job kind {kind!r}")
-        await self._service.handle(employee_id, chat_id, event)
+        await self._service.handle(employee_id, address, event)
 
 
 def _text(payload: Mapping[str, object], key: str) -> str:

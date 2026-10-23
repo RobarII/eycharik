@@ -179,7 +179,7 @@ def test_catalog_fails_on_a_duplicate_version(tmp_path: Path) -> None:
 def test_catalog_lists_ids() -> None:
     catalog = ScenarioCatalog.load(SCENARIOS)
 
-    assert catalog.ids() == ("onboarding_default",)
+    assert catalog.ids() == ("onboarding_default", "onboarding_plant")
     assert catalog.active("onboarding_default").version == 2
 
 

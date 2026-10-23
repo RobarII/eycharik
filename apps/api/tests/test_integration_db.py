@@ -9,20 +9,24 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 import pytest
-from sqlalchemy import text
+from fastapi import FastAPI
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
+from onboarding.api.app import create_app
+from onboarding.app.admin.actions import QuestionResolver
 from onboarding.app.admin.queries import AdminQueries
 from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
 from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.kb import PostgresKnowledgeBase, PostgresKnowledgeWriter
-from onboarding.app.db.models import EmployeeRow, QuestionRow
+from onboarding.app.db.models import AuditRow, EmployeeRow, MessageRow, QuestionRow, RunRow
 from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import (
@@ -32,6 +36,7 @@ from onboarding.app.db.repos import (
     RunAlreadyActiveError,
     SqlEventDeduper,
 )
+from onboarding.app.db.retention import RetentionPurger
 from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.db.session import Database
 from onboarding.app.knowledge.embedding import HashingEmbedder
@@ -565,3 +570,247 @@ valid_from: 2026-01-01
             writer=PostgresKnowledgeWriter(database),
             embedder=embedder,
         )
+
+
+def admin_app() -> FastAPI:
+    return create_app(
+        Settings(
+            _env_file=None,
+            database_url=database_url(),
+            embed_provider="hashing",
+            admin_tokens_raw=(
+                "rec:recruiter:rec-1,other:recruiter:rec-2,mgr:manager:ИТ,"
+                "hr:hr_admin:hr-1,expired:hr_admin:hr-1:2020-01-01"
+            ),
+        )
+    )
+
+
+async def seed_question(database: Database, text_value: str = "Сколько дней отпуска?") -> int:
+    log = DatabaseQuestionLog(database)
+    await log.record_question(
+        employee_id=EMPLOYEE,
+        chat_id=ChatId(1),
+        text=text_value,
+        answered=False,
+        reason="no_sources",
+        citations=(),
+        latency_ms=None,
+    )
+    async with database.session() as session:
+        value = await session.scalar(select(func.max(QuestionRow.id)))
+    return int(value or 0)
+
+
+async def test_admin_resolves_a_question_and_queues_the_reply(database: Database) -> None:
+    question_id = await seed_question(database)
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+            response = await http.post(
+                f"/admin/api/questions/{question_id}/resolve",
+                json={"text": "Отпуск — 28 дней, заявление за 14 дней."},
+                headers={"Authorization": "Bearer rec"},
+            )
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert body["id"] == question_id
+            assert body["answered"] is True
+            assert body["resolved_by"] == "rec-1"
+
+            second = await http.post(
+                f"/admin/api/questions/{question_id}/resolve",
+                json={"text": "Повтор"},
+                headers={"Authorization": "Bearer rec"},
+            )
+            assert second.status_code == 409
+
+            foreign = await http.post(
+                f"/admin/api/questions/{question_id}/resolve",
+                json={"text": "Чужой"},
+                headers={"Authorization": "Bearer other"},
+            )
+            assert foreign.status_code == 404
+
+            empty = await http.post(
+                f"/admin/api/questions/{question_id}/resolve",
+                json={"text": "   "},
+                headers={"Authorization": "Bearer rec"},
+            )
+            assert empty.status_code == 422
+
+    async with database.session() as session:
+        question = await session.get(QuestionRow, question_id)
+        assert question is not None
+        assert question.answered
+        assert question.resolved_by == "rec-1"
+        assert question.resolution == "Отпуск — 28 дней, заявление за 14 дней."
+        reply = await session.scalar(
+            select(MessageRow).where(MessageRow.chat_id == 1)
+        )
+        assert reply is not None
+        assert reply.status == "pending"
+        audit = await session.scalar(
+            select(AuditRow).where(AuditRow.name == "question_resolved")
+        )
+        assert audit is not None
+        assert audit.fields["question_id"] == question_id
+        assert "text" not in audit.fields
+
+
+async def test_manager_scope_and_expired_token(database: Database) -> None:
+    question_id = await seed_question(database)
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+            expired = await http.get(
+                "/admin/api/questions", headers={"Authorization": "Bearer expired"}
+            )
+            assert expired.status_code == 401
+
+            anonymous = await http.get("/admin/api/questions")
+            assert anonymous.status_code == 401
+
+            manager = await http.post(
+                f"/admin/api/questions/{question_id}/resolve",
+                json={"text": "Ответ руководителя отдела."},
+                headers={"Authorization": "Bearer mgr"},
+            )
+            assert manager.status_code == 200, manager.text
+
+
+async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Database) -> None:
+    service = build_service(
+        database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase()
+    )
+    await service.start(EMPLOYEE, ChatId(1))
+    await seed_question(database)
+
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+            refused = await http.delete(
+                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer rec"}
+            )
+            assert refused.status_code == 403
+
+            removed = await http.delete(
+                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+            )
+            assert removed.status_code == 200, removed.text
+            body = removed.json()
+            assert body["employee_id"] == str(EMPLOYEE)
+            assert body["questions_deleted"] == 1
+            assert body["runs_closed"] == 1
+
+            again = await http.delete(
+                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+            )
+            assert again.status_code == 200
+            assert again.json()["questions_deleted"] == 0
+
+    async with database.session() as session:
+        employee = await session.get(EmployeeRow, str(EMPLOYEE))
+        assert employee is not None
+        assert employee.status == "left"
+        assert employee.left_at is not None
+        run = await session.scalar(select(RunRow).where(RunRow.employee_id == str(EMPLOYEE)))
+        assert run is not None
+        assert run.status == "completed"
+        assert await session.scalar(select(func.count()).select_from(QuestionRow)) == 0
+
+    assert await SqlDirectory(database).profile(EMPLOYEE) is None
+
+
+async def test_retention_purges_old_questions_and_redacts_audit(database: Database) -> None:
+    old = NOW - timedelta(days=400)
+    async with database.session() as session:
+        session.add(
+            QuestionRow(
+                employee_id=str(EMPLOYEE),
+                chat_id=1,
+                text="старый вопрос",
+                answered=True,
+                reason="answered",
+                asked_at=old,
+            )
+        )
+        session.add(
+            QuestionRow(
+                employee_id=str(EMPLOYEE),
+                chat_id=1,
+                text="свежий вопрос",
+                answered=False,
+                reason="no_sources",
+            )
+        )
+        session.add(
+            AuditRow(
+                name="risk_assessed",
+                at=old,
+                fields={
+                    "employee_id": str(EMPLOYEE),
+                    "level": "high",
+                    "evidence": [{"text": "личное"}],
+                },
+            )
+        )
+
+    result = await RetentionPurger(
+        database, FrozenClock(NOW), days=365
+    ).run_once()
+
+    assert result.questions_deleted == 1
+    assert result.audit_redacted == 1
+    async with database.session() as session:
+        texts = list(await session.scalars(select(QuestionRow.text)))
+        assert texts == ["свежий вопрос"]
+        audit = await session.scalar(
+            select(AuditRow).where(AuditRow.name == "risk_assessed")
+        )
+        assert audit is not None
+        assert "evidence" not in audit.fields
+        assert audit.fields["redacted"] is True
+        assert audit.fields["level"] == "high"
+        purged = await session.scalar(
+            select(func.count()).select_from(AuditRow).where(AuditRow.name == "retention_purged")
+        )
+        assert purged == 1
+
+
+async def test_question_resolver_uses_the_scope_and_the_outbox(database: Database) -> None:
+    question_id = await seed_question(database)
+    resolver = QuestionResolver(database, FrozenClock(NOW))
+
+    with pytest.raises(Exception, match="not found"):
+        await resolver.resolve(
+            question_id,
+            text="Чужой ответ",
+            actor="rec-2",
+            recruiter_id="rec-2",
+            department=None,
+        )
+
+    resolution = await resolver.resolve(
+        question_id,
+        text="Ответ",
+        actor="rec-1",
+        recruiter_id="rec-1",
+        department=None,
+    )
+
+    assert resolution.question_id == question_id
+    async with database.session() as session:
+        assert await session.scalar(select(func.count()).select_from(MessageRow)) == 1

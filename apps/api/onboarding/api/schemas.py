@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
 class RunSummary(BaseModel):
@@ -34,6 +35,7 @@ class AuditEvent(BaseModel):
 class Question(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    id: int
     employee_id: str
     employee_name: str
     text: str
@@ -41,6 +43,33 @@ class Question(BaseModel):
     reason: str
     citations: list[str]
     asked_at: datetime
+    resolved_at: datetime | None
+    resolved_by: str | None
+
+
+class ResolveQuestion(BaseModel):
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2000)
+    ]
+
+
+class ResolvedQuestion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    employee_id: str
+    answered: bool
+    resolved_at: datetime
+    resolved_by: str
+
+
+class OffboardedEmployee(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: str
+    questions_deleted: int
+    runs_closed: int
+    audit_redacted: int
 
 
 class RunList(BaseModel):
@@ -75,6 +104,7 @@ class AnalyticsOverview(BaseModel):
     high_risk: int
     medium_risk: int
     unanswered_questions: int
+    resolved_questions: int
     top_tags: list[TagCount]
     since: datetime
 

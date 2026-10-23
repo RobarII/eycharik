@@ -11,6 +11,7 @@ import signal
 
 from onboarding.app.clock import SystemClock
 from onboarding.app.container import build_container
+from onboarding.app.db.retention import RetentionPurger
 from onboarding.app.settings import Settings
 from onboarding.app.worker.jobs import JobRunner
 
@@ -18,6 +19,7 @@ log = logging.getLogger(__name__)
 
 IDLE_SLEEP_S = 0.2
 SCHEDULER_EVERY_TICKS = 25
+RETENTION_EVERY_S = 60 * 60
 
 
 async def run_forever(settings: Settings, stop: asyncio.Event) -> None:
@@ -28,13 +30,22 @@ async def run_forever(settings: Settings, stop: asyncio.Event) -> None:
         clock=SystemClock(),
         audit=container.audit,
     )
+    purger = RetentionPurger(
+        container.database,
+        SystemClock(),
+        days=settings.data_retention_days,
+    )
     ticks = 0
+    next_purge = asyncio.get_running_loop().time() + RETENTION_EVERY_S
     try:
         while not stop.is_set():
             handled = await runner.run_once()
             await container.dispatcher.run_once()
             if ticks % SCHEDULER_EVERY_TICKS == 0:
                 await container.scheduler.tick()
+            if asyncio.get_running_loop().time() >= next_purge:
+                await purger.run_once()
+                next_purge = asyncio.get_running_loop().time() + RETENTION_EVERY_S
             ticks += 1
             if handled == 0:
                 await asyncio.sleep(IDLE_SLEEP_S)

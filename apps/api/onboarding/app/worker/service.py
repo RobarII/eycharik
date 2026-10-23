@@ -83,7 +83,10 @@ class OnboardingService:
             return ServiceResult(handled=False)
 
         profile = await self._directory.profile(employee_id)
-        scenario = self._scenario(profile.scenario_id if profile else None)
+        if profile is None:
+            await self._audit.record("employee_not_in_directory", employee_id=str(employee_id))
+            return ServiceResult(handled=False)
+        scenario = self._scenario(profile.scenario_id)
         now = self._now()
         transition = start(scenario, RunId(str(uuid4())), employee_id, now)
         try:

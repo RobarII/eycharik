@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from sqlalchemy import select
+
 from onboarding.app.db.models import EmployeeRow
 from onboarding.app.db.session import Database
 from onboarding.core.models import EmployeeId, EmployeeProfile
@@ -13,7 +15,12 @@ class SqlDirectory:
 
     async def profile(self, employee_id: EmployeeId) -> EmployeeProfile | None:
         async with self._database.session() as session:
-            row = await session.get(EmployeeRow, str(employee_id))
+            row = await session.scalar(
+                select(EmployeeRow).where(
+                    EmployeeRow.id == str(employee_id),
+                    EmployeeRow.status == "active",
+                )
+            )
         if row is None:
             return None
         return EmployeeProfile(

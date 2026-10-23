@@ -41,6 +41,7 @@ class EventRecord:
 
 @dataclass(frozen=True, slots=True)
 class QuestionRecord:
+    id: int
     employee_id: str
     employee_name: str
     text: str
@@ -48,6 +49,8 @@ class QuestionRecord:
     reason: str
     citations: list[str]
     asked_at: datetime
+    resolved_at: datetime | None
+    resolved_by: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +60,7 @@ class OverviewRecord:
     high_risk: int
     medium_risk: int
     unanswered_questions: int
+    resolved_questions: int
     top_tags: tuple[tuple[str, int], ...]
 
 
@@ -164,7 +168,7 @@ class AdminQueries:
             if recruiter_id is not None or department is not None:
                 assessments = assessments.join(
                     EmployeeRow, EmployeeRow.id == AuditRow.fields["employee_id"].astext
-                ).where(*_scope_filters(recruiter_id, department))
+                ).where(*employee_scope_filters(recruiter_id, department))
             level_rows = (
                 await session.execute(assessments.group_by(literal_column("1")))
             ).all()
@@ -174,7 +178,20 @@ class AdminQueries:
                 select(func.count())
                 .select_from(QuestionRow)
                 .join(EmployeeRow, EmployeeRow.id == QuestionRow.employee_id)
-                .where(QuestionRow.answered.is_(False), *_scope_filters(recruiter_id, department))
+                .where(
+                    QuestionRow.answered.is_(False),
+                    *employee_scope_filters(recruiter_id, department),
+                )
+            )
+            resolved = await session.scalar(
+                select(func.count())
+                .select_from(QuestionRow)
+                .join(EmployeeRow, EmployeeRow.id == QuestionRow.employee_id)
+                .where(
+                    QuestionRow.resolved_at.is_not(None),
+                    QuestionRow.resolved_at >= since,
+                    *employee_scope_filters(recruiter_id, department),
+                )
             )
 
             tags_statement = text(
@@ -195,6 +212,7 @@ class AdminQueries:
                 high_risk=int(levels.get("high", 0)),
                 medium_risk=int(levels.get("medium", 0)),
                 unanswered_questions=int(unanswered or 0),
+                resolved_questions=int(resolved or 0),
                 top_tags=tags,
             )
 
@@ -214,7 +232,7 @@ class AdminQueries:
                 .where(
                     AuditRow.name == "risk_assessed",
                     AuditRow.at >= since,
-                    *_scope_filters(recruiter_id, department),
+                    *employee_scope_filters(recruiter_id, department),
                 )
                 .order_by(desc(AuditRow.at), desc(AuditRow.id))
                 .limit(500)
@@ -272,7 +290,7 @@ class AdminQueries:
             statement = select(QuestionRow).join(
                 EmployeeRow, EmployeeRow.id == QuestionRow.employee_id
             )
-            for condition in _scope_filters(recruiter_id, department):
+            for condition in employee_scope_filters(recruiter_id, department):
                 statement = statement.where(condition)
             if answered is not None:
                 statement = statement.where(QuestionRow.answered == answered)
@@ -280,11 +298,12 @@ class AdminQueries:
                 statement = statement.where(QuestionRow.employee_id == employee_id)
             rows = await session.execute(
                 statement.add_columns(EmployeeRow.name)
-                .order_by(desc(QuestionRow.asked_at))
+                .order_by(QuestionRow.answered.asc(), desc(QuestionRow.asked_at))
                 .limit(limit)
             )
             return tuple(
                 QuestionRecord(
+                    id=question.id,
                     employee_id=question.employee_id or "",
                     employee_name=name,
                     text=question.text,
@@ -292,6 +311,8 @@ class AdminQueries:
                     reason=question.reason,
                     citations=list(question.citations),
                     asked_at=question.asked_at,
+                    resolved_at=question.resolved_at,
+                    resolved_by=question.resolved_by,
                 )
                 for question, name in rows.all()
             )
@@ -313,7 +334,8 @@ def _quote(value: object) -> str | None:
     return None
 
 
-def _scope_filters(recruiter_id: str | None, department: str | None) -> tuple[Any, ...]:
+def employee_scope_filters(recruiter_id: str | None, department: str | None) -> tuple[Any, ...]:
+    """SQL predicates that keep an employee row inside the caller's scope."""
     filters: list[Any] = []
     if recruiter_id is not None:
         filters.append(EmployeeRow.recruiter_id == recruiter_id)
@@ -323,7 +345,7 @@ def _scope_filters(recruiter_id: str | None, department: str | None) -> tuple[An
 
 
 def _scope_runs(statement: Any, recruiter_id: str | None, department: str | None) -> Any:
-    for condition in _scope_filters(recruiter_id, department):
+    for condition in employee_scope_filters(recruiter_id, department):
         statement = statement.where(condition)
     return statement
 
@@ -335,7 +357,7 @@ def _run_query(recruiter_id: str | None, department: str | None = None) -> Any:
         EmployeeRow.role,
         EmployeeRow.department,
     ).join(EmployeeRow, EmployeeRow.id == RunRow.employee_id)
-    for condition in _scope_filters(recruiter_id, department):
+    for condition in employee_scope_filters(recruiter_id, department):
         statement = statement.where(condition)
     return statement.order_by(desc(RunRow.updated_at))
 

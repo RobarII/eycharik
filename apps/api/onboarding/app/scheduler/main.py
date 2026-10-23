@@ -17,6 +17,7 @@ import logging
 from onboarding.app.clock import SystemClock
 from onboarding.app.container import build_container
 from onboarding.app.db.outbox import MessageDispatcher
+from onboarding.app.db.retention import RetentionPurger
 from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.settings import Settings
 from onboarding.app.worker.jobs import JobRunner
@@ -31,6 +32,7 @@ async def tick_once(
     scheduler: ReminderScheduler,
     runner: JobRunner,
     dispatcher: MessageDispatcher,
+    purger: RetentionPurger | None = None,
     max_jobs: int = DEFAULT_MAX_JOBS,
 ) -> tuple[int, int, int]:
     """Reminders queued, jobs handled, messages delivered."""
@@ -42,8 +44,13 @@ async def tick_once(
             break
         handled += batch
     delivered = await dispatcher.run_once()
+    purged = await purger.run_once() if purger is not None else None
     log.info(
-        "cron pass: reminders=%s jobs=%s messages=%s", queued, handled, delivered
+        "cron pass: reminders=%s jobs=%s messages=%s purged=%s",
+        queued,
+        handled,
+        delivered,
+        purged,
     )
     return queued, handled, delivered
 
@@ -61,6 +68,11 @@ async def run(settings: Settings, *, max_jobs: int) -> tuple[int, int, int]:
             scheduler=container.scheduler,
             runner=runner,
             dispatcher=container.dispatcher,
+            purger=RetentionPurger(
+                container.database,
+                SystemClock(),
+                days=settings.data_retention_days,
+            ),
             max_jobs=max_jobs,
         )
     finally:

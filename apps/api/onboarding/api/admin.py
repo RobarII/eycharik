@@ -22,12 +22,22 @@ from onboarding.api.schemas import (
     KnowledgeList,
     KnowledgeUpload,
     KnowledgeUploaded,
+    OffboardedEmployee,
     Question,
     QuestionList,
+    ResolvedQuestion,
+    ResolveQuestion,
     RunDetail,
     RunList,
     RunSummary,
     TagCount,
+)
+from onboarding.app.admin.actions import (
+    EmployeeNotFoundError,
+    EmployeeOffboarder,
+    QuestionAlreadyResolvedError,
+    QuestionNotFoundError,
+    QuestionResolver,
 )
 from onboarding.app.admin.queries import AdminQueries, QuestionRecord, RunRecord
 from onboarding.app.db.kb import PostgresKnowledgeWriter
@@ -122,6 +132,69 @@ async def list_questions(
     return QuestionList(items=[_question(record) for record in records])
 
 
+@router.post(
+    "/questions/{question_id}/resolve",
+    response_model=ResolvedQuestion,
+)
+async def resolve_question(
+    request: Request,
+    principal: Admin,
+    question_id: int,
+    body: ResolveQuestion,
+) -> ResolvedQuestion:
+    """Close one escalated question and queue the recruiter's reply in the outbox."""
+    container = request.app.state.container
+    resolver = QuestionResolver(container.database, container.clock)
+    try:
+        resolution = await resolver.resolve(
+            question_id,
+            text=body.text,
+            actor=principal.subject,
+            recruiter_id=_scope(principal),
+            department=_department(principal),
+        )
+    except QuestionNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "question not found") from None
+    except QuestionAlreadyResolvedError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "question already resolved") from None
+    return ResolvedQuestion(
+        id=resolution.question_id,
+        employee_id=resolution.employee_id,
+        answered=True,
+        resolved_at=resolution.resolved_at,
+        resolved_by=resolution.resolved_by,
+    )
+
+
+@router.delete(
+    "/employees/{employee_id}",
+    response_model=OffboardedEmployee,
+)
+async def offboard_employee(
+    request: Request,
+    principal: Admin,
+    employee_id: str,
+) -> OffboardedEmployee:
+    """HR offboards an employee: the run stops and the transcript is deleted immediately."""
+    if not principal.is_hr:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="only hr_admin may offboard an employee",
+        )
+    container = request.app.state.container
+    offboarder = EmployeeOffboarder(container.database, container.clock)
+    try:
+        result = await offboarder.offboard(employee_id, actor=principal.subject)
+    except EmployeeNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "employee not found") from None
+    return OffboardedEmployee(
+        employee_id=result.employee_id,
+        questions_deleted=result.questions_deleted,
+        runs_closed=result.runs_closed,
+        audit_redacted=result.audit_redacted,
+    )
+
+
 def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
     step_title: str | None = None
     try:
@@ -151,6 +224,7 @@ def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
 
 def _question(record: QuestionRecord) -> Question:
     return Question(
+        id=record.id,
         employee_id=record.employee_id,
         employee_name=record.employee_name,
         text=record.text,
@@ -158,6 +232,8 @@ def _question(record: QuestionRecord) -> Question:
         reason=record.reason,
         citations=record.citations,
         asked_at=record.asked_at,
+        resolved_at=record.resolved_at,
+        resolved_by=record.resolved_by,
     )
 
 
@@ -173,6 +249,7 @@ async def analytics_overview(request: Request, principal: Admin) -> AnalyticsOve
         high_risk=record.high_risk,
         medium_risk=record.medium_risk,
         unanswered_questions=record.unanswered_questions,
+        resolved_questions=record.resolved_questions,
         top_tags=[TagCount(tag=tag, count=count) for tag, count in record.top_tags],
         since=since,
     )

@@ -4,6 +4,8 @@ import type { AdminIdentity, Capability } from "./types";
 
 export interface Session {
   identity: AdminIdentity;
+  /** The current subject, as the server spells it in `assignee`. */
+  subject: string;
   /** The only place the cabinet asks what it may render. Never re-derive this from the role. */
   can: (capability: Capability) => boolean;
 }
@@ -23,6 +25,7 @@ export function useSession(): Session {
 export function sessionFor(identity: AdminIdentity): Session {
   return {
     identity,
+    subject: identity.subject,
     can: (capability) => identity.capabilities.includes(capability),
   };
 }

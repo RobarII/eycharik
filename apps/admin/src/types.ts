@@ -30,6 +30,14 @@ export interface Question {
   asked_at: string;
   resolved_at: string | null;
   resolved_by: string | null;
+  /** Who picked the question up. `null` means nobody has. */
+  assignee: string | null;
+}
+
+export interface AssignedQuestion {
+  id: number;
+  employee_id: string;
+  assignee: string | null;
 }
 
 export interface ResolvedQuestion {
@@ -123,6 +131,7 @@ export type Capability =
   | "runs.read"
   | "questions.read"
   | "questions.resolve"
+  | "questions.assign"
   | "knowledge.read"
   | "knowledge.write"
   | "employees.offboard"

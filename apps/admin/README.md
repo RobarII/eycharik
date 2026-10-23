@@ -29,7 +29,7 @@ The URL hash is the router; there is no router dependency.
 | `#/overview` | Overview | Seven-day snapshot, risks, queue, topics, new hires |
 | `#/runs` | Employees | Active and completed runs, search, filters |
 | `#/run/<run_id>` | Employee detail | Step, facts, questions, audit timeline |
-| `#/questions` | Questions | Unanswered and answered queue, reasons, citations |
+| `#/questions` | Questions | Queue by status and by owner (`&owner=me`, `&owner=unassigned`), reasons, citations, claim |
 | `#/risk` | Risks | Counters, weekly digest, risk topics |
 | `#/knowledge` | Knowledge | Upload a markdown document, list indexed documents |
 
@@ -124,7 +124,8 @@ guess a shape in the client.
 |---|---|
 | `GET /admin/api/runs?limit=50` | `{ items: RunSummary[] }`, newest activity first |
 | `GET /admin/api/runs/{run_id}` | `RunDetail`: summary + scenario, tone, step message, events, questions |
-| `GET /admin/api/questions?status=unanswered&limit=50` | `{ items: Question[] }`; status is `unanswered`, `answered`, `all` |
+| `GET /admin/api/questions?status=unanswered&limit=50&assignee=any` | `{ items: Question[], total, next_cursor }`; status is `unanswered`, `answered`, `all`; assignee is `any`, `me`, `unassigned` |
+| `PATCH /admin/api/questions/{id}/assignee` | `{ assignee }`: claim, hand over, or clear with `null` |
 | `GET /admin/api/analytics/overview` | Seven-day counters and `top_tags` |
 | `GET /admin/api/digest/weekly?days=7` | `{ items: DigestItem[], since }` |
 | `GET /admin/api/knowledge` | `{ items: KnowledgeDocument[] }` |

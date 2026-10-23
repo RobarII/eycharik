@@ -135,7 +135,16 @@ async function handle(
       send(response, 422, { detail: "status must be unanswered, answered or all" });
       return;
     }
-    send(response, 200, paginate(demo.questions(role, status, 500).items, url, 200));
+    const owner = url.searchParams.get("assignee") ?? "any";
+    send(response, 200, paginate(demo.questions(role, status, owner, 500).items, url, 200));
+    return;
+  }
+
+  const assignMatch = /^\/admin\/api\/questions\/([^/]+)\/assignee$/.exec(path);
+  if (request.method === "PATCH" && assignMatch?.[1]) {
+    const body = (await readJson(request)) as { assignee?: unknown } | null;
+    const owner = typeof body?.assignee === "string" ? body.assignee : null;
+    send(response, 200, demo.assignQuestion(Number(assignMatch[1]), owner));
     return;
   }
 

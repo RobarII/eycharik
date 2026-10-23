@@ -8,16 +8,19 @@ knowledge document schema, the preview mode, and the known limits.
 
 ## Rules
 
-1. Writes are the four the contract allows: resolve a question, publish a knowledge document,
-   upload a PDF or a deck, and offboard an employee. The cabinet calls `/admin/api/*` and never MAX;
-   a reply is queued through the outbox in the same transaction that closes the question.
+1. Writes are the five the contract allows: claim or release a question, resolve it, publish a
+   knowledge document, upload a PDF or a deck, and offboard an employee. The cabinet calls
+   `/admin/api/*` and never MAX; a reply is queued through the outbox in the same transaction that
+   closes the question.
 2. The token never lives in the page. It is exchanged on the gate for an HttpOnly cookie
    (`docs/decisions/0018`) and is not readable by script afterwards. A `401` returns to the gate.
    What a role may see is decided by `capabilities` from `GET /admin/api/me`, never by the client.
 3. Every list shows an explicit empty state and an explicit error with a retry. "Nothing" and
    "failed" must never look the same.
 4. Timestamps arrive as UTC ISO strings and are formatted for the reader, never recomputed.
-5. A question always shows whose it is. A queue without names is a queue nobody works.
+5. A question always shows whose it is. A queue without names is a queue nobody works: the card
+   says "Ваш вопрос" or names the owner, and the owner filter is a server query, never a
+   client-side `filter()` over one page.
 6. Accessibility is not decoration: real buttons, labels, `aria-live` counts, focus rings,
    reduced-motion support. `npm run e2e` runs axe on every screen; a `critical` or `serious`
    violation fails it.

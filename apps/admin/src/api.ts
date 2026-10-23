@@ -9,6 +9,7 @@ import type {
   ListResponse,
   OffboardedEmployee,
   Page,
+  AssignedQuestion,
   Question,
   ResolvedQuestion,
   RunDetail,
@@ -98,10 +99,14 @@ export function fetchRun(runId: string): Promise<RunDetail> {
   return request(`/admin/api/runs/${encodeURIComponent(runId)}`);
 }
 
+/** `me` and `unassigned` are resolved by the server: the page never filters an assignee in the browser. */
+export type QuestionOwner = "any" | "me" | "unassigned";
+
 export interface QuestionQuery {
   status: "unanswered" | "answered" | "all";
   limit?: number;
   cursor?: string | null;
+  assignee?: QuestionOwner;
 }
 
 export function fetchQuestions(query: QuestionQuery): Promise<Page<Question>> {
@@ -110,6 +115,7 @@ export function fetchQuestions(query: QuestionQuery): Promise<Page<Question>> {
     limit: String(query.limit ?? 50),
   });
   if (query.cursor) params.set("cursor", query.cursor);
+  if (query.assignee && query.assignee !== "any") params.set("assignee", query.assignee);
   return request(`/admin/api/questions?${params.toString()}`);
 }
 
@@ -153,6 +159,15 @@ export function uploadKnowledgeFile(
 
 export function fetchExtraction(contentHash: string): Promise<KnowledgeExtraction> {
   return request(`/admin/api/knowledge/files/${encodeURIComponent(contentHash)}`);
+}
+
+/** `null` clears the owner. Any role that may answer may also claim. */
+export function assignQuestion(id: number, assignee: string | null): Promise<AssignedQuestion> {
+  return request(`/admin/api/questions/${id}/assignee`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assignee }),
+  });
 }
 
 export function resolveQuestion(id: number, text: string): Promise<ResolvedQuestion> {

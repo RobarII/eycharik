@@ -2,12 +2,12 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { UseMutationResult } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { fetchQuestions, fetchRuns, resolveQuestion } from "../api";
+import { assignQuestion, fetchQuestions, fetchRuns, resolveQuestion } from "../api";
 import { ArrowUpRightIcon } from "../components/Icons";
 import { AnswerPill, ReasonPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { countLabel, formatDateTime, initials } from "../format";
-import type { Question, ResolvedQuestion, RunSummary } from "../types";
+import type { AssignedQuestion, Question, ResolvedQuestion, RunSummary } from "../types";
 import { isConflict } from "../errors";
 import { useUnauthorized } from "../useUnauthorized";
 import { useSession } from "../session";
@@ -15,6 +15,7 @@ import { REFRESH } from "../config";
 import { setParam, useRoute } from "../route";
 
 type Status = "unanswered" | "answered" | "all";
+type Owner = "any" | "me" | "unassigned";
 
 const TABS: ReadonlyArray<readonly [Status, string]> = [
   ["unanswered", "Без ответа"],
@@ -22,8 +23,18 @@ const TABS: ReadonlyArray<readonly [Status, string]> = [
   ["answered", "Отвеченные"],
 ];
 
+const OWNERS: ReadonlyArray<readonly [Owner, string]> = [
+  ["any", "Все"],
+  ["me", "Мои"],
+  ["unassigned", "Ничьи"],
+];
+
 function readStatus(value: string | null): Status {
   return TABS.some(([status]) => status === value) ? (value as Status) : "unanswered";
+}
+
+function readOwner(value: string | null): Owner {
+  return OWNERS.some(([owner]) => owner === value) ? (value as Owner) : "any";
 }
 
 export function QuestionsPage({
@@ -35,10 +46,12 @@ export function QuestionsPage({
 }) {
   const { route, setParams } = useRoute();
   const status = readStatus(route.params.get("status"));
-  const { can } = useSession();
+  const owner = readOwner(route.params.get("owner"));
+  const { can, subject } = useSession();
   const query = useInfiniteQuery({
-    queryKey: ["questions", status],
-    queryFn: ({ pageParam }) => fetchQuestions({ status, cursor: pageParam, limit: 50 }),
+    queryKey: ["questions", status, owner],
+    queryFn: ({ pageParam }) =>
+      fetchQuestions({ status, assignee: owner, cursor: pageParam, limit: 50 }),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.next_cursor,
     refetchInterval: REFRESH.questions,
@@ -62,8 +75,19 @@ export function QuestionsPage({
       if (isConflict(error)) void queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
   });
+  const assign = useMutation({
+    mutationFn: ({ id, assignee }: { id: number; assignee: string | null }) =>
+      assignQuestion(id, assignee),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+    onError: (error) => {
+      if (isConflict(error)) void queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+  });
   useUnauthorized(query.error, onUnauthorized);
   useUnauthorized(resolve.error, onUnauthorized);
+  useUnauthorized(assign.error, onUnauthorized);
 
   const byEmployee = new Map<string, RunSummary>(
     (runs.data?.items ?? []).map((run) => [run.employee_id, run]),
@@ -106,6 +130,22 @@ export function QuestionsPage({
             </button>
           ))}
         </div>
+        <div className="segmented" role="tablist" aria-label="Чьи вопросы">
+          {OWNERS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={owner === value}
+              className={owner === value ? "segment segment-on" : "segment"}
+              onClick={() =>
+                setParams((params) => setParam(params, "owner", value === "any" ? "" : value))
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {query.isPending ? <SkeletonRows /> : null}
@@ -127,7 +167,10 @@ export function QuestionsPage({
               run={byEmployee.get(question.employee_id)}
               onOpenRun={onOpenRun}
               resolve={resolve}
+              assign={assign}
               canResolve={can("questions.resolve")}
+              canAssign={can("questions.assign")}
+              me={subject}
             />
           ))}
         </ul>
@@ -155,18 +198,31 @@ type ResolveMutation = UseMutationResult<
   { id: number; text: string }
 >;
 
+type AssignMutation = UseMutationResult<
+  AssignedQuestion,
+  Error,
+  { id: number; assignee: string | null }
+>;
+
 function QuestionCard({
   question,
   run,
   onOpenRun,
   resolve,
+  assign,
   canResolve,
+  canAssign,
+  me,
 }: {
   question: Question;
   run: RunSummary | undefined;
   onOpenRun: (runId: string) => void;
   resolve: ResolveMutation;
+  assign: AssignMutation;
   canResolve: boolean;
+  canAssign: boolean;
+  /** The current subject, so the card can tell "mine" from "somebody else's". */
+  me: string;
 }) {
   return (
     <li className="card question-card">
@@ -182,7 +238,14 @@ function QuestionCard({
             </p>
           </div>
         </div>
-        <AnswerPill answered={question.answered} />
+        <div className="question-flags">
+          {question.assignee ? (
+            <span className={question.assignee === me ? "pill pill-mine" : "pill"}>
+              {question.assignee === me ? "Ваш вопрос" : question.assignee}
+            </span>
+          ) : null}
+          <AnswerPill answered={question.answered} />
+        </div>
       </div>
       <p className="question-text">{question.text}</p>
       <div className="question-foot">
@@ -207,6 +270,28 @@ function QuestionCard({
           Закрыт {formatDateTime(question.resolved_at)}
           {question.resolved_by ? ` · ${question.resolved_by}` : ""}
         </p>
+      ) : null}
+      {!question.answered && canAssign ? (
+        <div className="question-owner">
+          <button
+            type="button"
+            className="link-button"
+            disabled={assign.isPending && assign.variables?.id === question.id}
+            onClick={() =>
+              assign.mutate({
+                id: question.id,
+                assignee: question.assignee === me ? null : me,
+              })
+            }
+          >
+            {question.assignee === me ? "Снять с себя" : "Забрать себе"}
+          </button>
+          {assign.error && assign.variables?.id === question.id && assign.error.name !== "Unauthorized" ? (
+            <span className="error-text" role="alert">
+              {assign.error.message}
+            </span>
+          ) : null}
+        </div>
       ) : null}
       {!question.answered && canResolve ? (
         <ReplyForm question={question} resolve={resolve} />

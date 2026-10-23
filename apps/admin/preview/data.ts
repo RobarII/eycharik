@@ -23,6 +23,7 @@ export const CAPABILITIES: Record<Role, readonly string[]> = {
     "runs.read",
     "questions.read",
     "questions.resolve",
+    "questions.assign",
     "knowledge.read",
     "analytics.read",
   ],
@@ -30,6 +31,7 @@ export const CAPABILITIES: Record<Role, readonly string[]> = {
     "runs.read",
     "questions.read",
     "questions.resolve",
+    "questions.assign",
     "knowledge.read",
     "knowledge.write",
     "employees.offboard",
@@ -139,46 +141,56 @@ const RUNS: RunFixture[] = [
 ];
 
 interface QuestionFixture {
+  id: number;
   employee_id: string;
   text: string;
   answered: boolean;
   reason: string;
   citations: string[];
   asked_days: number;
+  assignee: string | null;
 }
 
 const QUESTIONS: QuestionFixture[] = [
   {
+    id: 1,
     employee_id: "1001",
     text: "Сколько дней отпуска в первый год?",
     answered: true,
     reason: "answered",
     citations: ["hr/leave-policy#0"],
     asked_days: 2,
+    assignee: null,
   },
   {
+    id: 2,
     employee_id: "1001",
     text: "Сколько дней больничного оплачивает компания?",
     answered: false,
     reason: "restricted",
     citations: [],
     asked_days: 1,
+    assignee: null,
   },
   {
+    id: 3,
     employee_id: "1002",
     text: "Как получить доступ к корпоративному порталу?",
     answered: true,
     reason: "answered",
     citations: ["it/access-and-equipment#0"],
     asked_days: 3,
+    assignee: null,
   },
   {
+    id: 4,
     employee_id: "1003",
     text: "Когда выплачивают аванс?",
     answered: false,
     reason: "no_sources",
     citations: [],
     asked_days: 1,
+    assignee: "hr-1",
   },
 ];
 
@@ -332,23 +344,31 @@ export function runDetail(role: Role, runId: string) {
     tone: run.tone,
     step_message: run.step_message,
     events,
-    questions: questions(role, "all", 20).items.filter(
+    questions: questions(role, "all", "any", 20).items.filter(
       (question) => question.employee_id === run.employee_id,
     ),
   };
 }
 
-export function questions(role: Role, status: string, limit: number) {
+/** `owner` mirrors the API's `assignee` parameter: `any`, `me` or `unassigned`. */
+export function questions(role: Role, status: string, owner: string, limit: number) {
   const visible = new Set(scopedRuns(role).map((run) => run.employee_id));
+  const me = identity(role).subject;
   const items = QUESTIONS.filter((question) => visible.has(question.employee_id))
     .filter((question) => {
       if (status === "unanswered") return !question.answered;
       if (status === "answered") return question.answered;
       return true;
     })
+    .filter((question) => {
+      if (owner === "me") return question.assignee === me;
+      if (owner === "unassigned") return question.assignee === null;
+      return true;
+    })
     .sort((a, b) => a.asked_days - b.asked_days)
     .slice(0, limit)
     .map((question) => ({
+      id: question.id,
       employee_id: question.employee_id,
       employee_name: employeeName(question.employee_id),
       text: question.text,
@@ -356,8 +376,18 @@ export function questions(role: Role, status: string, limit: number) {
       reason: question.reason,
       citations: question.citations,
       asked_at: ago(question.asked_days),
+      resolved_at: question.answered ? ago(question.asked_days, 1) : null,
+      resolved_by: question.answered ? identity(role).subject : null,
+      assignee: question.assignee,
     }));
   return { items };
+}
+
+/** The demo keeps a claim in memory, so the queue behaves like the real one until a reload. */
+export function assignQuestion(id: number, assignee: string | null) {
+  const question = QUESTIONS.find((item) => item.id === id);
+  if (question) question.assignee = assignee;
+  return { id, employee_id: question?.employee_id ?? "", assignee };
 }
 
 export function digest(role: Role) {
@@ -395,7 +425,7 @@ export function overview(role: Role) {
     completed_runs: cohort.filter((run) => run.status === "completed").length,
     high_risk: signals.filter((item) => item.level === "high").length,
     medium_risk: signals.filter((item) => item.level === "medium").length,
-    unanswered_questions: questions(role, "unanswered", 200).items.length,
+    unanswered_questions: questions(role, "unanswered", "any", 200).items.length,
     top_tags: [...tagCounts.entries()]
       .map(([tag, count]) => ({ tag, count }))
       .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))

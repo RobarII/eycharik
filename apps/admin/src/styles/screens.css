@@ -507,6 +507,27 @@
   margin-left: auto;
 }
 
+.question-flags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Its own owner, not a status: the accent is the same one the active run card uses. */
+.pill-mine {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.question-owner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
 .resolve {
   display: grid;
   gap: 8px;

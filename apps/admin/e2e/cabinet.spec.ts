@@ -44,6 +44,18 @@ test.describe("a recruiter's session", () => {
     await expect(page.getByText("Анна Смирнова")).toHaveCount(0);
   });
 
+  test("claims a question and keeps the claim in the filter", async ({ page }) => {
+    await signedInAs(page, RECRUITER);
+    await nav(page, "Вопросы");
+    await page.getByRole("button", { name: "Забрать себе" }).first().click();
+
+    await expect(page.getByText("Ваш вопрос").first()).toBeVisible();
+
+    await page.getByRole("tab", { name: "Мои" }).click();
+    await expect(page).toHaveURL(/owner=me/);
+    await expect(page.getByText("Ваш вопрос").first()).toBeVisible();
+  });
+
   test("offers no knowledge upload to a role without the capability", async ({ page }) => {
     await signedInAs(page, RECRUITER);
     await nav(page, "Знания");

@@ -3,12 +3,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { fetchQuestions, fetchRuns, resolveQuestion } from "../api";
+import { assignQuestion, fetchQuestions, fetchRuns, resolveQuestion } from "../api";
 import type { Question, RunSummary } from "../types";
 import { SessionProvider, sessionFor } from "../session";
 import { QuestionsPage } from "./QuestionsPage";
 
-function session(capabilities: Array<"questions.resolve" | "questions.read">) {
+type Tested = "questions.read" | "questions.resolve" | "questions.assign";
+
+function session(capabilities: Tested[]) {
   return sessionFor({
     role: "recruiter",
     subject: "rec-1",
@@ -19,6 +21,7 @@ function session(capabilities: Array<"questions.resolve" | "questions.read">) {
 }
 
 vi.mock("../api", () => ({
+  assignQuestion: vi.fn(),
   fetchQuestions: vi.fn(),
   fetchRuns: vi.fn(),
   resolveQuestion: vi.fn(),
@@ -50,13 +53,11 @@ const question: Question = {
   asked_at: "2026-10-24T09:00:00Z",
   resolved_at: null,
   resolved_by: null,
+  assignee: null,
 };
 
 function renderPage(
-  capabilities: Array<"questions.resolve" | "questions.read"> = [
-    "questions.read",
-    "questions.resolve",
-  ],
+  capabilities: Tested[] = ["questions.read", "questions.resolve", "questions.assign"],
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -80,6 +81,11 @@ beforeEach(() => {
     resolved_at: "2026-10-24T10:00:00Z",
     resolved_by: "rec-1",
   });
+  vi.mocked(assignQuestion).mockResolvedValue({
+    id: 7,
+    employee_id: "e-1",
+    assignee: "rec-1",
+  });
 });
 
 describe("QuestionsPage", () => {
@@ -92,6 +98,7 @@ describe("QuestionsPage", () => {
     expect(screen.getByText("Нет источника")).toBeInTheDocument();
     expect(fetchQuestions).toHaveBeenCalledWith({
       status: "unanswered",
+      assignee: "any",
       cursor: null,
       limit: 50,
     });
@@ -150,6 +157,46 @@ describe("QuestionsPage", () => {
     expect(await screen.findByText(/Когда начнёт действовать ДМС/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ответить в MAX" })).not.toBeInTheDocument();
     expect(screen.getByText(/нет этого права/)).toBeInTheDocument();
+  });
+
+  it("claims a question for the signed-in recruiter", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByRole("button", { name: "Забрать себе" }));
+
+    await waitFor(() => {
+      expect(assignQuestion).toHaveBeenCalledWith(7, "rec-1");
+    });
+  });
+
+  it("gives the question back instead of claiming it twice", async () => {
+    vi.mocked(fetchQuestions).mockResolvedValue({
+      items: [{ ...question, assignee: "rec-1" }],
+      total: 1,
+      next_cursor: null,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByText("Ваш вопрос")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Снять с себя" }));
+
+    await waitFor(() => {
+      expect(assignQuestion).toHaveBeenCalledWith(7, null);
+    });
+  });
+
+  it("shows another's name without offering the claim button to a role that may not assign", async () => {
+    vi.mocked(fetchQuestions).mockResolvedValue({
+      items: [{ ...question, assignee: "rec-2" }],
+      total: 1,
+      next_cursor: null,
+    });
+    renderPage(["questions.read", "questions.resolve"]);
+
+    expect(await screen.findByText("rec-2")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Забрать себе/ })).not.toBeInTheDocument();
   });
 
   it("shows an empty state rather than a blank page", async () => {

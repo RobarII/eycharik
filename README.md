@@ -32,9 +32,10 @@ make install      # create the virtual environment
 make check        # ruff, mypy, unit tests, docs links
 make eval         # golden-set retrieval, generation, escalation
 make ingest       # index knowledge/ into pgvector
-make demo         # three employees, one completed run, a question queue
+make demo         # ingest + three employees, two real risk signals, three questions
 make run          # api with reload on :8000
 make worker       # job loop, outbox dispatcher, reminder tick
+make cron         # one scheduler pass for reminders and the outbox (crontab-friendly)
 make admin-install # cabinet dependencies
 make admin-dev    # recruiter cabinet on :5173
 make up           # postgres + migrate + api + worker + cabinet in docker
@@ -44,25 +45,45 @@ Offline demo in five minutes: [docs/product/demo-script.md](docs/product/demo-sc
 
 ## Status
 
-Working end to end against a local Postgres with pgvector:
+Working end to end against a local Postgres with pgvector and a hosted model through OpenRouter:
 
-- MAX webhook: secret check, `events` dedupe, durable job enqueue, `200` in milliseconds.
-- Scenario engine: versioned YAML, pinned per run, buttons, files, reminders, escalation on timeout.
-- Retrieval: frontmatter/JSON Schema corpus, deterministic chunking, pgvector HNSW + Russian
-  `tsvector`, RRF, audience and validity as SQL predicates.
-- Answering: one model call, JSON contract, citation must come from the retrieved set, escalation
-  reasons in product copy, audit row per attempt.
-- Recruiter cabinet: runs, per-employee detail, question queue scoped by recruiter or HR.
-- Golden set: 11 cases, retrieval recall@5 = 1.00, escalation correctness = 1.00 on the offline
-  provider; see `docs/measurements/`.
-- Tests: 150+ unit and integration tests; `core/` purity enforced by a test.
+- **MAX webhook**: secret check, `events` dedupe, durable job enqueue, `200` in milliseconds.
+- **Scenario engine**: versioned YAML pinned per run, buttons, reminders, surveys with 10-point
+  scales, escalation on timeout. Twenty steps from the welcome message to the end of probation.
+- **Retrieval**: frontmatter/JSON Schema corpus, deterministic chunking, pgvector HNSW + Russian
+  `tsvector`, RRF, hosted rerank, audience and validity as SQL predicates. Every answer carries a
+  citation from the retrieved set or escalates.
+- **Answering**: one model call, JSON contract, prompt version `v3`; personal questions
+  ("кто мой наставник", salary, contract) escalate instead of being answered with generic policy.
+- **Risk radar**: after every survey the answer is classified (hosted model with a deterministic
+  keyword fallback), rules turn signals into a level, tags, and Russian reasons, and the audit log
+  records `risk_assessed` / `risk_escalated`. The cabinet shows a seven-day overview and a weekly
+  digest of the signals that need a human.
+- **Recruiter cabinet**: runs, per-employee detail with the audit timeline, question queue scoped by
+  recruiter, manager (by department), or HR; knowledge upload for HR with frontmatter validation.
+- **Scheduler**: a cron entrypoint that shares the worker's building blocks, so reminders and the
+  outbox are drained even when only a periodic job is running.
+
+![Risk radar](docs/assets/cabinet-risk.png)
+
+| Measurement | Result | Where |
+|---|---|---|
+| Golden set, 16 cases, real model | recall@5 1.00, MRR 1.00, citation 1.00, escalation 1.00, p95 2 237 ms, 0.077 ₽/answer | `docs/measurements/2026-10-23-eval-full-case-corpus.md` |
+| Retrieval with rerank, 12 cases | recall@5 1.00, MRR 1.00 | `docs/measurements/2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md` |
+| Tests | 300+ unit and integration tests; `core/` purity enforced by a test | `apps/api/tests/` |
+
+![Run list](docs/assets/cabinet-runs.png)
+
+![Knowledge upload](docs/assets/cabinet-knowledge.png)
 
 Known gaps, stated so nobody assumes otherwise:
 
 - A real MAX bot token and the "MAX для бизнеса" verification are external dependencies. The
   adapter and the webhook are tested against the documented payloads and a local sender.
-- GigaChat credentials are not in the repository. `LLM_PROVIDER=extractive` proves the pipeline,
-  not the model's answer quality; the online path is one configuration change.
+- File upload to MAX is not implemented; the scenario describes documents, the bot does not yet
+  attach them.
 - One worker replica: the MAX pacing state is in-process. More replicas need a shared limiter.
-- File upload is described by the scenario, not implemented against MAX.
+- The production model vendor must satisfy 152-ФЗ. The architecture keeps the provider behind a
+  port; `docs/decisions/0010-one-model-vendor.md` records the current choice and what changes for
+  an on-prem deployment.
 - No production deployment has happened. Nothing here claims one.

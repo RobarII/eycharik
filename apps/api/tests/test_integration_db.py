@@ -31,6 +31,7 @@ from onboarding.app.db.extractions import PostgresExtractionCache
 from onboarding.app.db.kb import PostgresKnowledgeBase, PostgresKnowledgeWriter
 from onboarding.app.db.models import (
     AuditRow,
+    ChannelIdentityRow,
     EmployeeRow,
     FileRow,
     JobRow,
@@ -126,6 +127,7 @@ async def database() -> AsyncIterator[Database]:
         await session.execute(
             text(
                 "TRUNCATE messages, jobs, events, questions, audit_log, runs, employees, "
+                "channel_identities, "
                 "kb_chunks, kb_documents, kb_files, kb_extractions RESTART IDENTITY CASCADE"
             )
         )
@@ -1086,3 +1088,159 @@ async def test_knowledge_list_hides_hr_only_from_a_recruiter(database: Database)
     assert any("hr_only" in record.audience for record in hr)
     assert all("hr_only" not in record.audience for record in recruiter)
     assert len(recruiter) < len(hr)
+
+
+def channel_app() -> FastAPI:
+    """An app with two channels on: MAX and Telegram, each with its own secret."""
+    return create_app(
+        Settings(
+            _env_file=None,
+            database_url=database_url(),
+            embed_provider="hashing",
+            channels_raw="max,telegram",
+            max_webhook_secret="max-secret",
+            telegram_webhook_secret="tg-secret",
+        )
+    )
+
+
+def telegram_update(update_id: int = 100, text_value: str = "Сколько дней отпуска?") -> dict:
+    return {
+        "update_id": update_id,
+        "message": {
+            "message_id": update_id,
+            "date": int(NOW.timestamp()),
+            "chat": {"id": 555, "type": "private"},
+            "from": {"id": 222, "is_bot": False, "first_name": "Аня"},
+            "text": text_value,
+        },
+    }
+
+
+TELEGRAM_HEADERS = {"X-Telegram-Bot-Api-Secret-Token": "tg-secret"}
+
+
+async def jobs(database: Database) -> list[JobRow]:
+    async with database.session() as session:
+        return list(await session.scalars(select(JobRow).order_by(JobRow.id)))
+
+
+async def test_an_unlinked_account_is_acknowledged_and_audited(database: Database) -> None:
+    app = channel_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        response = await http.post(
+            "/webhook/telegram", json=telegram_update(), headers=TELEGRAM_HEADERS
+        )
+
+    assert response.status_code == 200
+    assert response.text == "ok"
+    assert await jobs(database) == []
+    async with database.session() as session:
+        audited = await session.scalar(
+            select(AuditRow).where(AuditRow.name == "unlinked_channel_user")
+        )
+    assert audited is not None
+    assert audited.fields["channel"] == "telegram"
+    assert audited.fields["chat_id"] == 555
+
+
+async def test_a_linked_account_reaches_the_queue_once(database: Database) -> None:
+    linked = await SqlDirectory(database).link(Channel.TELEGRAM, "222", EMPLOYEE)
+    assert linked
+    app = channel_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        first = await http.post(
+            "/webhook/telegram", json=telegram_update(), headers=TELEGRAM_HEADERS
+        )
+        repeat = await http.post(
+            "/webhook/telegram", json=telegram_update(), headers=TELEGRAM_HEADERS
+        )
+
+    assert (first.status_code, repeat.status_code) == (200, 200)
+    queued = await jobs(database)
+    assert [job.kind for job in queued] == ["message"]
+    assert queued[0].payload["employee_id"] == str(EMPLOYEE)
+    assert queued[0].payload["channel"] == "telegram"
+    assert queued[0].payload["chat_id"] == 555
+    assert queued[0].payload["event"]["kind"] == "message_received"
+
+
+async def test_a_first_contact_queues_a_start_not_a_message(database: Database) -> None:
+    await SqlDirectory(database).link(Channel.TELEGRAM, "222", EMPLOYEE)
+    app = channel_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        response = await http.post(
+            "/webhook/telegram",
+            json=telegram_update(101, "/start"),
+            headers=TELEGRAM_HEADERS,
+        )
+
+    assert response.status_code == 200
+    assert [job.kind for job in await jobs(database)] == ["start"]
+
+
+async def test_a_backfilled_max_link_still_starts_a_run(database: Database) -> None:
+    """The migration links every existing employee to their MAX user id, so nothing breaks."""
+    async with database.session() as session:
+        session.add(
+            ChannelIdentityRow(channel="max", external_id="222", employee_id=str(EMPLOYEE))
+        )
+    app = channel_app()
+    body = {
+        "update_type": "bot_started",
+        "timestamp": 1_760_000_000_000,
+        "chat_id": 1,
+        "user": {"user_id": 222},
+    }
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        response = await http.post(
+            "/webhook/max", json=body, headers={"X-Max-Bot-Api-Secret": "max-secret"}
+        )
+
+    assert response.status_code == 200
+    queued = await jobs(database)
+    assert [job.kind for job in queued] == ["start"]
+    assert queued[0].payload["channel"] == "max"
+
+
+async def test_the_webhook_rejects_a_wrong_secret_and_an_unknown_channel(
+    database: Database,
+) -> None:
+    app = channel_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        wrong = await http.post(
+            "/webhook/telegram",
+            json=telegram_update(),
+            headers={"X-Telegram-Bot-Api-Secret-Token": "nope"},
+        )
+        unknown = await http.post(
+            "/webhook/vk", json={"type": "message_new"}, headers=TELEGRAM_HEADERS
+        )
+
+    assert wrong.status_code == 401
+    assert unknown.status_code == 404

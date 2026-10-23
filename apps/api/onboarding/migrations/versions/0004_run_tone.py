@@ -17,7 +17,13 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _columns() -> set[str]:
+    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns("runs")}
+
+
 def upgrade() -> None:
+    if "tone" in _columns():
+        return
     op.add_column(
         "runs",
         sa.Column(
@@ -30,4 +36,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("runs", "tone")
+    if "tone" in _columns():
+        op.drop_column("runs", "tone")

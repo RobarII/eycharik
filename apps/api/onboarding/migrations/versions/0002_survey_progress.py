@@ -19,24 +19,36 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _columns() -> set[str]:
+    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns("runs")}
+
+
 def upgrade() -> None:
-    op.add_column(
-        "runs",
-        sa.Column(
-            "answers",
-            postgresql.JSONB(astext_type=sa.Text()),
-            nullable=False,
-            server_default=sa.text("'[]'::jsonb"),
-        ),
-    )
-    op.add_column(
-        "runs",
-        sa.Column("question_index", sa.Integer(), nullable=False, server_default=sa.text("0")),
-    )
-    op.add_column("runs", sa.Column("pending_reason", sa.String(length=64), nullable=True))
+    existing = _columns()
+    if "answers" not in existing:
+        op.add_column(
+            "runs",
+            sa.Column(
+                "answers",
+                postgresql.JSONB(astext_type=sa.Text()),
+                nullable=False,
+                server_default=sa.text("'[]'::jsonb"),
+            ),
+        )
+    if "question_index" not in existing:
+        op.add_column(
+            "runs",
+            sa.Column("question_index", sa.Integer(), nullable=False, server_default=sa.text("0")),
+        )
+    if "pending_reason" not in existing:
+        op.add_column("runs", sa.Column("pending_reason", sa.String(length=64), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column("runs", "pending_reason")
-    op.drop_column("runs", "question_index")
-    op.drop_column("runs", "answers")
+    existing = _columns()
+    if "pending_reason" in existing:
+        op.drop_column("runs", "pending_reason")
+    if "question_index" in existing:
+        op.drop_column("runs", "question_index")
+    if "answers" in existing:
+        op.drop_column("runs", "answers")

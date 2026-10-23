@@ -17,7 +17,13 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _columns() -> set[str]:
+    return {column["name"] for column in sa.inspect(op.get_bind()).get_columns("employees")}
+
+
 def upgrade() -> None:
+    if "scenario_id" in _columns():
+        return
     op.add_column(
         "employees",
         sa.Column(
@@ -30,4 +36,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_column("employees", "scenario_id")
+    if "scenario_id" in _columns():
+        op.drop_column("employees", "scenario_id")

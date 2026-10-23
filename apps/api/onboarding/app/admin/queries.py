@@ -473,21 +473,20 @@ def _after_question(cursor: QuestionCursor) -> Any:
     """Rows that sort after the cursor: unanswered first, then newest asked, then highest id.
 
     Postgres compares row values in one direction only, and this order mixes directions, so the
-    predicate is spelled out instead of using a row-value comparison.
+    predicate is spelled out instead of using a row-value comparison. `answered` is a boolean, and
+    SQLAlchemy refuses `>` against `True`/`False`, so the two buckets are written as an explicit
+    branch: after an answered row nothing follows on that side of the split.
     """
-    return or_(
-        QuestionRow.answered > cursor.answered,
+    within_bucket = or_(
+        QuestionRow.asked_at < cursor.asked_at,
         and_(
-            QuestionRow.answered == cursor.answered,
-            or_(
-                QuestionRow.asked_at < cursor.asked_at,
-                and_(
-                    QuestionRow.asked_at == cursor.asked_at,
-                    QuestionRow.id < cursor.id,
-                ),
-            ),
+            QuestionRow.asked_at == cursor.asked_at,
+            QuestionRow.id < cursor.id,
         ),
     )
+    if cursor.answered:
+        return and_(QuestionRow.answered.is_(True), within_bucket)
+    return or_(QuestionRow.answered.is_(True), and_(QuestionRow.answered.is_(False), within_bucket))
 
 
 def _filter_runs(

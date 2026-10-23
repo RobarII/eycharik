@@ -143,10 +143,11 @@ def scale_signal(
     """A numeric answer as a signal. No words, so only the distance to the threshold matters."""
     if answer.score is None or question.low_threshold is None:
         return None
+    low = answer.score < question.low_threshold
     return RiskSignal(
         source=source,
         sentiment=Sentiment.NEUTRAL,
-        tags=(),
+        tags=(SignalTag.INTEGRATION,) if low else (),
         confidence=0.9,
         score=answer.score,
         low_threshold=question.low_threshold,
@@ -195,20 +196,24 @@ def assess(signals: Iterable[RiskSignal]) -> RiskAssessment:
         weighed = False
         if signal.sentiment is Sentiment.NEGATIVE:
             score += NEGATIVE_WEIGHT
-            reasons.append(f"negative sentiment at {signal.source}")
+            reasons.append("негативная оценка в ответе")
             weighed = True
         if _is_crisis(signal.text):
             score += CRISIS_WEIGHT
-            reasons.append(f"crisis wording at {signal.source}")
+            reasons.append("кризисная формулировка в ответе")
             weighed = True
         deficit = _deficit(signal)
         if deficit >= 3:
             score += 2
-            reasons.append(f"score {signal.score} is far below threshold at {signal.source}")
+            reasons.append(
+                f"оценка {signal.score} из 10 сильно ниже порога {signal.low_threshold}"
+            )
             weighed = True
         elif deficit > 0:
             score += 1
-            reasons.append(f"score {signal.score} is below threshold at {signal.source}")
+            reasons.append(
+                f"оценка {signal.score} из 10 ниже порога {signal.low_threshold}"
+            )
             weighed = True
         if weighed:
             material = True
@@ -219,7 +224,10 @@ def assess(signals: Iterable[RiskSignal]) -> RiskAssessment:
             level=RiskLevel.MEDIUM,
             tags=tuple(tags),
             escalate_to=None,
-            reasons=(*reasons, "low classifier confidence, kept for the digest"),
+            reasons=(
+                *reasons,
+                "низкая уверенность классификатора — оставлено в дайджесте",
+            ),
             score=score,
         )
     if score >= HIGH_SCORE:

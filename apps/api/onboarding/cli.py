@@ -26,8 +26,19 @@ from onboarding.app.knowledge.pipeline import ingest
 from onboarding.app.max.client import MaxClient, Subscription
 from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
+from onboarding.app.worker.answerer import AnswerOutcome
 from onboarding.app.worker.service import OnboardingService
-from onboarding.core.models import ChatId, EmployeeId, Event, EventKind, Expects, Keyboard
+from onboarding.core.models import (
+    ChatId,
+    EmployeeId,
+    EmployeeProfile,
+    Event,
+    EventKind,
+    Expects,
+    Keyboard,
+    QuestionKind,
+    StepKind,
+)
 from onboarding.ports import Messaging, OutboundMessage
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -145,7 +156,7 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
         now = SystemClock().now()
 
         for employee_id, name, chat_id, target in (
-            ("1001", "Анна Смирнова", ChatId(1001), "access_check"),
+            ("1001", "Анна Смирнова", ChatId(1001), "day_three_survey"),
             ("1002", "Пётр Кузнецов", ChatId(1002), "day_three_survey"),
             ("1003", "Мария Волкова", ChatId(1003), "documents_checklist"),
         ):
@@ -156,6 +167,20 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
             if not (await service.start(employee, chat_id)).handled:
                 continue
             await _drive(container, service, employee, chat_id, target=target, now=now)
+            if target is not None and target.endswith("_survey"):
+                await _answer_survey(
+                    container,
+                    service,
+                    employee,
+                    chat_id,
+                    score=3 if employee_id == "1002" else 6,
+                    free_text=(
+                        "руководитель не отвечает третий день, нет доступа к 1С"
+                        if employee_id == "1002"
+                        else "много задач сразу, не хватает времени на обучение"
+                    ),
+                    now=now,
+                )
 
         await _demo_question(
             container,
@@ -175,9 +200,9 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
             directory=directory,
             employee_id=EmployeeId("1001"),
             chat_id=ChatId(1001),
-            text="Кто мой наставник?",
+            text="Сколько дней больничного оплачивает компания?",
             now=now,
-            expect_reason="restricted",
+            expect_escalated=True,
         )
         await _demo_question(
             container,
@@ -189,31 +214,6 @@ async def _demo(settings: Settings, *, reset: bool, assume_yes: bool) -> int:
             now=now,
             expect_reason="restricted",
         )
-        for employee_id, level, step_id, tags, reasons in (
-            (
-                "1002",
-                "high",
-                "day_three_survey",
-                ["manager", "access"],
-                ["руководитель не отвечает третий день", "нет доступа к 1С"],
-            ),
-            (
-                "1001",
-                "medium",
-                "day_three_survey",
-                ["workload"],
-                ["много задач сразу, не хватает времени на обучение"],
-            ),
-        ):
-            await container.audit.record(
-                "risk_assessed",
-                employee_id=employee_id,
-                step=step_id,
-                level=level,
-                score=3 if level == "high" else 1,
-                tags=tags,
-                reasons=reasons,
-            )
     finally:
         await container.aclose()
     print("demo data is ready: 3 employees, three questions in the queue, two risk signals")
@@ -232,17 +232,29 @@ async def _demo_question(
     now: datetime,
     require_citation: bool = False,
     expect_reason: str | None = None,
+    expect_escalated: bool = False,
     expect_doc: str | None = None,
 ) -> None:
     """Ask the real pipeline so the cabinet shows observed citations, not fixtures."""
     profile = await directory.profile(employee_id)
     if profile is None:
         raise SystemExit(f"demo employee {employee_id} is not seeded")
-    outcome = await container.answerer.answer(text, profile, now.date())
+    outcome = await _demo_answer(container, text, profile, now)
     if require_citation and not outcome.citations:
-        raise SystemExit("no citation: run `make ingest` before `make demo`")
+        raise SystemExit(
+            "no citation: run `make ingest` before `make demo` "
+            f"(reason={outcome.reason}, retrieved={len(outcome.retrieved)})"
+        )
+    if expect_escalated and not outcome.escalated:
+        raise SystemExit(
+            f"demo question {text!r}: expected a refusal, got {outcome.reason} "
+            f"with citations {outcome.citations}"
+        )
     if expect_reason is not None and outcome.reason != expect_reason:
-        raise SystemExit(f"demo question {text!r}: expected {expect_reason}, got {outcome.reason}")
+        raise SystemExit(
+            f"demo question {text!r}: expected {expect_reason}, got {outcome.reason} "
+            f"(retrieved={len(outcome.retrieved)})"
+        )
     citations = {str(citation) for citation in outcome.citations}
     if expect_doc is not None and expect_doc not in citations:
         raise SystemExit(f"demo question {text!r}: expected citation {expect_doc}, got {citations}")
@@ -255,6 +267,73 @@ async def _demo_question(
         citations=[str(citation) for citation in outcome.citations],
         latency_ms=outcome.completion.latency_ms if outcome.completion else None,
     )
+
+
+async def _demo_answer(
+    container: Container,
+    text: str,
+    profile: EmployeeProfile,
+    now: datetime,
+    attempts: int = 3,
+) -> AnswerOutcome:
+    """A demo must survive a provider hiccup: retry an unavailable answer, never fake it."""
+    outcome: AnswerOutcome | None = None
+    for attempt in range(attempts):
+        outcome = await container.answerer.answer(text, profile, now.date())
+        if outcome.reason != "unavailable":
+            return outcome
+        if attempt + 1 < attempts:
+            await asyncio.sleep(1.5 * (attempt + 1))
+    assert outcome is not None
+    return outcome
+
+
+async def _answer_survey(
+    container: Container,
+    service: OnboardingService,
+    employee: EmployeeId,
+    chat_id: ChatId,
+    *,
+    score: int,
+    free_text: str,
+    now: datetime,
+) -> None:
+    """Answer the survey the way a real employee would: buttons, a score, a reason."""
+    runs = DatabaseRunRepository(container.database)
+    survey_id: str | None = None
+    for _ in range(12):
+        stored = await runs.find_active_by_employee(employee)
+        if stored is None:
+            return
+        scenario = container.catalog.get(
+            stored.state.scenario_id, stored.state.scenario_version
+        )
+        step = scenario.step(stored.state.step_id)
+        if step.kind is not StepKind.SURVEY or not step.questions:
+            return
+        if survey_id is None:
+            survey_id = step.id
+        elif step.id != survey_id:
+            return
+        if stored.state.pending_reason:
+            event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text=free_text)
+        else:
+            question = step.questions[min(stored.state.question_index, len(step.questions) - 1)]
+            if question.kind is QuestionKind.CHOICE and question.options:
+                option = next(
+                    (candidate for candidate in question.options if candidate.id in {"no", "bad"}),
+                    question.options[-1],
+                )
+                event = Event(
+                    kind=EventKind.BUTTON_PRESSED,
+                    at=now,
+                    button_id=f"q_{question.id}_{option.id}",
+                )
+            elif question.kind is QuestionKind.SCALE:
+                event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text=str(score))
+            else:
+                event = Event(kind=EventKind.MESSAGE_RECEIVED, at=now, text=free_text)
+        await service.handle(employee, chat_id, event)
 
 
 async def _drive(

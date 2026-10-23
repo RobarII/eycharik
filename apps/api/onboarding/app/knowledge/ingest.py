@@ -48,7 +48,7 @@ class LoadedDocument:
 
 def load_corpus(directory: Path, schema_path: Path) -> tuple[LoadedDocument, ...]:
     """Load every active document, validating each against ``doc.schema.json``."""
-    schema = _load_schema(schema_path)
+    schema = load_schema(schema_path)
     paths = sorted(
         path
         for path in directory.rglob("*.md")
@@ -76,17 +76,21 @@ def load_corpus(directory: Path, schema_path: Path) -> tuple[LoadedDocument, ...
 
 
 def read_document(path: Path, schema: dict[str, Any]) -> LoadedDocument:
-    text = path.read_text(encoding="utf-8")
+    return parse_document(path.read_text(encoding="utf-8"), schema, source=str(path))
+
+
+def parse_document(text: str, schema: dict[str, Any], *, source: str) -> LoadedDocument:
+    """Validate one document, whether it came from the corpus directory or an upload."""
     match = _FRONTMATTER.match(text)
     if match is None:
-        raise CorpusError(f"{path}: missing YAML frontmatter")
+        raise CorpusError(f"{source}: missing YAML frontmatter")
     try:
         # SafeLoader subclass with the timestamp resolver removed; no arbitrary objects.
         meta = yaml.load(match.group("meta"), Loader=_TextDatesLoader)  # noqa: S506
     except yaml.YAMLError as error:
-        raise CorpusError(f"{path}: invalid frontmatter: {error}") from None
+        raise CorpusError(f"{source}: invalid frontmatter: {error}") from None
     if not isinstance(meta, dict):
-        raise CorpusError(f"{path}: frontmatter must be a mapping")
+        raise CorpusError(f"{source}: frontmatter must be a mapping")
 
     errors = sorted(
         Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(meta),
@@ -95,11 +99,11 @@ def read_document(path: Path, schema: dict[str, Any]) -> LoadedDocument:
     if errors:
         first = errors[0]
         location = ".".join(str(part) for part in first.absolute_path) or "<root>"
-        raise CorpusError(f"{path}: {location}: {first.message}")
+        raise CorpusError(f"{source}: {location}: {first.message}")
 
     body = match.group("body").strip()
     if not body:
-        raise CorpusError(f"{path}: document body is empty")
+        raise CorpusError(f"{source}: document body is empty")
 
     valid_to = meta.get("valid_to")
     document = Document(
@@ -116,11 +120,11 @@ def read_document(path: Path, schema: dict[str, Any]) -> LoadedDocument:
         doc_type=str(meta["type"]),
         checksum=hashlib.sha256(text.encode("utf-8")).hexdigest(),
         status=str(meta["status"]),
-        path=path,
+        path=Path(source),
     )
 
 
-def _load_schema(path: Path) -> dict[str, Any]:
+def load_schema(path: Path) -> dict[str, Any]:
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise CorpusError(f"{path}: schema must be an object")

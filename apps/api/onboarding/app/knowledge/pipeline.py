@@ -9,7 +9,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from onboarding.app.knowledge.ingest import load_corpus
+from onboarding.app.knowledge.ingest import (
+    LoadedDocument,
+    load_corpus,
+    load_schema,
+    parse_document,
+)
 from onboarding.core.chunking import split_document
 from onboarding.ports import Embedder, KnowledgeDocumentRecord, KnowledgeWriter
 
@@ -17,6 +22,13 @@ from onboarding.ports import Embedder, KnowledgeDocumentRecord, KnowledgeWriter
 @dataclass(frozen=True, slots=True)
 class IngestReport:
     documents: int
+    chunks: int
+
+
+@dataclass(frozen=True, slots=True)
+class IndexedDocument:
+    id: str
+    title: str
     chunks: int
 
 
@@ -57,3 +69,61 @@ async def ingest(
         )
         chunks += len(pieces)
     return IngestReport(documents=len(loaded), chunks=chunks)
+
+
+async def ingest_document(
+    *,
+    text: str,
+    source: str,
+    schema_path: Path,
+    writer: KnowledgeWriter,
+    embedder: Embedder,
+    max_chars: int = 1200,
+    overlap_chars: int = 200,
+) -> IndexedDocument:
+    """Index one uploaded document. Raises ``CorpusError`` when its frontmatter is invalid."""
+    loaded = parse_document(text, load_schema(schema_path), source=source)
+    if loaded.status != "active":
+        raise ValueError(f"{source}: document status is {loaded.status!r}, not 'active'")
+    chunks = await _chunks(
+        loaded,
+        writer=writer,
+        embedder=embedder,
+        max_chars=max_chars,
+        overlap_chars=overlap_chars,
+    )
+    return IndexedDocument(id=str(loaded.document.id), title=loaded.document.title, chunks=chunks)
+
+
+async def _chunks(
+    loaded: LoadedDocument,
+    *,
+    writer: KnowledgeWriter,
+    embedder: Embedder,
+    max_chars: int,
+    overlap_chars: int,
+) -> int:
+    pieces = split_document(
+        loaded.document, max_chars=max_chars, overlap_chars=overlap_chars
+    )
+    if not pieces:
+        raise ValueError(f"{loaded.path}: document produced no chunks")
+    embeddings = await embedder.embed([piece.text for piece in pieces])
+    if len(embeddings) != len(pieces):
+        raise ValueError(f"{loaded.path}: embedder returned a wrong number of vectors")
+    await writer.replace_document(
+        KnowledgeDocumentRecord(
+            id=loaded.document.id,
+            title=loaded.document.title,
+            doc_type=loaded.doc_type,
+            status=loaded.status,
+            audience=loaded.document.audience,
+            valid_from=loaded.document.valid_from,
+            valid_to=loaded.document.valid_to,
+            owner=loaded.document.owner,
+            checksum=loaded.checksum,
+        ),
+        pieces,
+        embeddings,
+    )
+    return len(pieces)

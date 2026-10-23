@@ -35,7 +35,8 @@ from onboarding.app.db.repos import (
 from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.db.session import Database
 from onboarding.app.knowledge.embedding import HashingEmbedder
-from onboarding.app.knowledge.pipeline import ingest
+from onboarding.app.knowledge.ingest import CorpusError
+from onboarding.app.knowledge.pipeline import ingest, ingest_document
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.scheduler.main import tick_once
@@ -507,3 +508,48 @@ async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
     assert (queued, handled, delivered) == (1, 1, 0)
     assert messaging.sent[-1].chat_id == ChatId(1)
     assert messaging.sent[-1].text.startswith("Напоминаем:")
+
+
+async def test_uploaded_document_is_indexed_and_retrievable(database: Database) -> None:
+    embedder = HashingEmbedder(dim=1024)
+    text = """---
+id: hr/uploaded-perk
+title: Компенсация спорта
+type: knowledge
+status: active
+owner: hr
+audience: [all]
+valid_from: 2026-01-01
+---
+## Спорт
+
+Компания компенсирует занятия спортом до 15 000 рублей в год.
+"""
+
+    indexed = await ingest_document(
+        text=text,
+        source="upload",
+        schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+        writer=PostgresKnowledgeWriter(database),
+        embedder=embedder,
+    )
+
+    assert (indexed.id, indexed.chunks) == ("hr/uploaded-perk", 1)
+    results = await PostgresKnowledgeBase(database, embedder).search(
+        SearchQuery(
+            text="компенсация спорта",
+            audience=("all",),
+            on_date=date(2026, 10, 23),
+            limit=5,
+        )
+    )
+    assert any(result.chunk.doc_id == "hr/uploaded-perk" for result in results)
+
+    with pytest.raises(CorpusError):
+        await ingest_document(
+            text="---\nid: broken\n---\nbody",
+            source="upload",
+            schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+            writer=PostgresKnowledgeWriter(database),
+            embedder=embedder,
+        )

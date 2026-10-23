@@ -8,17 +8,22 @@ import { formatDateTime } from "../format";
 const TAG_LABELS: Record<string, string> = {
   access: "Доступы",
   manager: "Руководитель",
-  team: "Команда",
+  colleagues: "Команда",
   workload: "Нагрузка",
-  adaptation: "Адаптация",
+  clarity: "Ясность задач",
+  integration: "Адаптация",
+  hr: "HR",
   it: "ИТ",
-  documents: "Документы",
-  motivation: "Мотивация",
-  safety: "Безопасность",
-  compensation: "Оплата",
+  other: "Другое",
 };
 
-export function RiskPage({ onUnauthorized }: { onUnauthorized: () => void }) {
+export function RiskPage({
+  onOpenRun,
+  onUnauthorized,
+}: {
+  onOpenRun: (runId: string) => void;
+  onUnauthorized: () => void;
+}) {
   const overview = useQuery({
     queryKey: ["overview"],
     queryFn: () => fetchOverview(),
@@ -96,7 +101,7 @@ export function RiskPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                 </div>
                 <p className="digest-reasons">{item.reasons.join("; ") || "без формулировки"}</p>
                 <p className="digest-meta">
-                  шаг {item.step_id} · {formatDateTime(item.at)}
+                  {item.step_title} · {formatDateTime(item.at)}
                 </p>
               </div>
               <div className="digest-tags">
@@ -105,6 +110,15 @@ export function RiskPage({ onUnauthorized }: { onUnauthorized: () => void }) {
                     {TAG_LABELS[tag] ?? tag}
                   </span>
                 ))}
+                {item.run_id ? (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => onOpenRun(item.run_id)}
+                  >
+                    Открыть
+                  </button>
+                ) : null}
               </div>
             </li>
           ))}

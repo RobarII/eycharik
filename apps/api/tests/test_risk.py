@@ -29,7 +29,7 @@ def test_crisis_wording_escalates_even_without_a_tag() -> None:
 
     assert assessment.level is RiskLevel.HIGH
     assert assessment.escalate_to == "recruiter"
-    assert any("crisis" in reason for reason in assessment.reasons)
+    assert any("кризисная" in reason for reason in assessment.reasons)
 
 
 def test_positive_answer_stays_low() -> None:
@@ -82,7 +82,7 @@ def test_low_confidence_negative_answer_is_not_auto_escalated() -> None:
 
     assert assessment.level is RiskLevel.MEDIUM
     assert assessment.escalate_to is None
-    assert any("low classifier confidence" in reason for reason in assessment.reasons)
+    assert any("низкая уверенность" in reason for reason in assessment.reasons)
 
 
 def test_score_is_added_when_text_and_scale_both_complain() -> None:
@@ -150,6 +150,19 @@ def test_scale_answer_becomes_a_signal_without_words() -> None:
 
     assert len(signals) == 1
     assert signals[0].score == 6
+    assert signals[0].tags == (SignalTag.INTEGRATION,)
+
+
+def test_a_high_score_carries_no_tag() -> None:
+    question = Question(
+        id="manager",
+        prompt="Насколько доступен руководитель?",
+        kind=QuestionKind.SCALE,
+        low_threshold=8,
+    )
+
+    signals = survey_signals((question,), (SurveyAnswer(question_id="manager", score=9),))
+
     assert signals[0].tags == ()
 
 

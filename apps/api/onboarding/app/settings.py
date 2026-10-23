@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 700
     llm_timeout_s: float = 8.0
     llm_max_retries: int = 1
+    llm_reasoning_effort: Literal["none", "low", "medium", "high"] | None = None
     llm_breaker_threshold: int = 3
     llm_breaker_cooldown_s: float = 30.0
     llm_price_input_rub_per_1k: float = 0.0

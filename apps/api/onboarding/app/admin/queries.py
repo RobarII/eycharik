@@ -8,12 +8,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from sqlalchemy import desc, func, literal_column, select, text
 
-from onboarding.app.db.models import AuditRow, EmployeeRow, QuestionRow, RunRow
+from onboarding.app.db.models import AuditRow, DocumentRow, EmployeeRow, QuestionRow, RunRow
 from onboarding.app.db.session import Database
 
 
@@ -64,11 +64,25 @@ class DigestRecord:
     employee_id: str
     employee_name: str
     department: str
+    run_id: str
     step_id: str
+    step_title: str
     level: str
     reasons: tuple[str, ...]
     tags: tuple[str, ...]
     at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeRecord:
+    id: str
+    title: str
+    type: str
+    audience: tuple[str, ...]
+    owner: str
+    valid_from: date | None
+    valid_to: date | None
+    updated_at: datetime
 
 
 class AdminQueries:
@@ -107,6 +121,28 @@ class AdminQueries:
             )
             return tuple(
                 EventRecord(name=row.name, at=row.at, fields=row.fields) for row in rows
+            )
+
+    async def knowledge(self, *, limit: int = 100) -> tuple[KnowledgeRecord, ...]:
+        async with self._database.session() as session:
+            rows = await session.scalars(
+                select(DocumentRow)
+                .where(DocumentRow.status == "active")
+                .order_by(desc(DocumentRow.updated_at))
+                .limit(limit)
+            )
+            return tuple(
+                KnowledgeRecord(
+                    id=row.id,
+                    title=row.title,
+                    type=row.type,
+                    audience=tuple(row.audience),
+                    owner=row.owner,
+                    valid_from=row.valid_from,
+                    valid_to=row.valid_to,
+                    updated_at=row.updated_at,
+                )
+                for row in rows
             )
 
     async def overview(
@@ -196,7 +232,9 @@ class AdminQueries:
                     employee_id=employee_id,
                     employee_name=name,
                     department=department_name,
+                    run_id=str(event.fields.get("run_id", "")),
                     step_id=step_id,
+                    step_title=str(event.fields.get("step_title") or step_id),
                     level=str(event.fields.get("level", "")),
                     reasons=_texts(event.fields.get("reasons")),
                     tags=_texts(event.fields.get("tags")),

@@ -30,6 +30,8 @@ recruiter's employee is not disclosed.
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
+| `GET` | `/admin/api/knowledge` | active knowledge documents, newest first |
+| `POST` | `/admin/api/knowledge` | HR uploads one markdown document with frontmatter; indexed in the request |
 | `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
 
 `limit` is bounded to `1..200`. There is no cursor pagination yet: the cabinet asks for the newest
@@ -116,6 +118,33 @@ materialised table: the cabinet is read-only, and a wrong number must be traceab
 Only `high` and `medium` levels appear. `reasons` and `tags` are the classifier's short phrases,
 never the full answer text: the digest is a list of leads, not a transcript. A manager sees the
 same shape, scoped to one department.
+
+`KnowledgeDocument`:
+
+```json
+{
+  "id": "hr/leave-policy",
+  "title": "Отпуска и отгулы",
+  "type": "knowledge",
+  "audience": ["all"],
+  "owner": "hr",
+  "valid_from": "2026-01-01",
+  "valid_to": null,
+  "updated_at": "2026-10-23T08:00:00Z"
+}
+```
+
+`POST /admin/api/knowledge` takes `{"text": "<markdown with frontmatter>"}` and answers `201`:
+
+```json
+{"id": "hr/sport-compensation", "title": "Компенсация спорта", "chunks": 1}
+```
+
+The frontmatter is validated against `docs/contracts/doc.schema.json` before anything is written.
+An invalid document answers `422` with the exact field, for example
+`upload: owner: 'HR' does not match '^[a-z][a-z0-9_-]*$'`. Only `hr_admin` may upload; a recruiter
+or manager answers `403`. A successful upload is audited as `knowledge_ingested` with the document
+id, the chunk count, and the subject that made the change.
 
 ## Errors
 

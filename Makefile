@@ -57,7 +57,7 @@ ingest:
 seed:
 	$(PY) python -m onboarding.cli seed --file infra/demo/employees.json
 
-demo:
+demo: ingest
 	$(PY) python -m onboarding.cli demo --reset --yes
 
 docs:

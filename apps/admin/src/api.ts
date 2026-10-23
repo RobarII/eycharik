@@ -1,6 +1,8 @@
 import type {
   AnalyticsOverview,
   DigestResponse,
+  KnowledgeDocument,
+  KnowledgeUploaded,
   ListResponse,
   Question,
   RunDetail,
@@ -60,4 +62,30 @@ export function fetchOverview(): Promise<AnalyticsOverview> {
 
 export function fetchDigest(days = 7): Promise<DigestResponse> {
   return get(`/admin/api/digest/weekly?days=${days}`);
+}
+
+async function send<T>(path: string, body: unknown): Promise<T> {
+  const token = getToken();
+  const response = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (response.status === 401) throw new Unauthorized();
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(payload?.detail ?? `Ошибка ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
+export function fetchKnowledge(): Promise<ListResponse<KnowledgeDocument>> {
+  return get("/admin/api/knowledge");
+}
+
+export function uploadKnowledge(text: string): Promise<KnowledgeUploaded> {
+  return send("/admin/api/knowledge", { text });
 }

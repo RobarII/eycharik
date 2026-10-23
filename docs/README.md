@@ -13,7 +13,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | How do we write code, tests, and commits? | [conventions.md](conventions.md) |
 | What exactly does the MAX API give us? | [contracts/max-api.md](contracts/max-api.md) |
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
-| What exactly does the model see? | [prompts/answer/v2.md](prompts/answer/v2.md) (current), [v1](prompts/answer/v1.md) (superseded) |
+| What exactly does the model see? | [prompts/answer/v3.md](prompts/answer/v3.md) (current), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
 | How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
@@ -30,6 +30,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is there an offline provider? | [decisions/0007-extractive-demo-provider.md](decisions/0007-extractive-demo-provider.md) |
 | Why a hosted reranker? | [decisions/0008-hosted-rerank.md](decisions/0008-hosted-rerank.md) |
 | Why is the latency gate 8 s? | [decisions/0009-latency-budget.md](decisions/0009-latency-budget.md) |
+| Why one vendor for answers, embeddings, and rerank? | [decisions/0010-one-model-vendor.md](decisions/0010-one-model-vendor.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |

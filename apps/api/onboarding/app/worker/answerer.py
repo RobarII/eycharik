@@ -5,6 +5,7 @@ Retrieval and validation are deterministic. The model proposes; the code dispose
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 
@@ -37,7 +38,9 @@ from onboarding.ports import (
 )
 
 PROMPT_NAME = "answer"
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,9 +154,11 @@ class Answerer:
                     prompt_name=PROMPT_NAME,
                     prompt_version=PROMPT_VERSION,
                     timeout_s=self._settings.llm_timeout_s,
+                    response_format="json_object",
                 )
             )
-        except (LLMUnavailableError, LLMResponseError):
+        except (LLMUnavailableError, LLMResponseError) as error:
+            log.warning("answer_llm_failed: %s: %s", type(error).__name__, error)
             await self._audit.record(
                 "answer_unavailable",
                 retrieved=len(retrieved),

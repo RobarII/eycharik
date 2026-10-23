@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RunSummary(BaseModel):
@@ -84,7 +84,9 @@ class DigestItem(BaseModel):
     employee_id: str
     employee_name: str
     department: str
+    run_id: str
     step_id: str
+    step_title: str
     level: str
     reasons: list[str]
     tags: list[str]
@@ -94,3 +96,36 @@ class DigestItem(BaseModel):
 class DigestList(BaseModel):
     items: list[DigestItem]
     since: datetime
+
+
+class KnowledgeDocument(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    title: str
+    type: str
+    audience: list[str]
+    owner: str
+    valid_from: date | None
+    valid_to: date | None
+    updated_at: datetime
+
+
+class KnowledgeList(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    items: list[KnowledgeDocument]
+
+
+class KnowledgeUpload(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    text: str = Field(min_length=20, max_length=200_000)
+
+
+class KnowledgeUploaded(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: str
+    title: str
+    chunks: int

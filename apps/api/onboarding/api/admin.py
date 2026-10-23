@@ -18,6 +18,10 @@ from onboarding.api.schemas import (
     AuditEvent,
     DigestItem,
     DigestList,
+    KnowledgeDocument,
+    KnowledgeList,
+    KnowledgeUpload,
+    KnowledgeUploaded,
     Question,
     QuestionList,
     RunDetail,
@@ -26,6 +30,9 @@ from onboarding.api.schemas import (
     TagCount,
 )
 from onboarding.app.admin.queries import AdminQueries, QuestionRecord, RunRecord
+from onboarding.app.db.kb import PostgresKnowledgeWriter
+from onboarding.app.knowledge.ingest import CorpusError
+from onboarding.app.knowledge.pipeline import ingest_document
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
@@ -186,7 +193,9 @@ async def weekly_digest(
                 employee_id=record.employee_id,
                 employee_name=record.employee_name,
                 department=record.department,
+                run_id=record.run_id,
                 step_id=record.step_id,
+                step_title=record.step_title,
                 level=record.level,
                 reasons=list(record.reasons),
                 tags=list(record.tags),
@@ -195,4 +204,68 @@ async def weekly_digest(
             for record in records
         ],
         since=since,
+    )
+
+
+@router.get("/knowledge", response_model=KnowledgeList)
+async def knowledge_documents(request: Request, principal: Admin) -> KnowledgeList:
+    records = await _queries(request).knowledge()
+    return KnowledgeList(
+        items=[
+            KnowledgeDocument(
+                id=record.id,
+                title=record.title,
+                type=record.type,
+                audience=list(record.audience),
+                owner=record.owner,
+                valid_from=record.valid_from,
+                valid_to=record.valid_to,
+                updated_at=record.updated_at,
+            )
+            for record in records
+        ]
+    )
+
+
+@router.post(
+    "/knowledge",
+    response_model=KnowledgeUploaded,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_knowledge(
+    request: Request,
+    principal: Admin,
+    body: KnowledgeUpload,
+) -> KnowledgeUploaded:
+    """HR uploads one markdown document with frontmatter; it is indexed in the same request."""
+    if not principal.is_hr:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="only hr_admin may change the knowledge base",
+        )
+    container = request.app.state.container
+    try:
+        indexed = await ingest_document(
+            text=body.text,
+            source="upload",
+            schema_path=container.settings.contracts_dir / "doc.schema.json",
+            writer=PostgresKnowledgeWriter(container.database),
+            embedder=container.embedder,
+        )
+    except CorpusError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from None
+    except ValueError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from None
+    await container.audit.record(
+        "knowledge_ingested",
+        document=indexed.id,
+        chunks=indexed.chunks,
+        by=principal.subject,
+    )
+    return KnowledgeUploaded(
+        id=indexed.id, title=indexed.title, chunks=indexed.chunks
     )

@@ -60,7 +60,9 @@ export interface DigestItem {
   employee_id: string;
   employee_name: string;
   department: string;
+  run_id: string;
   step_id: string;
+  step_title: string;
   level: "high" | "medium";
   reasons: string[];
   tags: string[];
@@ -70,4 +72,22 @@ export interface DigestItem {
 export interface DigestResponse {
   items: DigestItem[];
   since: string;
+}
+
+
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  type: string;
+  audience: string[];
+  owner: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  updated_at: string;
+}
+
+export interface KnowledgeUploaded {
+  id: string;
+  title: string;
+  chunks: number;
 }

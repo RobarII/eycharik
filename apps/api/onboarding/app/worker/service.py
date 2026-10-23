@@ -167,7 +167,9 @@ class OnboardingService:
         await self._audit.record(
             "risk_assessed",
             employee_id=str(employee_id),
+            run_id=str(previous.run_id),
             step=step.id,
+            step_title=step.title,
             level=assessment.level.value,
             score=assessment.score,
             tags=[tag.value for tag in assessment.tags],

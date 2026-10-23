@@ -37,6 +37,10 @@ class LLMResponseError(RuntimeError):
     """The provider answered, but not with a completion we can use."""
 
 
+class EmptyCompletionError(LLMResponseError):
+    """A 200 with no content: often a reasoning model that spent its budget on thoughts."""
+
+
 class GatewayLLM(LLM):
     def __init__(
         self,
@@ -48,6 +52,7 @@ class GatewayLLM(LLM):
         breaker: CircuitBreaker | None = None,
         max_retries: int = 1,
         temperature: float = 0.2,
+        reasoning_effort: str | None = None,
         price_input_rub_per_1k: float = 0.0,
         price_output_rub_per_1k: float = 0.0,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
@@ -58,6 +63,7 @@ class GatewayLLM(LLM):
         self._client = client
         self._breaker = breaker or CircuitBreaker()
         self._max_retries = max(0, max_retries)
+        self._reasoning_effort = reasoning_effort
         self._temperature = temperature
         self._price_in = price_input_rub_per_1k
         self._price_out = price_output_rub_per_1k
@@ -109,7 +115,14 @@ class GatewayLLM(LLM):
                 )
 
             self._breaker = self._breaker.record_success()
-            return self._parse(response, started)
+            try:
+                return self._parse(response, started)
+            except EmptyCompletionError as error:
+                last_error = str(error)
+                if attempt < self._max_retries:
+                    await self._backoff(attempt)
+                    continue
+                raise
 
         raise LLMUnavailableError(last_error)
 
@@ -126,6 +139,8 @@ class GatewayLLM(LLM):
         }
         if request.response_format == "json_object":
             payload["response_format"] = {"type": "json_object"}
+        if self._reasoning_effort is not None:
+            payload["reasoning_effort"] = self._reasoning_effort
         return payload
 
     def _parse(self, response: httpx.Response, started: datetime) -> Completion:
@@ -147,7 +162,7 @@ class GatewayLLM(LLM):
         except (ValueError, KeyError, IndexError, TypeError):
             raise LLMResponseError("provider response has no choices[0].message.content") from None
         if not isinstance(content, str) or not content.strip():
-            raise LLMResponseError("provider returned empty content")
+            raise EmptyCompletionError("provider returned empty content")
 
         usage = body.get("usage") or outer_usage or {}
         if not isinstance(usage, dict):
@@ -196,6 +211,7 @@ def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> LL
             cooldown=timedelta(seconds=settings.llm_breaker_cooldown_s),
         ),
         max_retries=settings.llm_max_retries,
+        reasoning_effort=settings.llm_reasoning_effort,
         temperature=settings.llm_temperature,
         price_input_rub_per_1k=settings.llm_price_input_rub_per_1k,
         price_output_rub_per_1k=settings.llm_price_output_rub_per_1k,

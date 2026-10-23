@@ -58,7 +58,12 @@
           "maximum": 4096,
           "description": "Vector width. It must equal kb_chunks.embedding; a change is a migration."
         },
-        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120}
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+        "dimensions_param": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send the requested width as a `dimensions` field: Matryoshka models answer shorter vectors, so a 4096-wide model can fill the frozen 1024-wide column without a migration."
+        }
       }
     },
     {

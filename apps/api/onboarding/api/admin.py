@@ -520,7 +520,7 @@ async def upload_knowledge(
             text=body.text,
             source="upload",
             schema_path=container.settings.contracts_dir / "doc.schema.json",
-            writer=PostgresKnowledgeWriter(container.database, container.embedder),
+            writer=PostgresKnowledgeWriter(container.database),
             embedder=container.embedder,
         )
     except CorpusError as error:

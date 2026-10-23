@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -33,12 +33,12 @@ class RubricError(ValueError):
 class RubricQuestion:
     type: str
     instructions: str
-    criteria: tuple[str, ...] = ()
+    criteria: dict[str, str] = field(default_factory=dict)
 
     def payload(self) -> dict[str, Any]:
         body: dict[str, Any] = {"type": self.type, "instructions": self.instructions}
         if self.criteria:
-            body["criteria"] = list(self.criteria)
+            body["criteria"] = dict(self.criteria)
         return body
 
 
@@ -56,7 +56,8 @@ class Rubric:
 
     @property
     def sentiment_criteria(self) -> tuple[str, ...]:
-        return self.questions["sentiment"].criteria
+        """The option names, in file order: the only values the answer may carry."""
+        return tuple(self.questions["sentiment"].criteria)
 
     @property
     def tags(self) -> dict[str, SignalTag]:
@@ -107,7 +108,10 @@ class RubricLibrary:
             key: RubricQuestion(
                 type=str(value["type"]),
                 instructions=str(value["instructions"]).strip(),
-                criteria=tuple(str(item) for item in value.get("criteria", ())),
+                criteria={
+                    str(option): str(meaning)
+                    for option, meaning in (value.get("criteria") or {}).items()
+                },
             )
             for key, value in payload["questions"].items()
         }

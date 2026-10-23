@@ -111,12 +111,8 @@ def test_loads_the_versioned_rubric() -> None:
     loaded = rubric()
 
     assert loaded.selector == "sentiment-jev@1"
-    assert loaded.questions["sentiment"].criteria == (
-        "positive",
-        "neutral",
-        "negative",
-        "unknown",
-    )
+    assert loaded.sentiment_criteria == ("positive", "neutral", "negative", "unknown")
+    assert "недовольство" in loaded.questions["sentiment"].criteria["negative"]
     assert loaded.questions["tag_access"].type == "noul"
 
 
@@ -150,6 +146,12 @@ def test_a_later_rubric_version_needs_no_code_change(tmp_path: Path) -> None:
         lambda body: body["questions"].update(tag_unknown={"type": "noul", "instructions": "?"}),
         lambda body: body["questions"].update(broken={"type": "ranking", "instructions": "?"}),
         lambda body: body["questions"]["sentiment"].update(criteria=["positive", "negative"]),
+        lambda body: body["questions"]["sentiment"].update(
+            criteria={"positive": "доволен", "negative": "недоволен"}
+        ),
+        lambda body: body["questions"]["sentiment"].update(
+            criteria={"positive": "", "neutral": "факты", "negative": "нет", "unknown": "нет"}
+        ),
     ],
 )
 def test_rejects_a_broken_rubric(mutate: Any, tmp_path: Path) -> None:

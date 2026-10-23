@@ -5,7 +5,13 @@
   "description": "The questions sent to TypeSafe Jev, as a versioned prompt artifact: docs/prompts/<name>/v<version>.yaml. Jev is not a chat model, so the rubric is the prompt. Wordings are Russian, like the survey answers they label. The schema owns the shape; the adapter owns the meaning (the sentiment question must be a choice over the Sentiment enum, and every tag_ question must name a SignalTag).",
   "type": "object",
   "additionalProperties": false,
-  "required": ["name", "version", "tag_threshold", "max_tags", "questions"],
+  "required": [
+    "name",
+    "version",
+    "tag_threshold",
+    "max_tags",
+    "questions"
+  ],
   "properties": {
     "name": {
       "type": "string",
@@ -46,15 +52,27 @@
           "title": "ChoiceQuestion",
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "instructions", "criteria"],
+          "required": [
+            "type",
+            "instructions",
+            "criteria"
+          ],
           "properties": {
-            "type": {"const": "choice"},
-            "instructions": {"type": "string", "minLength": 1},
+            "type": {
+              "const": "choice"
+            },
+            "instructions": {
+              "type": "string",
+              "minLength": 1
+            },
             "criteria": {
-              "type": "array",
-              "minItems": 2,
-              "uniqueItems": true,
-              "items": {"type": "string", "minLength": 1}
+              "type": "object",
+              "minProperties": 2,
+              "description": "Option name to the sentence that tells the model what that option means. Jev wants a record here, not a list: the key is the value it may answer with. A list is rejected with 400 invalid_type.",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           }
         },
@@ -62,10 +80,18 @@
           "title": "NoulQuestion",
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "instructions"],
+          "required": [
+            "type",
+            "instructions"
+          ],
           "properties": {
-            "type": {"const": "noul"},
-            "instructions": {"type": "string", "minLength": 1}
+            "type": {
+              "const": "noul"
+            },
+            "instructions": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ]

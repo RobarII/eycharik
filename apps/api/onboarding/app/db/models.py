@@ -68,6 +68,11 @@ class RunRow(Base):
     entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reminder_action: Mapped[str | None] = mapped_column(String(16))
+    answers: Mapped[list[dict[str, object]]] = mapped_column(
+        JSONB, server_default=sql_text("'[]'::jsonb")
+    )
+    question_index: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
+    pending_reason: Mapped[str | None] = mapped_column(String(64))
     chat_id: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16), server_default=sql_text("'active'"))
     updated_at: Mapped[datetime] = mapped_column(

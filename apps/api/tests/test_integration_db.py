@@ -11,6 +11,7 @@ import os
 from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -50,6 +51,9 @@ from onboarding.core.models import (
     EventKind,
     RunId,
     ScheduleReminder,
+    StepState,
+    SurveyAnswer,
+    TimeoutAction,
 )
 from onboarding.core.transitions import start as start_run
 from onboarding.ports import OutboundMessage, SearchQuery, StoredRun
@@ -156,6 +160,31 @@ async def test_start_persists_a_run_and_reaches_the_admin_view(database: Databas
     assert [run.employee_id for run in runs] == [str(EMPLOYEE)]
     assert runs[0].name == "Иван Иванов"
     assert await AdminQueries(database).runs(recruiter_id="other", limit=10) == ()
+
+
+async def test_survey_progress_survives_a_save_and_load(database: Database) -> None:
+    runs = DatabaseRunRepository(database)
+    state = StepState(
+        run_id=RunId(str(uuid4())),
+        employee_id=EMPLOYEE,
+        scenario_id="onboarding_default",
+        scenario_version=1,
+        step_id="week_two_check",
+        entered_at=NOW,
+        answers=(SurveyAnswer(question_id="manager", score=6),),
+        question_index=1,
+        pending_reason="manager",
+    )
+    await runs.create(StoredRun(state=state, reminder=ScheduleReminder(
+        due_at=NOW, step_id="week_two_check", action=TimeoutAction.REMIND
+    ), chat_id=ChatId(1)))
+
+    loaded = await runs.load(state.run_id)
+
+    assert loaded is not None
+    assert loaded.state.answers == (SurveyAnswer(question_id="manager", score=6),)
+    assert loaded.state.question_index == 1
+    assert loaded.state.pending_reason == "manager"
 
 
 async def test_second_start_is_rejected_by_the_partial_index(database: Database) -> None:

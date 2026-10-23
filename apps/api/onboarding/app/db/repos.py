@@ -24,6 +24,7 @@ from onboarding.core.models import (
     RunId,
     ScheduleReminder,
     StepState,
+    SurveyAnswer,
     TimeoutAction,
 )
 from onboarding.ports import RunAlreadyActiveError, StoredRun
@@ -44,6 +45,9 @@ class SqlRunRepository:
                 step_id=state.step_id,
                 entered_at=state.entered_at,
                 chat_id=int(run.chat_id),
+                answers=_answers_payload(state),
+                question_index=state.question_index,
+                pending_reason=state.pending_reason,
                 status="active" if run.active else "completed",
                 **_reminder_columns(run.reminder),
             )
@@ -68,6 +72,9 @@ class SqlRunRepository:
                 step_id=state.step_id,
                 entered_at=state.entered_at,
                 chat_id=int(run.chat_id),
+                answers=_answers_payload(state),
+                question_index=state.question_index,
+                pending_reason=state.pending_reason,
                 status="active" if run.active else "completed",
                 **_reminder_columns(run.reminder),
             )
@@ -114,6 +121,9 @@ def _stored_run(row: RunRow) -> StoredRun:
         scenario_version=row.scenario_version,
         step_id=row.step_id,
         entered_at=row.entered_at,
+        answers=_answers_from_row(row),
+        question_index=row.question_index,
+        pending_reason=row.pending_reason,
     )
     return StoredRun(
         state=state,
@@ -121,6 +131,35 @@ def _stored_run(row: RunRow) -> StoredRun:
         chat_id=ChatId(row.chat_id),
         active=row.status == "active",
     )
+
+
+def _answers_payload(state: StepState) -> list[dict[str, object]]:
+    return [
+        {
+            "question_id": answer.question_id,
+            "text": answer.text,
+            "option_id": answer.option_id,
+            "score": answer.score,
+        }
+        for answer in state.answers
+    ]
+
+
+def _answers_from_row(row: RunRow) -> tuple[SurveyAnswer, ...]:
+    answers: list[SurveyAnswer] = []
+    for item in row.answers or ():
+        if not isinstance(item, dict) or not isinstance(item.get("question_id"), str):
+            continue
+        score = item.get("score")
+        answers.append(
+            SurveyAnswer(
+                question_id=str(item["question_id"]),
+                text=str(item["text"]) if item.get("text") is not None else None,
+                option_id=str(item["option_id"]) if item.get("option_id") is not None else None,
+                score=score if isinstance(score, int) else None,
+            )
+        )
+    return tuple(answers)
 
 
 def _reminder_columns(reminder: ReminderPlan) -> dict[str, object]:

@@ -1147,6 +1147,7 @@ async def test_an_unlinked_account_is_acknowledged_and_audited(database: Databas
     assert audited is not None
     assert audited.fields["channel"] == "telegram"
     assert audited.fields["chat_id"] == 555
+    assert audited.fields["external_id"] == "222"
 
 
 async def test_a_linked_account_reaches_the_queue_once(database: Database) -> None:

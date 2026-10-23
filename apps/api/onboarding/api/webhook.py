@@ -87,6 +87,7 @@ async def receive(channel: str, request: Request) -> PlainTextResponse:
             "unlinked_channel_user",
             channel=inbound.address.channel.value,
             chat_id=int(inbound.address.chat_id),
+            external_id=inbound.sender,
         )
         return PlainTextResponse(ACK)
 

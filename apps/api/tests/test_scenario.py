@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from onboarding.core.models import ScenarioError, StepKind
+from onboarding.core.models import ScenarioError, StepKind, Tone
 from onboarding.core.scenario import parse_scenario
 
 from .conftest import scenario_document
@@ -22,6 +22,34 @@ def test_parses_a_valid_document(scenario: Any) -> None:
 def test_steps_mapping_is_read_only(scenario: Any) -> None:
     with pytest.raises(TypeError):
         scenario.steps["x"] = scenario.step("done")  # type: ignore[index]
+
+
+def test_parses_tone_routes_and_an_informal_message() -> None:
+    document = scenario_document()
+    step = document["steps"][1]
+    step["tone"] = {"done": "informal"}
+    step["informal_message"] = "Отметься, пожалуйста."
+
+    scenario = parse_scenario(document)
+
+    assert scenario.step("checklist").tone_routes == {"done": Tone.INFORMAL}
+    assert scenario.step("checklist").informal_message == "Отметься, пожалуйста."
+
+
+def test_rejects_a_tone_route_to_an_unknown_button() -> None:
+    document = scenario_document()
+    document["steps"][1]["tone"] = {"missing": "informal"}
+
+    with pytest.raises(ScenarioError, match="tone references unknown buttons"):
+        parse_scenario(document)
+
+
+def test_rejects_a_tone_on_a_step_without_buttons() -> None:
+    document = scenario_document()
+    document["steps"][0]["tone"] = {"done": "informal"}
+
+    with pytest.raises(ScenarioError, match="tone requires a step that expects a button"):
+        parse_scenario(document)
 
 
 def test_rejects_a_title_longer_than_the_schema_allows() -> None:

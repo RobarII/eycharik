@@ -76,6 +76,7 @@ class RunRow(Base):
     )
     question_index: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
     pending_reason: Mapped[str | None] = mapped_column(String(64))
+    tone: Mapped[str] = mapped_column(String(16), server_default=sql_text("'formal'"))
     chat_id: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16), server_default=sql_text("'active'"))
     updated_at: Mapped[datetime] = mapped_column(

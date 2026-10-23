@@ -33,6 +33,7 @@ from .models import (
     StepState,
     SurveyAnswer,
     TimeoutAction,
+    Tone,
     Transition,
 )
 from .survey import needs_reason, parse_answer
@@ -109,7 +110,13 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
     for _ in range(MAX_SEND_CHAIN):
         step = scenario.step(current.step_id)
         if step.kind is StepKind.SEND:
-            actions.append(Action(kind=ActionKind.SEND, text=step.message, keyboard=step.keyboard))
+            actions.append(
+                Action(
+                    kind=ActionKind.SEND,
+                    text=_message(step, current.tone),
+                    keyboard=step.keyboard,
+                )
+            )
             completed.append(step.id)
             if step.next_step is None:
                 raise ScenarioRunError(f"send step {step.id!r} has no next step")
@@ -118,7 +125,11 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
         if step.kind is StepKind.WAIT:
             if step.message is not None:
                 actions.append(
-                    Action(kind=ActionKind.SEND, text=step.message, keyboard=step.keyboard)
+                    Action(
+                        kind=ActionKind.SEND,
+                        text=_message(step, current.tone),
+                        keyboard=step.keyboard,
+                    )
                 )
             reminder = _schedule(step, now)
             return Transition(
@@ -128,7 +139,7 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
             )
         if step.kind is StepKind.SURVEY:
             if step.message is not None:
-                actions.append(Action(kind=ActionKind.SEND, text=step.message))
+                actions.append(Action(kind=ActionKind.SEND, text=_message(step, current.tone)))
             actions.append(_ask(step.questions[0]))
             reminder = _schedule(step, now)
             return Transition(
@@ -145,6 +156,12 @@ def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
         )
 
     raise StepCycleError(f"send chain from {state.step_id!r} exceeded {MAX_SEND_CHAIN} steps")
+
+
+def _message(step: Step, tone: Tone) -> str | None:
+    if tone is Tone.INFORMAL and step.informal_message is not None:
+        return step.informal_message
+    return step.message
 
 
 def _schedule(step: Step, now: datetime) -> ReminderPlan:
@@ -308,7 +325,7 @@ def _on_timeout(scenario: Scenario, state: StepState, event: Event) -> Transitio
     if step.timeout.action is TimeoutAction.REMIND:
         action = Action(
             kind=ActionKind.SEND,
-            text=step.message,
+            text=_message(step, state.tone),
             keyboard=step.keyboard,
             note="reminder",
         )
@@ -333,7 +350,9 @@ def _on_button(scenario: Scenario, state: StepState, event: Event) -> Transition
     target = step.routes.get(event.button_id or "") or step.routes.get("default")
     if target is None:
         return _idle(state, ActionKind.IGNORE)
-    return _leave(scenario, state, target, event.at)
+    chosen = step.tone_routes.get(event.button_id or "")
+    moved = replace(state, tone=chosen) if chosen is not None else state
+    return _leave(scenario, moved, target, event.at)
 
 
 def _on_message(scenario: Scenario, state: StepState, event: Event) -> Transition:

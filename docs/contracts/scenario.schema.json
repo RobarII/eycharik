@@ -77,6 +77,11 @@
           "minLength": 1,
           "maxLength": 4000
         },
+        "informal_message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
         "keyboard": {
           "type": "array",
           "maxItems": 3,
@@ -166,6 +171,18 @@
           "maxItems": 30,
           "items": {
             "$ref": "#/$defs/question"
+          }
+        },
+        "tone": {
+          "type": "object",
+          "additionalProperties": {
+            "enum": [
+              "formal",
+              "informal"
+            ]
+          },
+          "propertyNames": {
+            "pattern": "^[a-z0-9_]+$"
           }
         }
       },

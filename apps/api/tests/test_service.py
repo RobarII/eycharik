@@ -20,6 +20,7 @@ from onboarding.core.models import (
     ScheduleReminder,
     Sentiment,
     SignalTag,
+    Tone,
 )
 from onboarding.ports import StoredRun
 
@@ -122,6 +123,21 @@ async def test_button_advances_the_run() -> None:
     assert result.handled
     assert stored.state.step_id == "documents_checklist"
     assert messaging.sent[-1].text.startswith("До первого рабочего дня")
+
+
+async def test_choosing_informal_tone_changes_the_next_message() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ChatId(1))
+
+    await service.handle(
+        EMPLOYEE,
+        ChatId(1),
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_you"),
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert stored.state.tone is Tone.INFORMAL
+    assert messaging.sent[-1].text.startswith("Осталось собрать документы")
 
 
 async def test_completion_message_is_sent_at_the_terminal_step() -> None:

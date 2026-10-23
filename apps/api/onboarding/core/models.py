@@ -37,6 +37,11 @@ class StepKind(StrEnum):
     TERMINAL = "terminal"
 
 
+class Tone(StrEnum):
+    FORMAL = "formal"
+    INFORMAL = "informal"
+
+
 class Expects(StrEnum):
     MESSAGE = "message"
     BUTTON = "button"
@@ -108,6 +113,8 @@ class Step:
     questions: tuple[Question, ...] = ()
     escalate_to: str | None = None
     outcome: Outcome | None = None
+    informal_message: str | None = None
+    tone_routes: Mapping[str, Tone] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -167,6 +174,7 @@ class StepState:
     answers: tuple[SurveyAnswer, ...] = ()
     question_index: int = 0
     pending_reason: str | None = None
+    tone: Tone = Tone.FORMAL
 
 
 @dataclass(frozen=True, slots=True)

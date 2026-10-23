@@ -27,6 +27,7 @@ from .models import (
     StepKind,
     Timeout,
     TimeoutAction,
+    Tone,
 )
 from .survey import validate_survey
 
@@ -44,6 +45,8 @@ _STEP_KEYS = {
     "questions",
     "escalate_to",
     "outcome",
+    "informal_message",
+    "tone",
 }
 _REQUIRED_BY_KIND = {
     StepKind.SEND: {"message", "next"},
@@ -119,8 +122,12 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         raise ScenarioError(f"{path}: step kind {kind.value!r} forbids {sorted(forbidden)}")
 
     message = _text(raw, "message", path) if "message" in raw else None
-    if message is not None and len(message) > MAX_MESSAGE_CHARS:
-        raise ScenarioError(f"{path}: message exceeds {MAX_MESSAGE_CHARS} characters")
+    informal_message = (
+        _text(raw, "informal_message", path) if "informal_message" in raw else None
+    )
+    for field_name, value in (("message", message), ("informal_message", informal_message)):
+        if value is not None and len(value) > MAX_MESSAGE_CHARS:
+            raise ScenarioError(f"{path}: {field_name} exceeds {MAX_MESSAGE_CHARS} characters")
 
     title = _text(raw, "title", path) if "title" in raw else None
     if title is not None and len(title) > MAX_TITLE_CHARS:
@@ -130,14 +137,21 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
     questions = _questions(raw, path) if kind is StepKind.SURVEY else ()
     routes = _routes(raw, path)
     timeout = _timeout(raw, path)
+    tone_routes = _tone_routes(raw, path)
     expects = Expects(raw["expects"]) if "expects" in raw else None
     outcome = Outcome(raw["outcome"]) if "outcome" in raw else None
     escalate_to = _text(raw, "escalate_to", path) if "escalate_to" in raw else None
     if escalate_to is not None and escalate_to not in {"recruiter", "hr"}:
         raise ScenarioError(f"{path}: escalate_to must be 'recruiter' or 'hr'")
 
+    step_buttons = {button.id for row in keyboard for button in row}
+    if tone_routes and expects is not Expects.BUTTON:
+        raise ScenarioError(f"{path}: tone requires a step that expects a button")
+    unknown_tone = set(tone_routes) - step_buttons
+    if unknown_tone:
+        raise ScenarioError(f"{path}: tone references unknown buttons {sorted(unknown_tone)}")
+
     if expects is Expects.BUTTON:
-        step_buttons = {button.id for row in keyboard for button in row}
         unknown_buttons = set(routes) - step_buttons - {"default"}
         if unknown_buttons:
             raise ScenarioError(
@@ -160,6 +174,8 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         questions=questions,
         escalate_to=escalate_to,
         outcome=outcome,
+        informal_message=informal_message,
+        tone_routes=tone_routes,
     )
 
 
@@ -192,6 +208,21 @@ def _parse_keyboard(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> 
             buttons.append(button)
         parsed.append(tuple(buttons))
     return tuple(parsed)
+
+
+def _tone_routes(raw: Mapping[str, Any], path: str) -> Mapping[str, Tone]:
+    if "tone" not in raw:
+        return MappingProxyType({})
+    item = _mapping(raw["tone"], f"{path}.tone")
+    tones: dict[str, Tone] = {}
+    for key, value in item.items():
+        try:
+            tones[str(key)] = Tone(str(value))
+        except ValueError:
+            raise ScenarioError(
+                f"{path}.tone[{key!r}] must be one of {[tone.value for tone in Tone]}"
+            ) from None
+    return MappingProxyType(tones)
 
 
 def _timeout(raw: Mapping[str, Any], path: str) -> Timeout | None:

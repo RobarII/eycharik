@@ -26,6 +26,7 @@ from onboarding.core.models import (
     StepState,
     SurveyAnswer,
     TimeoutAction,
+    Tone,
 )
 from onboarding.ports import RunAlreadyActiveError, StoredRun
 
@@ -48,6 +49,7 @@ class SqlRunRepository:
                 answers=_answers_payload(state),
                 question_index=state.question_index,
                 pending_reason=state.pending_reason,
+                tone=state.tone.value,
                 status="active" if run.active else "completed",
                 **_reminder_columns(run.reminder),
             )
@@ -75,6 +77,7 @@ class SqlRunRepository:
                 answers=_answers_payload(state),
                 question_index=state.question_index,
                 pending_reason=state.pending_reason,
+                tone=state.tone.value,
                 status="active" if run.active else "completed",
                 **_reminder_columns(run.reminder),
             )
@@ -124,6 +127,7 @@ def _stored_run(row: RunRow) -> StoredRun:
         answers=_answers_from_row(row),
         question_index=row.question_index,
         pending_reason=row.pending_reason,
+        tone=Tone(row.tone),
     )
     return StoredRun(
         state=state,

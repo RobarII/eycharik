@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moshackathon.local/contracts/scenario.schema.json",
+  "title": "Scenario",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "version", "title", "start", "steps"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "version": {"type": "integer", "minimum": 1},
+    "title": {"type": "string", "minLength": 1},
+    "start": {"type": "string", "minLength": 1},
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/step"}
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+        "kind": {"enum": ["send", "wait", "terminal"]},
+        "message": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "keyboard": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 3,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "text"],
+              "properties": {
+                "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+                "text": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        },
+        "expects": {"enum": ["message", "button", "file"]},
+        "routes": {
+          "type": "object",
+          "additionalProperties": {"type": "string"},
+          "properties": {"default": {"type": "string"}}
+        },
+        "next": {"type": "string"},
+        "timeout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["after_hours", "action"],
+          "properties": {
+            "after_hours": {"type": "number", "minimum": 0.1},
+            "action": {"enum": ["remind", "escalate"]},
+            "next": {"type": "string"}
+          }
+        },
+        "escalate_to": {"enum": ["recruiter", "hr"]},
+        "outcome": {"enum": ["completed", "escalated"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "send"}}}, "then": {"required": ["message", "next"]}},
+        {"if": {"properties": {"kind": {"const": "wait"}}}, "then": {"required": ["expects"]}},
+        {"if": {"properties": {"kind": {"const": "terminal"}}}, "then": {"required": ["outcome"]}}
+      ]
+    }
+  }
+}

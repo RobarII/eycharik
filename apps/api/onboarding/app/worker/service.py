@@ -11,7 +11,6 @@ from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from onboarding.app.audit import NullAudit
-from onboarding.app.llm.sentiment import SentimentClassifier
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.worker.actions import ActionContext, ActionExecutor
 from onboarding.core.models import (
@@ -36,6 +35,7 @@ from onboarding.ports import (
     Directory,
     RunAlreadyActiveError,
     RunRepository,
+    SentimentAnalysis,
     StoredRun,
 )
 
@@ -57,7 +57,7 @@ class OnboardingService:
         clock: Clock,
         directory: Directory,
         audit: AuditLog | None = None,
-        classifier: SentimentClassifier | None = None,
+        classifier: SentimentAnalysis | None = None,
         scenario_id: str = "onboarding_default",
         scenario_version: int | None = None,
     ) -> None:

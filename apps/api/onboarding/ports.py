@@ -19,6 +19,7 @@ from onboarding.core.models import (
     EmployeeProfile,
     Keyboard,
     ReminderPlan,
+    RiskSignal,
     RunId,
     ScoredChunk,
     StepState,
@@ -83,6 +84,12 @@ class RunAlreadyActiveError(RuntimeError):
 
 
 @runtime_checkable
+class SentimentAnalysis(Protocol):
+    """Turn one free-text survey answer into a risk signal."""
+
+    async def classify(self, text: str, *, source: str) -> RiskSignal: ...
+
+
 class Embedder(Protocol):
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         """One vector per input text, in the same order."""

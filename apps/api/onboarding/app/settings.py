@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     rerank_model: str = ""
     rerank_timeout_s: float = 3.0
 
+    sentiment_provider: Literal["prompt", "jev"] = "prompt"
+    jev_base_url: str = "https://api.typesafe.ai/v1"
+    jev_api_key: SecretStr = SecretStr("")
+    jev_timeout_s: float = 8.0
+    jev_max_retries: int = 2
+
     answer_min_confidence: float = 0.45
     recall_limit: int = 30
     rerank_limit: int = 5
@@ -77,6 +83,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _check(self) -> Settings:
+        if self.sentiment_provider == "jev" and not self.jev_api_key.get_secret_value():
+            raise ValueError("SENTIMENT_PROVIDER=jev requires JEV_API_KEY")
         if not 0.0 <= self.answer_min_confidence <= 1.0:
             raise ValueError("ANSWER_MIN_CONFIDENCE must be within [0, 1]")
         if self.embed_dim < 8:

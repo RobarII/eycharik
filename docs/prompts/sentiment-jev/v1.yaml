@@ -1,0 +1,52 @@
+version: 1
+name: sentiment-jev
+# The rubric is a prompt artifact: the questions below are the prompt. A wording change is a new
+# version plus an eval run, never an edit in place.
+model: jev-1.13.0
+tag_threshold: 0.5
+max_tags: 3
+questions:
+  sentiment:
+    type: choice
+    instructions: |
+      Свободный ответ нового сотрудника об адаптации в компании «Группа ПОЛИПЛАСТИК».
+      Оцените общий эмоциональный фон ответа, а не то, о чём он.
+      positive: сотрудник доволен, благодарит, всё получается.
+      neutral: спокойное перечисление фактов без оценки.
+      negative: недовольство, раздражение, проблема, жалоба, ощущение брошенности.
+      unknown: текста слишком мало или он не про эмоции (например, «ок»).
+    criteria: [positive, neutral, negative, unknown]
+  tag_access:
+    type: noul
+    instructions: |
+      Ответ касается доступов, пропуска, оборудования, учётных записей, рабочего места
+      или задержки с их выдачей.
+  tag_manager:
+    type: noul
+    instructions: |
+      Ответ касается непосредственного руководителя: постановка задач, обратная связь,
+      доступность, отношение.
+  tag_colleagues:
+    type: noul
+    instructions: |
+      Ответ касается коллег, команды, наставника или атмосферы в коллективе.
+  tag_workload:
+    type: noul
+    instructions: |
+      Ответ касается объёма работы, переработок, темпа или нехватки времени.
+  tag_clarity:
+    type: noul
+    instructions: |
+      Ответ касается ясности задач, ожиданий, плана адаптации или инструкций.
+  tag_hr:
+    type: noul
+    instructions: |
+      Ответ касается рекрутёра, HR-специалиста, оформления, документов, отпуска или льгот.
+  tag_it:
+    type: noul
+    instructions: |
+      Ответ касается ИТ-поддержки, программ, техники, связи или неработающих систем.
+  tag_integration:
+    type: noul
+    instructions: |
+      Ответ касается ощущения «свой/чужой», принятия в команду или культурной адаптации.

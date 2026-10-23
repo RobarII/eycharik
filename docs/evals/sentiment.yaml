@@ -1,0 +1,85 @@
+# Labeled free-text answers from the survey steps. The label is what the risk radar must see:
+# tone plus the topic tags that decide which specialist gets the signal.
+#
+# Keep the file small and honest: every case is a sentence a newcomer could plausibly write.
+# A new failure mode (a missed crisis, a wrong tag) becomes a case here, not a prompt tweak.
+cases:
+  - id: access-missing
+    text: "Доступ к 1С так и не появился, третий день не могу работать. ИТ отвечает, что заявка в очереди."
+    sentiment: negative
+    tags: [access, it]
+
+  - id: access-fixed
+    text: "Ноутбук и пропуск выдали в первый день, доступы открыли за час. Спасибо ИТ."
+    sentiment: positive
+    tags: [access, it]
+
+  - id: manager-no-feedback
+    text: "Руководитель третий день не отвечает на вопросы, задачи ставятся голосом и без сроков."
+    sentiment: negative
+    tags: [manager, clarity]
+
+  - id: manager-support
+    text: "Наставник подробно всё показал, руководитель каждый день спрашивает, нужна ли помощь."
+    sentiment: positive
+    tags: [manager, colleagues]
+
+  - id: workload-overload
+    text: "Очень много задач сразу, приходится задерживаться до восьми вечера, чтобы всё успеть."
+    sentiment: negative
+    tags: [workload]
+
+  - id: workload-ok
+    text: "Задач нормально, успеваю в рабочее время. Пока всё понятно."
+    sentiment: neutral
+    tags: [workload]
+
+  - id: colleagues-cold
+    text: "В команде со мной почти не общаются, на обед хожу один. Чувствую себя лишним."
+    sentiment: negative
+    tags: [colleagues, integration]
+
+  - id: colleagues-warm
+    text: "Коллеги дружелюбные, сразу позвали на обед и помогли разобраться с проектом."
+    sentiment: positive
+    tags: [colleagues, integration]
+
+  - id: clarity-missing-plan
+    text: "Плана адаптации мне не дали, непонятно, что от меня ждут через месяц."
+    sentiment: negative
+    tags: [clarity]
+
+  - id: clarity-good
+    text: "План на первые недели прислали заранее, ожидания и точки проверки понятны."
+    sentiment: positive
+    tags: [clarity]
+
+  - id: hr-documents
+    text: "Кадровик помогла с документами и объяснила, как оформить отпуск. Очень оперативно."
+    sentiment: positive
+    tags: [hr]
+
+  - id: hr-delay
+    text: "Договор до сих пор не подписан, HR не отвечает на письма уже неделю."
+    sentiment: negative
+    tags: [hr]
+
+  - id: crisis-quit
+    text: "Если ситуация не изменится, я буду искать другую работу. Так работать невозможно."
+    sentiment: negative
+    tags: [manager, workload]
+
+  - id: neutral-facts
+    text: "Офис на третьем этаже, стол у окна, пропуск выдали."
+    sentiment: neutral
+    tags: [access]
+
+  - id: short-ok
+    text: "Ок"
+    sentiment: unknown
+    tags: []
+
+  - id: positive-overall
+    text: "Первая неделя прошла отлично: всё показали, помогли с доступами, коллектив приятный."
+    sentiment: positive
+    tags: [access, colleagues]

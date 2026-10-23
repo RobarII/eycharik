@@ -82,3 +82,8 @@ def test_production_rejects_the_offline_llm() -> None:
 def test_production_rejects_hashing_embeddings() -> None:
     with pytest.raises(ValidationError, match="hashing"):
         Settings(_env_file=None, environment="production", embed_provider="hashing")
+
+
+def test_jev_without_a_key_is_refused_at_startup() -> None:
+    with pytest.raises(ValidationError, match="JEV_API_KEY"):
+        Settings(_env_file=None, sentiment_provider="jev")

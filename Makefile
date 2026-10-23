@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval eval-retrieval run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check
+.PHONY: install check lint types test eval eval-retrieval eval-sentiment run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check
 
 install:
 	uv sync
@@ -29,6 +29,9 @@ eval:
 
 eval-retrieval:
 	$(PY) python -m onboarding.evals --retrieval-only --write
+
+eval-sentiment:
+	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --write
 
 run:
 	$(PY) uvicorn onboarding.api.app:create_app --factory --reload --port 8000

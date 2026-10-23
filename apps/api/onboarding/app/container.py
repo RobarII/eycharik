@@ -26,6 +26,7 @@ from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.db.session import Database
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
+from onboarding.app.llm.jev import build_jev_classifier
 from onboarding.app.llm.rerank import RemoteReranker
 from onboarding.app.llm.sentiment import SentimentClassifier
 from onboarding.app.max.client import MaxClient
@@ -35,7 +36,15 @@ from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.service import OnboardingService
-from onboarding.ports import LLM, Clock, Embedder, KnowledgeBase, Messaging
+from onboarding.ports import (
+    LLM,
+    AuditLog,
+    Clock,
+    Embedder,
+    KnowledgeBase,
+    Messaging,
+    SentimentAnalysis,
+)
 
 SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
 
@@ -66,6 +75,29 @@ class Container:
     async def aclose(self) -> None:
         await self.http.aclose()
         await self.database.dispose()
+
+
+def _classifier(
+    settings: Settings,
+    *,
+    http: httpx.AsyncClient,
+    llm: LLM,
+    prompts: PromptLibrary,
+    audit: AuditLog,
+) -> SentimentAnalysis | None:
+    if settings.sentiment_provider == "jev":
+        return build_jev_classifier(
+            client=http,
+            endpoint=f"{settings.jev_base_url.rstrip('/')}/systemone",
+            api_key=settings.jev_api_key,
+            rubric_path=settings.prompts_dir / "sentiment-jev" / "v1.yaml",
+            audit=audit,
+            timeout_s=settings.jev_timeout_s,
+            max_retries=settings.jev_max_retries,
+        )
+    if not settings.is_llm_configured:
+        return None
+    return SentimentClassifier(llm=llm, prompts=prompts, audit=audit)
 
 
 def build_container(settings: Settings) -> Container:
@@ -121,11 +153,7 @@ def build_container(settings: Settings) -> Container:
         audit=audit,
         questions=DatabaseQuestionLog(database),
     )
-    classifier = (
-        SentimentClassifier(llm=llm, prompts=prompts, audit=audit)
-        if settings.is_llm_configured
-        else None
-    )
+    classifier = _classifier(settings, http=http, llm=llm, prompts=prompts, audit=audit)
     service = OnboardingService(
         runs=DatabaseRunRepository(database),
         catalog=catalog,

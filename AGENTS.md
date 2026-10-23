@@ -55,7 +55,26 @@ make eval-retrieval                # retrieval only, no provider key needed
 make run                           # uvicorn on :8000
 make up / make down                # docker compose stack
 make docs                          # docs index completeness and dead-link check
+make eval-sentiment                # PROVIDER=keyword|prompt|jev SPLIT=dev|test REPEAT=n
 ```
+
+## Network
+
+Every provider call leaves through a SOCKS tunnel; a direct request fails before it reaches the
+provider. Export it for anything that calls a model, an embedder, or a reranker:
+
+```bash
+export HTTPS_PROXY=socks5h://127.0.0.1:1080
+```
+
+`httpx` reads that variable on its own (`socksio` is installed), so application code needs no proxy
+setting and no proxy argument. `curl` needs `--proxy socks5h://127.0.0.1:1080`.
+
+Measured on 2026-10-23: without the tunnel, `openrouter.ai` answers `403 Access denied by security
+policy` for `/systemone`, `/key`, `/rerank`, and `/chat/completions` alike, and `httpx` raises
+`ProxyError 503`. That is this machine's egress, not the provider and not the adapter: the same key
+returns `200` through the tunnel. Treat a `403` in a measurement log as a missing tunnel, then look
+at the provider.
 
 ## Where changes go
 

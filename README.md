@@ -63,7 +63,10 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
   records `risk_assessed` / `risk_escalated`. The cabinet shows a seven-day overview and a weekly
   digest of the signals that need a human.
 - **Recruiter cabinet**: runs, per-employee detail with the audit timeline, question queue scoped by
-  recruiter, manager (by department), or HR; knowledge upload for HR with frontmatter validation.
+  recruiter, manager (by department), or HR; a reply closes the question and leaves through the
+  outbox; HR can offboard an employee; knowledge upload for HR with frontmatter validation.
+- **Retention**: expired questions and personal audit fields are purged hourly by the worker;
+  `DATA_RETENTION_DAYS` is the policy knob; offboarding is immediate and audited.
 - **Scheduler**: a cron entrypoint that shares the worker's building blocks, so reminders and the
   outbox are drained even when only a periodic job is running.
 
@@ -73,7 +76,7 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 |---|---|---|
 | Golden set, 16 cases, real model | recall@5 1.00, MRR 1.00, citation 1.00, escalation 1.00, p95 2 237 ms, 0.077 ₽/answer | `docs/measurements/2026-10-23-eval-full-case-corpus.md` |
 | Retrieval with rerank, 12 cases | recall@5 1.00, MRR 1.00 | `docs/measurements/2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md` |
-| Tests | 300+ unit and integration tests; `core/` purity enforced by a test | `apps/api/tests/` |
+| Tests | 350+ unit and integration tests; `core/` purity enforced by a test | `apps/api/tests/` |
 
 ![Run detail](docs/assets/cabinet-run.png)
 
@@ -87,6 +90,8 @@ Known gaps, stated so nobody assumes otherwise:
   adapter and the webhook are tested against the documented payloads and a local sender.
 - File upload to MAX is not implemented; the scenario describes documents, the bot does not yet
   attach them.
+- The retention window is a placeholder until the company's data protection policy confirms it.
+  The mechanism is tested; the legal number is not ours.
 - One worker replica: the MAX pacing state is in-process. More replicas need a shared limiter.
 - The production model vendor must satisfy 152-ФЗ. The architecture keeps the provider behind a
   port; `docs/decisions/0010-one-model-vendor.md` records the current choice and what changes for

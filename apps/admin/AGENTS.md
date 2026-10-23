@@ -5,7 +5,9 @@ No component library: `styles.css` holds the tokens and the few primitives the c
 
 ## Rules
 
-1. The cabinet is read-only. It calls `/admin/api/*` with a bearer token and never talks to MAX.
+1. The cabinet is read-only except for two writes: resolving a question and offboarding an
+   employee. Both call `/admin/api/*` with a bearer token; the cabinet never talks to MAX. A reply
+   is queued through the outbox in the same transaction that closes the question.
 2. The token lives in `localStorage` under `onboarding.admin.token` and nowhere else. A `401`
    clears it and returns to the gate.
 3. Every list shows an explicit empty state and an explicit error with a retry. "Nothing" and

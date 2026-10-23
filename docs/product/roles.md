@@ -22,6 +22,10 @@
    conversation text and not the ability to write to the base.
 3. The bot runs with a service identity that has read access to `audience: all` and
    `dept:*` chunks for the employee's department, and no access to `hr_only`.
-4. Every manual message and escalation resolution writes an audit row with the actor.
-5. Removing an employee from the directory ends the run and deletes transcripts per retention
-   policy; the audit row survives without personal data.
+4. Every escalation resolution writes `question_resolved` with the actor and queues the reply
+   through the outbox; the cabinet never calls MAX directly.
+5. Removing an employee from the directory sets `status='left'`, closes the run, deletes the
+   question rows, and redacts personal fields in the audit log. The audit skeleton survives. The
+   call is HR-only and idempotent.
+6. Age-based retention is a scheduled pass, not a manual chore: questions and personal audit
+   fields older than `DATA_RETENTION_DAYS` are purged. See the retention runbook.

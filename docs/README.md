@@ -36,9 +36,11 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is Jev behind a flag? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md) |
 | Why not BM25 / ParadeDB? | [decisions/0012-no-bm25-in-request-path.md](decisions/0012-no-bm25-in-request-path.md) |
 | Why is a model a profile file? | [decisions/0013-model-profiles.md](decisions/0013-model-profiles.md) |
+| Why does the cabinet write through the outbox, and what does leaving delete? | [decisions/0014-cabinet-writes-through-the-outbox.md](decisions/0014-cabinet-writes-through-the-outbox.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |
+| What is deleted, when, and how do I offboard someone? | [runbooks/retention.md](runbooks/retention.md) |
 | What metrics exist and what should alert? | [runbooks/observability.md](runbooks/observability.md) |
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |

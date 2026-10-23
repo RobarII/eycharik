@@ -6,8 +6,8 @@
   reachable.
 - Every schema change has a migration under `apps/api/onboarding/migrations/versions/`.
 - These are set in the environment, never baked into the image: `DATABASE_URL`, `MAX_BOT_TOKEN`,
-  `MAX_WEBHOOK_SECRET`, `LLM_API_KEY`, `ADMIN_TOKENS`, and `MAX_CA_BUNDLE` when the Mincifry CA is
-  not in the system store.
+  `MAX_WEBHOOK_SECRET`, `LLM_API_KEY`, `ADMIN_TOKENS`, `DATA_RETENTION_DAYS`, and `MAX_CA_BUNDLE`
+  when the Mincifry CA is not in the system store.
 - The public hostname terminates TLS on port 443. MAX rejects anything else.
 
 ## Steps
@@ -54,6 +54,7 @@
 select status, count(*) from jobs group by status;
 select status, count(*) from messages group by status;
 select name, count(*) from audit_log group by name order by 2 desc;
+select count(*) filter (where resolved_at is not null) as resolved, count(*) from questions;
 ```
 
 `messages` rows stuck in `pending` mean the dispatcher or the MAX API is failing; read

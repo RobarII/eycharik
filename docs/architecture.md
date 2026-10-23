@@ -51,6 +51,9 @@ They share code and the database, not memory. The reminder tick runs inside the 
    exponential retry, up to 5 attempts. Delivery is at-least-once.
 7. The answerer writes an audit row: prompt version, retrieved count, citation count, tokens,
    cost, latency. The action executor writes the question row that feeds the cabinet.
+8. The cabinet closes a question: `resolved_at`, `resolved_by`, `resolution`, the reply as a
+   `messages` row, and `question_resolved` in one transaction. The dispatcher delivers the reply
+   with the same pacing and retries as any scenario message.
 
 ## Invariants
 
@@ -63,6 +66,8 @@ They share code and the database, not memory. The reminder tick runs inside the 
    before ranking, not filters on the result.
 7. Secrets live in `SecretStr` and are never written to logs or audit fields.
 8. A model's behaviour lives in a profile file, not in a Python branch: no model name in `app/`.
+9. The cabinet never calls MAX. Every outbound message, including a recruiter's reply, is an
+   outbox row written in the transaction that records the intent.
 
 ## Failure modes
 
@@ -79,6 +84,9 @@ They share code and the database, not memory. The reminder tick runs inside the 
 | Postgres unavailable | webhook answers 503; MAX retries |
 | A scenario file is invalid | the process refuses to start |
 | A job payload is invalid | job fails, is retried, then parked with `last_error` |
+| A recruiter resolves a question twice | first commits the reply; second gets `409`, no duplicate |
+| An employee leaves mid-run | soft delete closes the run and purges questions; later inbound events are ignored |
+| The retention pass fails | logged, retried next tick; committed batches stay committed |
 
 ## Model profiles
 

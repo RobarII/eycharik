@@ -1,10 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchRun } from "../api";
+import { ArrowLeftIcon } from "../components/Icons";
 import { StatusPill } from "../components/Pills";
 import { Progress } from "../components/Progress";
 import { ErrorNote, SkeletonRows } from "../components/States";
-import { eventLabel, fieldText, formatDate, formatDateTime, reasonLabel } from "../format";
+import {
+  countLabel,
+  eventLabel,
+  fieldText,
+  formatDate,
+  formatDateTime,
+  initials,
+  reasonLabel,
+  stepLabel,
+  tagLabel,
+} from "../format";
 import { useUnauthorized } from "../useUnauthorized";
 
 const SCENARIO_LABELS: Record<string, string> = {
@@ -31,7 +42,8 @@ export function RunDetailPage({
   return (
     <section className="page">
       <button type="button" className="back" onClick={onBack}>
-        ← Все сотрудники
+        <ArrowLeftIcon width={16} height={16} />
+        Все сотрудники
       </button>
 
       {query.isPending ? <SkeletonRows rows={4} /> : null}
@@ -44,11 +56,7 @@ export function RunDetailPage({
           <header className="detail-head">
             <div className="detail-identity">
               <span className="avatar avatar-lg" aria-hidden="true">
-                {query.data.name
-                  .split(/\s+/)
-                  .slice(0, 2)
-                  .map((part) => part[0]?.toUpperCase() ?? "")
-                  .join("")}
+                {initials(query.data.name)}
               </span>
               <div>
                 <h1>{query.data.name}</h1>
@@ -99,7 +107,12 @@ export function RunDetailPage({
             </section>
 
             <section className="card">
-              <h2>Что спрашивал</h2>
+              <div className="card-head">
+                <h2>Что спрашивал</h2>
+                <span className="card-note">
+                  {countLabel(query.data.questions.length, "вопрос", "вопроса", "вопросов")}
+                </span>
+              </div>
               {query.data.questions.length === 0 ? (
                 <p className="muted">Вопросов пока не было.</p>
               ) : (
@@ -132,7 +145,12 @@ export function RunDetailPage({
           </div>
 
           <section className="card">
-            <h2>Хронология</h2>
+            <div className="card-head">
+              <h2>Хронология</h2>
+              <span className="card-note">
+                {countLabel(query.data.events.length, "событие", "события", "событий")}
+              </span>
+            </div>
             {query.data.events.length === 0 ? (
               <p className="muted">Событий пока нет.</p>
             ) : (
@@ -140,9 +158,36 @@ export function RunDetailPage({
                 {query.data.events.map((event, index) => {
                   const step = fieldText(event.fields["step"]);
                   const previous = fieldText(event.fields["previous_step"]);
+                  const stepTitle = fieldText(event.fields["step_title"]);
+                  const current = stepTitle ?? (step ? stepLabel(step) : null);
                   const reason = fieldText(event.fields["reason"]);
+                  const rawTags = event.fields["tags"];
+                  const tags = Array.isArray(rawTags)
+                    ? rawTags.map((tag) => tagLabel(String(tag))).join(", ")
+                    : fieldText(rawTags);
+                  const reasons = fieldText(event.fields["reasons"]);
+                  const level = fieldText(event.fields["level"]);
+                  const risk =
+                    event.name === "risk_assessed"
+                      ? [
+                          level
+                            ? `уровень: ${
+                                level === "high"
+                                  ? "высокий"
+                                  : level === "medium"
+                                    ? "средний"
+                                    : level
+                              }`
+                            : null,
+                          tags ? `темы: ${tags}` : null,
+                          reasons,
+                        ].filter((value): value is string => Boolean(value))
+                      : [];
                   const details = [
-                    step && previous ? `${previous} → ${step}` : step,
+                    step && previous
+                      ? `${stepLabel(previous)} → ${current ?? step}`
+                      : current,
+                    ...risk,
                     reason ? reasonLabel(reason) : null,
                     fieldText(event.fields["accepted"]) === "false" ? "не принят" : null,
                   ].filter((value): value is string => Boolean(value));

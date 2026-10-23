@@ -2,11 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { fetchRuns } from "../api";
+import { SearchIcon } from "../components/Icons";
 import { Progress } from "../components/Progress";
 import { StatusPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { useUnauthorized } from "../useUnauthorized";
-import { daysSince, formatDateTime } from "../format";
+import { daysSince, formatDateTime, initials } from "../format";
 import type { RunSummary } from "../types";
 
 type Filter = "active" | "completed" | "all";
@@ -46,10 +47,12 @@ export function RunsPage({
   return (
     <section className="page">
       <header className="page-head">
-        <div>
+        <div className="page-head-text">
+          <p className="eyebrow">Когорта</p>
           <h1>Новые сотрудники</h1>
           <p className="muted">
-            Сценарий, шаг и время входа. Данные обновляются каждые 15 секунд.
+            Сценарий, шаг и время входа. Прогресс считается по версии сценария, закреплённой за
+            сотрудником.
           </p>
         </div>
         <div className="page-count" aria-live="polite">
@@ -80,6 +83,7 @@ export function RunsPage({
         </div>
         <label className="search">
           <span className="visually-hidden">Поиск по сотрудникам</span>
+          <SearchIcon className="search-icon" width={16} height={16} />
           <input
             type="search"
             value={search}
@@ -136,7 +140,7 @@ function RunCard({ run, onOpen }: { run: RunSummary; onOpen: (id: string) => voi
         <span className="run-side">
           <span className="run-step">Шаг: {run.step_title ?? run.step_id}</span>
           <span className="run-time" title={formatDateTime(run.entered_at)}>
-            {daysSince(run.entered_at)} в шаге
+            {daysSince(run.entered_at)} в сценарии
           </span>
           <span className="chevron" aria-hidden="true">
             →
@@ -145,12 +149,4 @@ function RunCard({ run, onOpen }: { run: RunSummary; onOpen: (id: string) => voi
       </button>
     </li>
   );
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
 }

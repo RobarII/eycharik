@@ -1,7 +1,7 @@
 # 0019 — Jev is a classifier profile, not a special case
 
 Date: 2026-10-24
-Status: proposed — the structure shipped, quality still unmeasured (no `JEV_API_KEY`)
+Status: accepted — the structure shipped and the classifier was measured through OpenRouter
 Supersedes: 0011 (partially: model selection, envelope, and prices leave the adapter)
 
 ## Context
@@ -70,12 +70,31 @@ tokens and nothing else.
 
 ## Measured
 
-Nothing new. No `JEV_API_KEY` exists in this environment, and a structure change is not a quality
-result. The rubric contract, the retry matrix, the breaker, and the cost arithmetic are covered by
-tests against a mocked endpoint, which proves the contract, not the classifier.
+`docs/measurements/2026-10-23-sentiment-jev.md`, commit `4e8901f`, model `typesafe/jev-1.14`,
+rubric `sentiment-jev@1`, test split, three repetitions per case, 174 calls, no fallbacks and no
+format errors:
 
-The Jev row in ADR 0011 stays empty until `make eval-sentiment PROVIDER=jev SPLIT=test REPEAT=3`
-runs with a key and writes `docs/measurements/<date>-sentiment-jev-<profile>.md`.
+| metric | value |
+|---|---|
+| `sentiment_accuracy` | 0.833 [0.77, 0.88] |
+| `escalation_recall` | 1.000 [0.89, 1.00] |
+| `false_alarm_rate` | 0.396 |
+| `tag_f1` | 0.637 |
+| `cost_usd_per_1k_calls` | 0.0432 |
+| `p95_latency_ms` | 509.6 |
+
+Escalation recall is perfect and the cost is 4.3 cents per thousand calls, against roughly 1000
+input tokens per call: the rubric, not the answer, is most of the bill. Tag precision (0.53) and
+the false-alarm rate (0.40) are the weak numbers: Jev routes too many answers to a second tag, so
+the radar escalates on calm text. `unknown` recall is 0.5 on six cases and one case
+(`workload-overtime-every-day`) flips between `negative` and `neutral` across repetitions, which
+caps how tight a gate can be.
+
+The run also caught a contract defect that mocked tests could not: the live API rejects
+`criteria` as a list with `400 invalid_type, expected record`. The schema and rubric v1 said list;
+the payload said record. Fixed in `4e8901f` — the criteria record is now the option-to-meaning map,
+which is also where the per-option wording belongs. Nothing had been measured against the wrong
+shape, so v1 was corrected in place rather than superseded.
 
 ## Consequences
 

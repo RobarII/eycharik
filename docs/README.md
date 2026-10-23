@@ -45,6 +45,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | How is the sentiment eval measured, and why does it abort on an outage? | [decisions/0017-sentiment-eval-v2.md](decisions/0017-sentiment-eval-v2.md) |
 | Why does the cabinet hold a cookie instead of a token? | [decisions/0018-session-cookie-for-the-cabinet.md](decisions/0018-session-cookie-for-the-cabinet.md) |
 | Why is Jev a profile and not a special case? | [decisions/0019-jev-as-a-classifier-profile.md](decisions/0019-jev-as-a-classifier-profile.md) |
+| How good and how expensive is the Jev classifier? | [measurements/2026-10-23-sentiment-jev.md](measurements/2026-10-23-sentiment-jev.md) |
 | How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
 | An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |
 | How is OCR quality measured? | [evals/ocr.yaml](evals/ocr.yaml), `make eval-ocr` |

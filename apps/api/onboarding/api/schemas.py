@@ -33,6 +33,8 @@ class AuditEvent(BaseModel):
 class Question(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    employee_id: str
+    employee_name: str
     text: str
     answered: bool
     reason: str

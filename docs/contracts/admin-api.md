@@ -53,12 +53,14 @@ the cap.
 ```
 
 `RunDetail` extends `RunSummary` with `scenario`, `scenario_version`, `step_message`, `events`,
-and `questions`.
+and `questions`. Its questions are only that employee's, limited to the newest 20.
 
 `Question`:
 
 ```json
 {
+  "employee_id": "1001",
+  "employee_name": "Анна Смирнова",
   "text": "Сколько дней отпуска?",
   "answered": false,
   "reason": "no_sources",

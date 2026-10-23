@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import AsyncIterator
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -20,7 +20,7 @@ from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
 from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.kb import PostgresKnowledgeBase, PostgresKnowledgeWriter
-from onboarding.app.db.models import EmployeeRow
+from onboarding.app.db.models import EmployeeRow, QuestionRow
 from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import (
@@ -288,3 +288,54 @@ async def test_knowledge_round_trip(database: Database) -> None:
     assert results
     assert any(result.chunk.doc_id == "hr/leave-policy" for result in results)
     assert all(result.chunk.id for result in results)
+
+
+async def test_question_queue_carries_the_employee_and_respects_scope(
+    database: Database,
+) -> None:
+    async with database.session() as session:
+        session.add_all(
+            [
+                EmployeeRow(
+                    id="2002",
+                    name="Пётр Петров",
+                    role="Технолог",
+                    department="Производство",
+                    recruiter_id="rec-2",
+                    started_at=date(2026, 10, 21),
+                    audience=["all"],
+                ),
+                QuestionRow(
+                    employee_id=str(EMPLOYEE),
+                    chat_id=1,
+                    text="Сколько дней отпуска?",
+                    answered=False,
+                    reason="no_sources",
+                    citations=[],
+                    asked_at=datetime.now(UTC),
+                ),
+                QuestionRow(
+                    employee_id="2002",
+                    chat_id=2,
+                    text="Где взять ноутбук?",
+                    answered=False,
+                    reason="no_sources",
+                    citations=[],
+                    asked_at=datetime.now(UTC),
+                ),
+            ]
+        )
+
+    mine = await AdminQueries(database).questions(
+        recruiter_id="rec-1", answered=False, limit=10
+    )
+    everyone = await AdminQueries(database).questions(
+        recruiter_id=None, answered=False, limit=10
+    )
+    only_employee = await AdminQueries(database).questions(
+        recruiter_id="rec-1", answered=None, limit=10, employee_id=str(EMPLOYEE)
+    )
+
+    assert [(q.employee_id, q.employee_name) for q in mine] == [(str(EMPLOYEE), "Иван Иванов")]
+    assert {q.employee_id for q in everyone} == {str(EMPLOYEE), "2002"}
+    assert [q.text for q in only_employee] == ["Сколько дней отпуска?"]

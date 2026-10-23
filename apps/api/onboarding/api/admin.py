@@ -65,7 +65,10 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
 
     events = await queries.events(record.employee_id)
     questions = await queries.questions(
-        recruiter_id=_scope(principal), answered=None, limit=20
+        recruiter_id=_scope(principal),
+        answered=None,
+        limit=20,
+        employee_id=record.employee_id,
     )
     return RunDetail(
         **summary.model_dump(),
@@ -118,6 +121,8 @@ def _summary(record: RunRecord, catalog: ScenarioCatalog) -> RunSummary:
 
 def _question(record: QuestionRecord) -> Question:
     return Question(
+        employee_id=record.employee_id,
+        employee_name=record.employee_name,
         text=record.text,
         answered=record.answered,
         reason=record.reason,

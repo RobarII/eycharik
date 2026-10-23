@@ -40,6 +40,8 @@ class EventRecord:
 
 @dataclass(frozen=True, slots=True)
 class QuestionRecord:
+    employee_id: str
+    employee_name: str
     text: str
     answered: bool
     reason: str
@@ -83,6 +85,7 @@ class AdminQueries:
         recruiter_id: str | None,
         answered: bool | None,
         limit: int,
+        employee_id: str | None = None,
     ) -> tuple[QuestionRecord, ...]:
         async with self._database.session() as session:
             statement = select(QuestionRow).join(
@@ -92,18 +95,24 @@ class AdminQueries:
                 statement = statement.where(EmployeeRow.recruiter_id == recruiter_id)
             if answered is not None:
                 statement = statement.where(QuestionRow.answered == answered)
-            rows = await session.scalars(
-                statement.order_by(desc(QuestionRow.asked_at)).limit(limit)
+            if employee_id is not None:
+                statement = statement.where(QuestionRow.employee_id == employee_id)
+            rows = await session.execute(
+                statement.add_columns(EmployeeRow.name)
+                .order_by(desc(QuestionRow.asked_at))
+                .limit(limit)
             )
             return tuple(
                 QuestionRecord(
-                    text=row.text,
-                    answered=row.answered,
-                    reason=row.reason,
-                    citations=list(row.citations),
-                    asked_at=row.asked_at,
+                    employee_id=question.employee_id or "",
+                    employee_name=name,
+                    text=question.text,
+                    answered=question.answered,
+                    reason=question.reason,
+                    citations=list(question.citations),
+                    asked_at=question.asked_at,
                 )
-                for row in rows
+                for question, name in rows.all()
             )
 
 

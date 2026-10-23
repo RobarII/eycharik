@@ -77,3 +77,4 @@ admin-build:
 
 admin-check:
 	cd apps/admin && npm run typecheck
+	cd apps/admin && npm run test

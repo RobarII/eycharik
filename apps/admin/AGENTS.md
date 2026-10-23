@@ -24,6 +24,7 @@ npm install
 npm run dev        # :5173, proxies /admin/api to :8000
 npm run build      # tsc -b + vite build
 npm run typecheck
+npm run test       # vitest: api client, formatting, the reply flow
 ```
 
 ## API

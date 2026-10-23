@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     embed_provider: Literal["openai", "gigachat", "hashing"] = "hashing"
     embed_model: str = "Embeddings"
     embed_dim: int = 1024
+    llm_embed_scope: str = "GIGACHAT_API_PERS"
 
     answer_min_confidence: float = 0.45
     recall_limit: int = 30
@@ -56,7 +57,7 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding"
     )
-    admin_token: SecretStr = SecretStr("")
+    admin_tokens_raw: str = Field(default="", alias="ADMIN_TOKENS")
     admin_page_size: int = 50
 
     prompts_dir: Path = Field(default=REPO_ROOT / "docs" / "prompts")
@@ -81,13 +82,36 @@ class Settings(BaseSettings):
                     ("MAX_BOT_TOKEN", self.max_bot_token.get_secret_value()),
                     ("MAX_WEBHOOK_SECRET", self.max_webhook_secret.get_secret_value()),
                     ("LLM_API_KEY", self.llm_api_key.get_secret_value()),
-                    ("ADMIN_TOKEN", self.admin_token.get_secret_value()),
+                    ("ADMIN_TOKENS", self.admin_tokens_raw),
                 )
                 if not value
             ]
             if missing:
                 raise ValueError(f"production requires {missing}")
         return self
+
+    @property
+    def admin_principals(self) -> dict[str, tuple[str, str]]:
+        """``ADMIN_TOKENS`` as ``token:role:subject`` entries.
+
+        ``subject`` is the recruiter id for ``recruiter`` and the HR id for ``hr_admin``. The
+        subject scopes what the token may read; a token never carries a wildcard.
+        """
+        principals: dict[str, tuple[str, str]] = {}
+        for raw in self.admin_tokens_raw.split(","):
+            entry = raw.strip()
+            if not entry:
+                continue
+            parts = entry.split(":")
+            if len(parts) != 3:
+                raise ValueError("ADMIN_TOKENS entries must be token:role:subject")
+            token, role, subject = parts
+            if not token or role not in {"recruiter", "hr_admin"} or not subject:
+                raise ValueError(
+                    "ADMIN_TOKENS must be comma-separated token:role:subject entries"
+                )
+            principals[token] = (role, subject)
+        return principals
 
     @property
     def is_llm_configured(self) -> bool:

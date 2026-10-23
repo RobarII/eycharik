@@ -22,7 +22,14 @@ from onboarding.core.models import (
     RunId,
 )
 from onboarding.core.transitions import advance, start
-from onboarding.ports import AuditLog, Clock, Directory, RunRepository, StoredRun
+from onboarding.ports import (
+    AuditLog,
+    Clock,
+    Directory,
+    RunAlreadyActiveError,
+    RunRepository,
+    StoredRun,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,9 +67,13 @@ class OnboardingService:
         scenario = self._catalog.active(self._scenario_id)
         now = self._clock.now()
         transition = start(scenario, RunId(str(uuid4())), employee_id, now)
-        await self._runs.create(
-            StoredRun(state=transition.state, reminder=transition.reminder, chat_id=chat_id)
-        )
+        try:
+            await self._runs.create(
+                StoredRun(state=transition.state, reminder=transition.reminder, chat_id=chat_id)
+            )
+        except RunAlreadyActiveError:
+            await self._audit.record("run_creation_raced", employee_id=str(employee_id))
+            return ServiceResult(handled=False)
         await self._audit.record(
             "run_started",
             employee_id=str(employee_id),
@@ -85,11 +96,13 @@ class OnboardingService:
 
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
         transition = advance(scenario, stored.state, event)
+        completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
         await self._runs.save(
             StoredRun(
                 state=transition.state,
                 reminder=transition.reminder,
                 chat_id=stored.chat_id,
+                active=not completed,
             )
         )
         await self._audit.record(
@@ -108,7 +121,6 @@ class OnboardingService:
             event.at.date(),
             question=event.text,
         )
-        completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
         return ServiceResult(handled=True, completed=completed)
 
     async def _act(

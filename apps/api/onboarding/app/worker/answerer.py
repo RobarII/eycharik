@@ -27,6 +27,7 @@ from onboarding.ports import (
     Completion,
     CompletionRequest,
     KnowledgeBase,
+    KnowledgeUnavailableError,
     LLMUnavailableError,
     Message,
     SearchQuery,
@@ -70,21 +71,33 @@ class Answerer:
         profile: EmployeeProfile,
         on_date: date,
     ) -> AnswerOutcome:
-        question = " ".join(question.split())[: self._settings.max_question_chars]
-        if not question:
+        normalized = " ".join(question.split())[: self._settings.max_question_chars]
+        if not normalized:
             return self._escalate(EscalationReason.NO_SOURCES, ())
 
-        retrieved = await self._knowledge.search(
-            SearchQuery(
-                text=question,
-                audience=profile.audience,
-                on_date=on_date,
-                limit=self._settings.recall_limit,
+        try:
+            retrieved = await self._knowledge.search(
+                SearchQuery(
+                    text=normalized,
+                    audience=profile.audience,
+                    on_date=on_date,
+                    limit=self._settings.recall_limit,
+                )
             )
-        )
+        except KnowledgeUnavailableError:
+            return self._escalate(EscalationReason.UNAVAILABLE, ())
         if not retrieved:
             return self._escalate(EscalationReason.NO_SOURCES, ())
 
+        return await self._generate(normalized, profile, on_date, retrieved)
+
+    async def _generate(
+        self,
+        question: str,
+        profile: EmployeeProfile,
+        on_date: date,
+        retrieved: tuple[ScoredChunk, ...],
+    ) -> AnswerOutcome:
         prompt = self._prompts.load(PROMPT_NAME, PROMPT_VERSION)
         rendered = prompt.render(
             {

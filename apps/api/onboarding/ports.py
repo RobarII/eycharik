@@ -70,6 +70,14 @@ class LLMUnavailableError(RuntimeError):
     """Every configured provider failed or the circuit breaker is open."""
 
 
+class KnowledgeUnavailableError(RuntimeError):
+    """Retrieval could not run: the embedder or the database is down."""
+
+
+class RunAlreadyActiveError(RuntimeError):
+    """An employee already has an active run; the database enforced it."""
+
+
 @runtime_checkable
 class Embedder(Protocol):
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
@@ -130,6 +138,7 @@ class StoredRun:
     state: StepState
     reminder: ReminderPlan
     chat_id: ChatId
+    active: bool = True
 
 
 @runtime_checkable
@@ -151,6 +160,8 @@ class RunRepository(Protocol):
 class KnowledgeDocumentRecord:
     id: DocId
     title: str
+    doc_type: str
+    status: str
     audience: tuple[str, ...]
     valid_from: date
     valid_to: date | None
@@ -168,6 +179,40 @@ class KnowledgeWriter(Protocol):
     ) -> None:
         """Replace all chunks of one document atomically."""
         ...
+
+
+@runtime_checkable
+class QuestionLog(Protocol):
+    async def record_question(
+        self,
+        *,
+        employee_id: EmployeeId | None,
+        chat_id: ChatId,
+        text: str,
+        answered: bool,
+        reason: str,
+        citations: Sequence[str],
+        latency_ms: int | None,
+    ) -> None:
+        """Append one asked question. The recruiter dashboard reads this table."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class ClaimedJob:
+    id: int
+    kind: str
+    payload: dict[str, object]
+    attempts: int
+
+
+@runtime_checkable
+class JobSink(Protocol):
+    async def claim(self) -> tuple[ClaimedJob, ...]: ...
+
+    async def complete(self, job: ClaimedJob) -> None: ...
+
+    async def fail(self, job: ClaimedJob, error: Exception) -> None: ...
 
 
 @runtime_checkable

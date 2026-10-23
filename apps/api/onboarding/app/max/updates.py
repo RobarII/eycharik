@@ -19,7 +19,7 @@ from typing import Any
 
 from onboarding.core.models import ChatId, Event, EventKind
 
-HANDLED_TYPES = frozenset({"message_created", "message_callback"})
+HANDLED_TYPES = frozenset({"message_created", "message_callback", "bot_started"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,7 +57,9 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
         else _synthetic_id(update_type, payload, chat_id)
     )
 
-    if update_type == "message_created":
+    if update_type == "bot_started":
+        event = Event(kind=EventKind.EMPLOYEE_CREATED, at=at)
+    elif update_type == "message_created":
         text = body.get("text")
         event = Event(
             kind=EventKind.MESSAGE_RECEIVED,

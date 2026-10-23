@@ -19,7 +19,9 @@ from onboarding.core.models import (
     EmployeeProfile,
     EscalationReason,
 )
-from onboarding.ports import AuditLog, Messaging, OutboundMessage
+from onboarding.ports import AuditLog, Messaging, OutboundMessage, QuestionLog
+
+MAX_LOGGED_QUESTION = 2000
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,11 +40,13 @@ class ActionExecutor:
         answerer: Answerer,
         copy: Copy,
         audit: AuditLog | None = None,
+        questions: QuestionLog | None = None,
     ) -> None:
         self._messaging = messaging
         self._answerer = answerer
         self._copy = copy
         self._audit = audit or NullAudit()
+        self._questions = questions
 
     async def execute(self, action: Action, context: ActionContext) -> None:
         match action.kind:
@@ -86,6 +90,17 @@ class ActionExecutor:
             await self._audit.record("answer_skipped", reason="no_profile_or_question")
             return
         outcome = await self._answerer.answer(context.question, context.profile, context.on_date)
+        if self._questions is not None:
+            await self._questions.record_question(
+                employee_id=context.profile.employee_id,
+                chat_id=context.chat_id,
+                text=context.question[:MAX_LOGGED_QUESTION],
+                answered=not outcome.escalated,
+                reason=outcome.reason,
+                citations=[str(citation) for citation in outcome.citations],
+                latency_ms=outcome.completion.latency_ms if outcome.completion else None,
+            )
         await self._messaging.send(
             OutboundMessage(chat_id=context.chat_id, text=outcome.text)
         )
+

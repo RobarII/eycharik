@@ -58,17 +58,21 @@ class GigaChatProvider:
     _expires_at: float = field(default=0.0, init=False)
 
     async def prepare(self, client: httpx.AsyncClient) -> PreparedRequest:
-        if self._token is None or time.monotonic() >= self._expires_at - self.refresh_margin_s:
-            await self._refresh(client)
-        assert self._token is not None
         return PreparedRequest(
             url=f"{self.base_url.rstrip('/')}/chat/completions",
             headers={
-                "Authorization": f"Bearer {self._token}",
+                "Authorization": f"Bearer {await self.authorization(client)}",
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
         )
+
+    async def authorization(self, client: httpx.AsyncClient) -> str:
+        """Bearer token for any endpoint, refreshed with a safety margin."""
+        if self._token is None or time.monotonic() >= self._expires_at - self.refresh_margin_s:
+            await self._refresh(client)
+        assert self._token is not None
+        return self._token
 
     async def _refresh(self, client: httpx.AsyncClient) -> None:
         try:

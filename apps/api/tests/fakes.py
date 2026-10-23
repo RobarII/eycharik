@@ -82,7 +82,7 @@ class InMemoryRuns:
 
     async def find_active_by_employee(self, employee_id: EmployeeId) -> StoredRun | None:
         for run in self.runs.values():
-            if run.state.employee_id == employee_id:
+            if run.state.employee_id == employee_id and run.active:
                 return run
         return None
 

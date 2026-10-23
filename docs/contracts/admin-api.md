@@ -1,59 +1,80 @@
 # Admin API contract
 
-The recruiter cockpit reads this API. The bot never calls it. Authentication is a bearer token
-issued by the platform SSO; the token carries `sub`, `role`, and `recruiter_id`.
+The recruiter cabinet reads this API. The bot never calls it.
 
-## Authorisation
+## Authentication
+
+`Authorization: Bearer <token>`. Tokens are configured in `ADMIN_TOKENS` as
+`token:role:subject` entries:
+
+```
+ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
+```
 
 | Role | Scope |
 |---|---|
-| `recruiter` | only employees whose `recruiter_id` matches the token |
-| `hr_admin` | all employees, all scenarios, knowledge management |
-| `employee` | no admin access |
+| `recruiter` | employees whose `recruiter_id` equals the token's subject |
+| `hr_admin` | every employee and every question |
 
-A request outside the scope answers `404`, not `403`: the existence of another recruiter's
-employee is not disclosed.
+There is no session and no cookie. Tokens are compared in constant time. An unknown or missing
+token answers `401`; a run outside the caller's scope answers `404`, so the existence of another
+recruiter's employee is not disclosed.
 
 ## Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/admin/employees?status=active&cursor=…` | paginated runs with step, progress, last activity |
-| `GET` | `/admin/employees/{employee_id}` | one run: steps, events, escalations, transcript pointers |
-| `POST` | `/admin/employees/{employee_id}/messages` | send a manual message through the bot |
-| `POST` | `/admin/employees/{employee_id}/escalations/{id}/resolve` | close an escalation with a note |
-| `GET` | `/admin/scenarios` | scenario versions, active flag |
-| `GET` | `/admin/metrics/summary?from=&to=` | deflection, escalation rate, median time per step |
-| `GET` | `/healthz`, `/readyz` | liveness and readiness (no auth inside the cluster) |
+| `GET` | `/admin/api/runs?limit=50` | active and completed runs, newest activity first |
+| `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
+| `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
+| `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
+
+`limit` is bounded to `1..200`. There is no cursor pagination yet: the cabinet asks for the newest
+50 and the dataset is one cohort of hires. If a cohort outgrows that, add a cursor before raising
+the cap.
 
 ## Shapes
 
-`EmployeeSummary`:
+`RunSummary`:
 
 ```json
 {
-  "employee_id": "uuid",
-  "full_name": "Иванов Иван",
-  "department": "ИТ",
-  "scenario_id": "onboarding_default",
-  "scenario_version": 3,
-  "current_step": "collect_documents",
-  "started_at": "2026-10-20T09:00:00Z",
-  "last_activity_at": "2026-10-23T07:12:00Z",
-  "progress": 0.4,
-  "open_escalations": 1
+  "run_id": "0f0a6f4e-1b1c-4a58-9d1e-7d6f2a1f9b3c",
+  "employee_id": "1001",
+  "name": "Анна Смирнова",
+  "role": "Инженер-технолог",
+  "department": "Производство",
+  "step_id": "documents",
+  "step_number": 4,
+  "steps_total": 6,
+  "entered_at": "2026-10-20T09:00:00Z",
+  "status": "active"
 }
 ```
 
-Errors are RFC 9457 problem details:
+`RunDetail` extends `RunSummary` with `scenario`, `scenario_version`, `step_message`, `events`,
+and `questions`.
+
+`Question`:
 
 ```json
-{"type": "about:blank", "title": "not_found", "status": 404, "detail": "employee not found"}
+{
+  "text": "Сколько дней отпуска?",
+  "answered": false,
+  "reason": "no_sources",
+  "citations": [],
+  "asked_at": "2026-10-23T07:12:00Z"
+}
 ```
+
+## Errors
+
+FastAPI's default shape: `{"detail": "..."}` with `401`, `403`, `404`, or `422` for a bad query.
+The cabinet shows the detail text and never guesses from the status code alone.
 
 ## Rules
 
-- The API is read-mostly. Mutations are limited to messages, escalations, and knowledge status.
-- Every mutation writes an audit row with the actor, the target, and the before/after.
-- Listing is cursor-based; no offset pagination, no unbounded responses.
-- Timestamps are UTC ISO 8601 with `Z`.
+- The API is read-only today. Manual messages and escalation resolution are the next mutations.
+- Every answer attempt already writes an audit row and a question row; the cabinet does not
+  assemble them from logs.
+- Timestamps are UTC ISO 8601.

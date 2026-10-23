@@ -1,9 +1,0 @@
-version: 1
-name: router
-model: gigachat-2
-temperature: 0.0
-max_tokens: 60
-supersedes: null
-eval: null
-notes: >
-  Cheap classification. Rules in code run first; this prompt handles the ambiguous remainder.

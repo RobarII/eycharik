@@ -23,7 +23,7 @@ One meaning per term. Code, docs, and prompts use these words and no synonyms.
 | **deflection** | A question resolved by the bot without escalation. The main product metric. |
 | **audience** | The access scope of a document or chunk: `all`, `dept:<name>`, `hr_only`. |
 | **eval case** | A question with expected behaviour: required facts, required citations, or required escalation. |
-| **gateway** | The process that terminates MAX webhooks, validates them, and enqueues events. |
-| **worker** | The process that processes queued events: scenarios, retrieval, generation, sending. |
-| **scheduler** | The loop that turns due reminders into queued jobs. |
+| **api** | The process that terminates MAX webhooks, validates them, enqueues events, and serves the admin API. It never calls the model. |
+| **worker** | The process that processes queued events: scenarios, retrieval, generation, sending, dispatch, and the reminder tick. |
+| **scheduler** | The loop inside the worker that turns due reminders into queued jobs. |
 | **outbox** | A table of committed future work. Timers and outgoing messages are rows, not sleeping tasks. |

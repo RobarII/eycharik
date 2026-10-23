@@ -3,84 +3,105 @@
 ## Context
 
 Newcomers ask questions during their first weeks; recruiters track progress and intervene when
-someone stalls. The assistant answers from the company knowledge base, in the company tone, and
-escalates anything it cannot ground. MAX is the only client; there is no mobile app to build.
+someone stalls. The assistant answers from the company knowledge base in the company tone and
+escalates anything it cannot ground. MAX is the only client. The recruiter cabinet is a separate
+web app that reads the admin API.
 
 ## Building blocks
 
 ```
-MAX ──webhook──► gateway ──► queue (Postgres) ──► worker ──► MAX API
-                    │                              │
-                    │                              ├─ scenario engine
-                    │                              ├─ retrieval + answer
-                    │                              └─ escalation
-                    └─ processed_events            │
-                                                   ▼
-                                   Postgres: runs, events, outbox,
-                                             knowledge, chunks, audit
-scheduler ──► outbox (due reminders) ──► queue
-admin UI ──► admin API ──► Postgres
+MAX ──webhook──► api ──► Postgres: events + jobs
+                              │
+                              ▼
+                        worker ──► scenario engine ──► outbox ──► MAX API
+                              │            │
+                              │            └──► retrieval ──► one model call ──► grounding
+                              └──► reminder tick ──► jobs (timeout)
+
+recruiter cabinet ──► admin API ──► Postgres: runs, questions, audit
 ```
 
-One deployable image runs three processes: `gateway` (HTTP, fast), `worker` (slow work), and
-`scheduler` (timers). They share code and the database, not memory.
+Two processes from one image:
+
+| Process | Responsibility |
+|---|---|
+| `api` | MAX webhook, admin API, health. Never calls the model. |
+| `worker` | claim jobs, apply scenario transitions, answer questions, dispatch the outbox, tick due reminders. |
+
+They share code and the database, not memory. The reminder tick runs inside the worker loop every
+25 iterations; it is not a third process.
 
 ## A message, end to end
 
-1. `gateway` receives `POST /webhook/max`, checks `X-Max-Bot-Api-Secret`, parses the update into a
-   typed event, inserts a `processed_events` row and a `jobs` row in one transaction, returns
-   `200` in the same millisecond. A duplicate delivery hits the unique index and exits early.
+1. `api` receives `POST /webhook`, checks `X-Max-Bot-Api-Secret` in constant time, parses the
+   update, and inserts an `events` row plus a `jobs` row in one transaction. It answers `200`
+   immediately. A duplicate delivery fails the `events` primary key and exits without a job.
 2. `worker` claims the job with `FOR UPDATE SKIP LOCKED`, loads the run, and applies the scenario
-   transition in memory: a pure function `(step_state, event) -> decision`.
-3. A `decision` is one of: `send`, `wait`, `escalate`, `complete`. The worker persists the new
-   state and the outbox rows (messages, timers) in one transaction.
-4. When the decision is an answer, retrieval runs: ACL filter, hybrid search, rerank, then one
-   model call with a versioned prompt and a JSON answer contract.
-5. The answer is validated: citations must be a subset of the retrieved chunk ids; otherwise the
-   decision degrades to escalation. The validated answer is sent to MAX.
-6. Every step writes an audit row: trace id, run id, prompt version, retrieved chunks with scores,
-   token counts, cost, latency.
+   transition: a pure function `(scenario, step_state, event) -> transition`.
+3. The transition's new state and reminder are stored first. Only then are messages written to the
+   `messages` outbox, one transaction per message. A crash between the two repeats a message at
+   worst; it never loses a step.
+4. For a question, retrieval runs: ACL and validity predicates in SQL, vector and lexical search,
+   reciprocal rank fusion, then one model call with a versioned prompt and a JSON answer contract.
+5. The answer is validated: every citation must be a chunk that retrieval returned, and confidence
+   must clear `ANSWER_MIN_CONFIDENCE`. Otherwise the decision degrades to escalation with the
+   matching copy.
+6. A dispatcher sends outbox rows to MAX with per-chat pacing of 2 messages per second and
+   exponential retry, up to 5 attempts. Delivery is at-least-once.
+7. The answerer writes an audit row: prompt version, retrieved count, citation count, tokens,
+   cost, latency. The action executor writes the question row that feeds the cabinet.
 
 ## Invariants
 
-1. The gateway never calls the model and never blocks on the network beyond MAX delivery.
-2. `core/` is pure: no I/O, no clock, no randomness. All of it is testable without a database.
-3. A live run never changes scenario version.
+1. `api` never calls the model and never waits for MAX delivery.
+2. `core/` is pure: no I/O, no clock, no randomness. `tests/test_core_purity.py` enforces it.
+3. A live run never changes scenario version; the catalog can hold several versions at once.
 4. An answer without a citation from the retrieved set is not sent.
-5. An outbound message is written to the outbox before it is sent; sending is at-least-once and
-   message ids are deduplicated by `(run_id, step_id, attempt)`.
-6. Knowledge documents never leave their audience. The ACL filter is applied in SQL before ranking.
-7. Secrets never reach logs, traces, or error payloads.
+5. State is persisted before the message that announces it.
+6. Knowledge documents never leave their audience. ACL and validity are SQL predicates applied
+   before ranking, not filters on the result.
+7. Secrets live in `SecretStr` and are never written to logs or audit fields.
 
 ## Failure modes
 
-| Failure | Behaviour | Detection |
-|---|---|---|
-| MAX webhook retries a delivery | duplicate ignored by `processed_events` | `gateway_duplicates_total` |
-| MAX API 5xx or timeout | outbox row stays pending, exponential retry, max 5 attempts | `outbox_pending_age_seconds` |
-| Model provider 5xx / timeout | one retry, then cached answer, then escalation with a human handoff | `llm_failures_total`, `escalations_total` |
-| Model returns ungrounded JSON | answer rejected, escalation | `answer_rejected_total` |
-| Knowledge is stale | document is excluded by `valid_to`; question escalates | `kb_documents_expired` |
-| Worker backlog | admins see rising queue age; gateway keeps accepting | `jobs_pending_age_seconds` |
-| Postgres unavailable | gateway returns 503, MAX retries; no data loss | `db_errors_total` |
+| Failure | Behaviour |
+|---|---|
+| MAX retries a delivery | `events` primary key rejects it; no second job |
+| MAX API 5xx or timeout | message row stays pending, retried with backoff, parked after 5 attempts |
+| Model provider 5xx, timeout, or open breaker | one retry, then an escalation with `unavailable` copy |
+| Model returns ungrounded or malformed JSON | answer rejected, escalation, `answer_rejected` audit row |
+| Embedder or database fails during retrieval | escalation with `unavailable` copy |
+| Knowledge is stale | `valid_to` excludes the document; the question escalates |
+| Worker backlog | jobs wait; the webhook keeps accepting; state is not lost |
+| Postgres unavailable | webhook answers 503; MAX retries |
+| A scenario file is invalid | the process refuses to start |
+| A job payload is invalid | job fails, is retried, then parked with `last_error` |
 
 ## Deliberately absent
 
-No message broker, no vector database, no orchestrator, no microservices. One Postgres holds
-state, vectors, queue, and outbox; the scale of an onboarding bot does not justify more. See
+No message broker, no separate vector database, no orchestrator, no microservices. One Postgres
+holds state, vectors, queue, outbox, questions, and audit; the workload does not justify more. See
 [decision 0005](decisions/0005-single-postgres.md).
 
 ## Module map
 
 | Path | Responsibility |
 |---|---|
-| `apps/api/onboarding/core/` | pure domain: scenario transitions, chunking, ranking fusion, grounding, prompt rendering |
-| `apps/api/onboarding/ports.py` | protocols for clock, model, embedder, knowledge, messaging, repositories |
-| `apps/api/onboarding/app/max/` | MAX HTTP client and payload mapping |
-| `apps/api/onboarding/app/gateway/` | webhook validation, idempotency, enqueue |
-| `apps/api/onboarding/app/worker/` | job handling, scenario execution, answer pipeline |
-| `apps/api/onboarding/app/scheduler/` | due-reminder loop |
-| `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, migrations |
-| `apps/api/onboarding/app/llm/` | provider adapters behind one interface |
-| `apps/api/onboarding/app/admin/` | admin API and RBAC |
-| `apps/admin/` | recruiter cockpit |
+| `apps/api/onboarding/core/` | pure domain: models, scenario parser, transitions, chunking, ranking, grounding, prompt rendering, breaker, ACL |
+| `apps/api/onboarding/ports.py` | protocols for clock, model, embedder, knowledge, messaging, repositories, audit |
+| `apps/api/onboarding/app/max/` | MAX HTTP client, update parsing, keyboards |
+| `apps/api/onboarding/api/` | FastAPI app, webhook, admin routes, bearer auth, response schemas |
+| `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base |
+| `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop |
+| `apps/api/onboarding/app/llm/` | provider adapters, gateway with retry/breaker/cost, embeddings |
+| `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |
+| `apps/api/onboarding/scenarios/` | versioned scenario YAML |
+| `apps/api/onboarding/cli.py` | `ingest`, `seed`, `check` commands |
+| `apps/admin/` | recruiter cabinet (React + TypeScript) |
+| `knowledge/` | the corpus, one Markdown file per document |
+
+## Performance targets
+
+One question is one retrieval, one model call, one validation, one send. Target p95 end-to-end
+delivery is 3 seconds with a warm model. The webhook itself stays under 200 ms: it does two
+inserts and returns.

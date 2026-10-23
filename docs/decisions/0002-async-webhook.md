@@ -10,9 +10,9 @@ retrieval and a model call: p95 is seconds, and a provider incident makes it ten
 
 ## Decision
 
-The gateway validates the request, writes a `processed_events` row and a `jobs` row in one
-transaction, and returns `200`. Work happens in the worker. Idempotency is a unique index on
-`event_id`, not a cache.
+The API process validates the request, writes an `events` row and a `jobs` row in one
+transaction, and returns `200`. Work happens in the worker. Idempotency is the `events` primary
+key on the MAX event key, not a cache.
 
 ## Consequences
 
@@ -26,3 +26,8 @@ transaction, and returns `200`. Work happens in the worker. Idempotency is a uni
 Synchronous handling — rejected: a slow model turns into MAX retries and duplicate messages.
 External broker (RabbitMQ, Redis Streams) — rejected: another stateful service for a workload of
 hundreds of messages per day, see [0005](0005-single-postgres.md).
+
+## Amendment 2026-10-23
+
+The first implementation names the tables `events` and `jobs`, and the process is the `api`
+service. The decision is unchanged; only the names moved.

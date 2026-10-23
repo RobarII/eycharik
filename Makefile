@@ -8,8 +8,9 @@ PY := uv run
 
 install:
 	uv sync
+	cd apps/admin && npm ci
 
-check: lint types test docs
+check: lint types test docs admin-check
 
 lint:
 	$(PY) ruff check .
@@ -83,5 +84,6 @@ admin-build:
 	cd apps/admin && npm run build
 
 admin-check:
+	cd apps/admin && npm run lint
 	cd apps/admin && npm run typecheck
 	cd apps/admin && npm run test

@@ -9,6 +9,7 @@ import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { countLabel, formatDateTime, initials } from "../format";
 import type { Question, ResolvedQuestion, RunSummary } from "../types";
 import { useUnauthorized } from "../useUnauthorized";
+import { useSession } from "../session";
 
 type Status = "unanswered" | "answered" | "all";
 
@@ -26,6 +27,7 @@ export function QuestionsPage({
   onUnauthorized: () => void;
 }) {
   const [status, setStatus] = useState<Status>("unanswered");
+  const { can } = useSession();
   const query = useQuery({
     queryKey: ["questions", status],
     queryFn: () => fetchQuestions(status),
@@ -102,6 +104,7 @@ export function QuestionsPage({
               run={byEmployee.get(question.employee_id)}
               onOpenRun={onOpenRun}
               resolve={resolve}
+              canResolve={can("questions.resolve")}
             />
           ))}
         </ul>
@@ -121,11 +124,13 @@ function QuestionCard({
   run,
   onOpenRun,
   resolve,
+  canResolve,
 }: {
   question: Question;
   run: RunSummary | undefined;
   onOpenRun: (runId: string) => void;
   resolve: ResolveMutation;
+  canResolve: boolean;
 }) {
   return (
     <li className="card question-card">
@@ -167,7 +172,14 @@ function QuestionCard({
           {question.resolved_by ? ` · ${question.resolved_by}` : ""}
         </p>
       ) : null}
-      {!question.answered ? <ReplyForm question={question} resolve={resolve} /> : null}
+      {!question.answered && canResolve ? (
+        <ReplyForm question={question} resolve={resolve} />
+      ) : null}
+      {!question.answered && !canResolve ? (
+        <p className="muted small">
+          Отвечать на вопросы может рекрутёр или HR — у вашей роли нет этого права.
+        </p>
+      ) : null}
     </li>
   );
 }

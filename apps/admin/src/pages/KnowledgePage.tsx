@@ -4,6 +4,7 @@ import { useState } from "react";
 import { fetchKnowledge, uploadKnowledge } from "../api";
 import { ErrorNote } from "../components/States";
 import { useUnauthorized } from "../useUnauthorized";
+import { useSession } from "../session";
 import { countLabel, formatDateTime } from "../format";
 
 const TEMPLATE = `---
@@ -22,6 +23,8 @@ valid_from: 2026-10-01
 
 export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }) {
   const queryClient = useQueryClient();
+  const { can } = useSession();
+  const canWrite = can("knowledge.write");
   const [text, setText] = useState("");
   const query = useQuery({
     queryKey: ["knowledge"],
@@ -56,7 +59,8 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
         </div>
       </header>
 
-      <div className="knowledge-layout">
+      <div className={canWrite ? "knowledge-layout" : "knowledge-layout knowledge-layout-read"}>
+        {canWrite ? (
         <section className="card">
           <div className="card-head">
             <h2>Новый документ</h2>
@@ -110,10 +114,11 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
             ) : null}
           </form>
         </section>
+        ) : null}
 
         <section className="card">
           <div className="card-head">
-            <h2>Активные документы</h2>
+            <h2>{canWrite ? "Активные документы" : "Что ассистент знает"}</h2>
             <span className="card-note">
               {query.isSuccess ? `${query.data.items.length} в индексе` : "…"}
             </span>

@@ -5,7 +5,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchQuestions, fetchRuns, resolveQuestion } from "../api";
 import type { Question, RunSummary } from "../types";
+import { SessionProvider, sessionFor } from "../session";
 import { QuestionsPage } from "./QuestionsPage";
+
+function session(capabilities: Array<"questions.resolve" | "questions.read">) {
+  return sessionFor({
+    role: "recruiter",
+    subject: "rec-1",
+    scope: { recruiter_id: "rec-1", department: null },
+    capabilities,
+    expires_at: null,
+  });
+}
 
 vi.mock("../api", () => ({
   fetchQuestions: vi.fn(),
@@ -40,13 +51,20 @@ const question: Question = {
   resolved_by: null,
 };
 
-function renderPage() {
+function renderPage(
+  capabilities: Array<"questions.resolve" | "questions.read"> = [
+    "questions.read",
+    "questions.resolve",
+  ],
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <QuestionsPage onOpenRun={vi.fn()} onUnauthorized={vi.fn()} />
+      <SessionProvider value={session(capabilities)}>
+        <QuestionsPage onOpenRun={vi.fn()} onUnauthorized={vi.fn()} />
+      </SessionProvider>
     </QueryClientProvider>,
   );
 }
@@ -117,6 +135,14 @@ describe("QuestionsPage", () => {
     expect(await screen.findByText(/Закрыт/)).toBeInTheDocument();
     expect(screen.getByText(/rec-1/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ответить в MAX" })).not.toBeInTheDocument();
+  });
+
+  it("offers no reply button to a role that may not resolve", async () => {
+    renderPage(["questions.read"]);
+
+    expect(await screen.findByText(/Когда начнёт действовать ДМС/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ответить в MAX" })).not.toBeInTheDocument();
+    expect(screen.getByText(/нет этого права/)).toBeInTheDocument();
   });
 
   it("shows an empty state rather than a blank page", async () => {

@@ -1833,6 +1833,11 @@ code {
   align-items: start;
 }
 
+.knowledge-layout-read {
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 780px;
+}
+
 .upload {
   display: grid;
   gap: 10px;

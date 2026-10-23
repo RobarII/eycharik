@@ -48,6 +48,17 @@
 6. Send `/start` from a test account. Expect: an `events` row, a `jobs` row that reaches `done`, an
    outbox row that reaches `sent`, and one welcome message in MAX.
 
+7. Open the cabinet over HTTPS and check the response headers on `/`:
+
+   ```bash
+   curl -sI https://$HOST/ | grep -iE 'content-security-policy|x-frame|x-content-type|referrer'
+   ```
+
+   `apps/admin/nginx.conf` sends a policy with no `unsafe-inline` for scripts, `frame-ancestors
+   'none'`, `nosniff` and `no-referrer`. If any of them is missing, a proxy in front of the container
+   is stripping headers: fix that before handing the cabinet to recruiters. The session cookie is
+   `Secure`, so a plain-HTTP host silently loses the login.
+
 ## Verification queries
 
 ```sql

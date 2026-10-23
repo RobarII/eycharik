@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useMemo, type ReactNode } from "react";
 
 import { fetchDigest, fetchOverview, fetchQuestions, fetchRuns } from "../api";
+import { REFRESH } from "../config";
 import {
   ArrowUpRightIcon,
   ChatIcon,
@@ -43,19 +44,19 @@ export function OverviewPage({
     refetchInterval: 30_000,
   });
   const runs = useQuery({
-    queryKey: ["runs"],
-    queryFn: () => fetchRuns(),
-    refetchInterval: 15_000,
+    queryKey: ["runs", "cohort"],
+    queryFn: () => fetchRuns({ status: "active", limit: 200 }),
+    refetchInterval: REFRESH.runs,
   });
   const questions = useQuery({
     queryKey: ["questions", "unanswered", "overview"],
-    queryFn: () => fetchQuestions("unanswered", 4),
-    refetchInterval: 15_000,
+    queryFn: () => fetchQuestions({ status: "unanswered", limit: 4 }),
+    refetchInterval: REFRESH.questions,
   });
   const digest = useQuery({
     queryKey: ["digest"],
     queryFn: () => fetchDigest(7),
-    refetchInterval: 30_000,
+    refetchInterval: REFRESH.digest,
   });
 
   const failure = overview.error ?? runs.error ?? digest.error ?? questions.error;

@@ -1,16 +1,28 @@
-import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 
-import { fetchRuns } from "../api";
+import { fetchRuns, type RunStatus } from "../api";
 import { SearchIcon } from "../components/Icons";
 import { Progress } from "../components/Progress";
 import { StatusPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { useUnauthorized } from "../useUnauthorized";
 import { daysSince, formatDateTime, initials } from "../format";
+import { REFRESH } from "../config";
+import { setParam, useRoute } from "../route";
 import type { RunSummary } from "../types";
 
-type Filter = "active" | "completed" | "all";
+const FILTERS: ReadonlyArray<readonly [RunStatus, string]> = [
+  ["active", "В процессе"],
+  ["completed", "Завершённые"],
+  ["all", "Все"],
+];
+
+const SEARCH_DELAY_MS = 250;
+
+function readStatus(value: string | null): RunStatus {
+  return FILTERS.some(([status]) => status === value) ? (value as RunStatus) : "active";
+}
 
 export function RunsPage({
   onOpen,
@@ -19,30 +31,43 @@ export function RunsPage({
   onOpen: (runId: string) => void;
   onUnauthorized: () => void;
 }) {
-  const [filter, setFilter] = useState<Filter>("active");
-  const [search, setSearch] = useState("");
-  const query = useQuery({
-    queryKey: ["runs"],
-    queryFn: () => fetchRuns(),
-    refetchInterval: 15_000,
+  const { route, setParams } = useRoute();
+  const status = readStatus(route.params.get("status"));
+  const search = route.params.get("q") ?? "";
+  const [draft, setDraft] = useState(search);
+
+  // The address bar is the state, so an external change (a shared link) wins over the draft.
+  useEffect(() => setDraft(search), [search]);
+
+  const commitSearch = useCallback(
+    (value: string) => setParams((params) => setParam(params, "q", value.trim())),
+    [setParams],
+  );
+
+  useEffect(() => {
+    if (draft.trim() === search) return;
+    const timer = setTimeout(() => commitSearch(draft), SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [draft, search, commitSearch]);
+
+  const query = useInfiniteQuery({
+    queryKey: ["runs", status, search],
+    queryFn: ({ pageParam }) =>
+      fetchRuns({ status, q: search, cursor: pageParam, limit: 50 }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next_cursor,
+    refetchInterval: REFRESH.runs,
   });
 
   useUnauthorized(query.error, onUnauthorized);
 
-  const items = useMemo(() => {
-    const all = query.data?.items ?? [];
-    const term = search.trim().toLowerCase();
-    return all.filter((run) => {
-      const matchesFilter = filter === "all" || run.status === filter;
-      const matchesSearch =
-        !term ||
-        [run.name, run.role, run.department, run.employee_id]
-          .join(" ")
-          .toLowerCase()
-          .includes(term);
-      return matchesFilter && matchesSearch;
-    });
-  }, [query.data, filter, search]);
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = query.data?.pages[0]?.total ?? 0;
+  const filtered = status !== "all" || search.length > 0;
+
+  function changeStatus(next: RunStatus) {
+    setParams((params) => setParam(params, "status", next === "active" ? "" : next));
+  }
 
   return (
     <section className="page">
@@ -56,26 +81,20 @@ export function RunsPage({
           </p>
         </div>
         <div className="page-count" aria-live="polite">
-          {query.isSuccess ? `${items.length} в выборке` : "…"}
+          {query.isSuccess ? `${items.length} из ${total}` : "…"}
         </div>
       </header>
 
       <div className="toolbar">
         <div className="segmented" role="tablist" aria-label="Фильтр по статусу">
-          {(
-            [
-              ["active", "В процессе"],
-              ["completed", "Завершённые"],
-              ["all", "Все"],
-            ] as const
-          ).map(([value, label]) => (
+          {FILTERS.map(([value, label]) => (
             <button
               key={value}
               type="button"
               role="tab"
-              aria-selected={filter === value}
-              className={filter === value ? "segment segment-on" : "segment"}
-              onClick={() => setFilter(value)}
+              aria-selected={status === value}
+              className={status === value ? "segment segment-on" : "segment"}
+              onClick={() => changeStatus(value)}
             >
               {label}
             </button>
@@ -86,8 +105,8 @@ export function RunsPage({
           <SearchIcon className="search-icon" width={16} height={16} />
           <input
             type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
             placeholder="Имя, роль, подразделение"
           />
         </label>
@@ -98,9 +117,15 @@ export function RunsPage({
         <ErrorNote message={query.error.message} onRetry={() => void query.refetch()} />
       ) : null}
       {query.isSuccess && items.length === 0 ? (
-        <EmptyState title="Пока никого нет">
-          Сотрудник появится здесь, когда напишет боту в MAX и начнёт онбординг.
-        </EmptyState>
+        filtered ? (
+          <EmptyState title="Ничего не найдено">
+            По этому фильтру сотрудников нет. Сбросьте поиск или выберите другой статус.
+          </EmptyState>
+        ) : (
+          <EmptyState title="Пока никого нет">
+            Сотрудник появится здесь, когда напишет боту в MAX и начнёт онбординг.
+          </EmptyState>
+        )
       ) : null}
 
       {items.length > 0 ? (
@@ -109,6 +134,19 @@ export function RunsPage({
             <RunCard key={run.run_id} run={run} onOpen={onOpen} />
           ))}
         </ul>
+      ) : null}
+
+      {query.hasNextPage ? (
+        <div className="page-more">
+          <button
+            type="button"
+            className="button button-quiet"
+            disabled={query.isFetchingNextPage}
+            onClick={() => void query.fetchNextPage()}
+          >
+            {query.isFetchingNextPage ? "Загружаем…" : "Показать ещё"}
+          </button>
+        </div>
       ) : null}
     </section>
   );
@@ -139,7 +177,7 @@ function RunCard({ run, onOpen }: { run: RunSummary; onOpen: (id: string) => voi
         </span>
         <span className="run-side">
           <span className="run-step">Шаг: {run.step_title ?? run.step_id}</span>
-          <span className="run-time" title={formatDateTime(run.entered_at)}>
+          <span className="run-time" title={`В сценарии с ${formatDateTime(run.entered_at)}`}>
             {daysSince(run.entered_at)} в сценарии
           </span>
           <span className="chevron" aria-hidden="true">

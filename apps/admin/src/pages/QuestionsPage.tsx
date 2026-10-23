@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseMutationResult } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -10,6 +10,8 @@ import { countLabel, formatDateTime, initials } from "../format";
 import type { Question, ResolvedQuestion, RunSummary } from "../types";
 import { useUnauthorized } from "../useUnauthorized";
 import { useSession } from "../session";
+import { REFRESH } from "../config";
+import { setParam, useRoute } from "../route";
 
 type Status = "unanswered" | "answered" | "all";
 
@@ -19,6 +21,10 @@ const TABS: ReadonlyArray<readonly [Status, string]> = [
   ["answered", "Отвеченные"],
 ];
 
+function readStatus(value: string | null): Status {
+  return TABS.some(([status]) => status === value) ? (value as Status) : "unanswered";
+}
+
 export function QuestionsPage({
   onOpenRun,
   onUnauthorized,
@@ -26,14 +32,21 @@ export function QuestionsPage({
   onOpenRun: (runId: string) => void;
   onUnauthorized: () => void;
 }) {
-  const [status, setStatus] = useState<Status>("unanswered");
+  const { route, setParams } = useRoute();
+  const status = readStatus(route.params.get("status"));
   const { can } = useSession();
-  const query = useQuery({
+  const query = useInfiniteQuery({
     queryKey: ["questions", status],
-    queryFn: () => fetchQuestions(status),
-    refetchInterval: 15_000,
+    queryFn: ({ pageParam }) => fetchQuestions({ status, cursor: pageParam, limit: 50 }),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.next_cursor,
+    refetchInterval: REFRESH.questions,
   });
-  const runs = useQuery({ queryKey: ["runs"], queryFn: () => fetchRuns() });
+  const runs = useQuery({
+    queryKey: ["runs", "directory"],
+    queryFn: () => fetchRuns({ status: "all", limit: 200 }),
+    staleTime: 60_000,
+  });
   const queryClient = useQueryClient();
   const resolve = useMutation({
     mutationFn: ({ id, text }: { id: number; text: string }) => resolveQuestion(id, text),
@@ -49,6 +62,8 @@ export function QuestionsPage({
   const byEmployee = new Map<string, RunSummary>(
     (runs.data?.items ?? []).map((run) => [run.employee_id, run]),
   );
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  const total = query.data?.pages[0]?.total ?? 0;
 
   return (
     <section className="page">
@@ -62,9 +77,7 @@ export function QuestionsPage({
           </p>
         </div>
         <div className="page-count" aria-live="polite">
-          {query.isSuccess
-            ? countLabel(query.data.items.length, "вопрос", "вопроса", "вопросов")
-            : "…"}
+          {query.isSuccess ? countLabel(total, "вопрос", "вопроса", "вопросов") : "…"}
         </div>
       </header>
 
@@ -77,7 +90,11 @@ export function QuestionsPage({
               role="tab"
               aria-selected={status === value}
               className={status === value ? "segment segment-on" : "segment"}
-              onClick={() => setStatus(value)}
+              onClick={() =>
+                setParams((params) =>
+                  setParam(params, "status", value === "unanswered" ? "" : value),
+                )
+              }
             >
               {label}
             </button>
@@ -89,15 +106,15 @@ export function QuestionsPage({
       {query.isError && query.error.name !== "Unauthorized" ? (
         <ErrorNote message={query.error.message} onRetry={() => void query.refetch()} />
       ) : null}
-      {query.isSuccess && query.data.items.length === 0 ? (
+      {query.isSuccess && items.length === 0 ? (
         <EmptyState title="Очередь пуста">
           Вопросы появятся здесь, когда ассистент передаст их человеку.
         </EmptyState>
       ) : null}
 
-      {query.data && query.data.items.length > 0 ? (
+      {items.length > 0 ? (
         <ul className="question-cards">
-          {query.data.items.map((question) => (
+          {items.map((question) => (
             <QuestionCard
               key={question.id}
               question={question}
@@ -108,6 +125,19 @@ export function QuestionsPage({
             />
           ))}
         </ul>
+      ) : null}
+
+      {query.hasNextPage ? (
+        <div className="page-more">
+          <button
+            type="button"
+            className="button button-quiet"
+            disabled={query.isFetchingNextPage}
+            onClick={() => void query.fetchNextPage()}
+          >
+            {query.isFetchingNextPage ? "Загружаем…" : "Показать ещё"}
+          </button>
+        </div>
       ) : null}
     </section>
   );

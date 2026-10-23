@@ -8,6 +8,7 @@ import type {
   KnowledgeUploaded,
   ListResponse,
   OffboardedEmployee,
+  Page,
   Question,
   ResolvedQuestion,
   RunDetail,
@@ -76,19 +77,40 @@ export function fetchMe(): Promise<AdminIdentity> {
   return request<AdminIdentity>("/admin/api/me");
 }
 
-export function fetchRuns(limit = 50): Promise<ListResponse<RunSummary>> {
-  return request(`/admin/api/runs?limit=${limit}`);
+export type RunStatus = "active" | "completed" | "all";
+
+export interface RunQuery {
+  limit?: number;
+  cursor?: string | null;
+  status?: RunStatus;
+  q?: string;
+}
+
+export function fetchRuns(query: RunQuery = {}): Promise<Page<RunSummary>> {
+  const params = new URLSearchParams({ limit: String(query.limit ?? 50) });
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.status) params.set("status", query.status);
+  if (query.q) params.set("q", query.q);
+  return request(`/admin/api/runs?${params.toString()}`);
 }
 
 export function fetchRun(runId: string): Promise<RunDetail> {
   return request(`/admin/api/runs/${encodeURIComponent(runId)}`);
 }
 
-export function fetchQuestions(
-  status: "unanswered" | "answered" | "all",
-  limit = 50,
-): Promise<ListResponse<Question>> {
-  return request(`/admin/api/questions?status=${status}&limit=${limit}`);
+export interface QuestionQuery {
+  status: "unanswered" | "answered" | "all";
+  limit?: number;
+  cursor?: string | null;
+}
+
+export function fetchQuestions(query: QuestionQuery): Promise<Page<Question>> {
+  const params = new URLSearchParams({
+    status: query.status,
+    limit: String(query.limit ?? 50),
+  });
+  if (query.cursor) params.set("cursor", query.cursor);
+  return request(`/admin/api/questions?${params.toString()}`);
 }
 
 export function fetchOverview(): Promise<AnalyticsOverview> {

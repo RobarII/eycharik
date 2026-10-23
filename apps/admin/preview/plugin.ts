@@ -28,6 +28,15 @@ function limitOf(url: URL, fallback: number, max: number): number {
   return Math.min(max, Math.max(1, Math.trunc(parsed)));
 }
 
+/** The demo pages with a plain offset: the real server uses an opaque keyset cursor. */
+function paginate<T>(items: T[], url: URL, max: number): { items: T[]; next_cursor: string | null; total: number } {
+  const limit = limitOf(url, 50, max);
+  const offset = Math.max(0, Math.trunc(Number(url.searchParams.get("cursor") ?? 0)) || 0);
+  const slice = items.slice(offset, offset + limit);
+  const next = offset + limit < items.length ? String(offset + limit) : null;
+  return { items: slice, next_cursor: next, total: items.length };
+}
+
 const SESSION_COOKIE = "onboarding_session";
 
 function cookieToken(request: IncomingMessage): string | null {
@@ -98,8 +107,14 @@ async function handle(
   }
 
   if (request.method === "GET" && path === "/admin/api/runs") {
-    const limit = limitOf(url, 50, 200);
-    send(response, 200, { items: demo.runs(role).slice(0, limit) });
+    const status = url.searchParams.get("status") ?? "all";
+    const term = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+    const filtered = demo.runs(role).filter((run) => {
+      const byStatus = status === "all" || run.status === status;
+      const haystack = [run.name, run.role, run.department, run.employee_id].join(" ").toLowerCase();
+      return byStatus && (!term || haystack.includes(term));
+    });
+    send(response, 200, paginate(filtered, url, 200));
     return;
   }
 
@@ -120,7 +135,7 @@ async function handle(
       send(response, 422, { detail: "status must be unanswered, answered or all" });
       return;
     }
-    send(response, 200, demo.questions(role, status, limitOf(url, 50, 500)));
+    send(response, 200, paginate(demo.questions(role, status, 500).items, url, 200));
     return;
   }
 

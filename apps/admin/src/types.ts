@@ -9,6 +9,7 @@ export interface RunSummary {
   step_number: number;
   steps_total: number;
   entered_at: string;
+  updated_at: string;
   status: "active" | "completed";
 }
 
@@ -50,6 +51,18 @@ export interface RunDetail extends RunSummary {
 
 export interface ListResponse<T> {
   items: T[];
+}
+
+/**
+ * One page of a keyset-paged list.
+ *
+ * `total` counts the whole filtered scope, not the page: it is what a header prints. `next_cursor`
+ * is opaque and `null` on the last page.
+ */
+export interface Page<T> {
+  items: T[];
+  next_cursor: string | null;
+  total: number;
 }
 
 

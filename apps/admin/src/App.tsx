@@ -1,5 +1,5 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from "react";
+import { useCallback, useEffect, type ComponentType, type SVGProps } from "react";
 
 import { Unauthorized, closeSession, fetchMe, fetchOverview, openSession } from "./api";
 import {
@@ -22,15 +22,12 @@ import { RunDetailPage } from "./pages/RunDetailPage";
 import { RunsPage } from "./pages/RunsPage";
 import { useUnauthorized } from "./useUnauthorized";
 import { errorText } from "./errors";
-import { ROLE_LABELS, TENANT } from "./config";
+import { REFRESH, ROLE_LABELS, TENANT } from "./config";
+import { useRoute, type Route } from "./route";
 import { formatDateTime } from "./format";
 import type { Capability } from "./types";
 
-type RouteName = "overview" | "runs" | "run" | "questions" | "risk" | "knowledge";
-
-type Route = { name: RouteName; id?: string };
-
-const TITLES: Record<RouteName, string> = {
+const TITLES: Record<Route["name"], string> = {
   overview: "Обзор",
   runs: "Сотрудники",
   run: "Карточка сотрудника",
@@ -40,7 +37,7 @@ const TITLES: Record<RouteName, string> = {
 };
 
 const NAV: ReadonlyArray<{
-  name: Exclude<RouteName, "run">;
+  name: Exclude<Route["name"], "run">;
   label: string;
   icon: ComponentType<SVGProps<SVGSVGElement>>;
   capability: Capability;
@@ -52,26 +49,9 @@ const NAV: ReadonlyArray<{
   { name: "knowledge", label: "Знания", icon: BookIcon, capability: "knowledge.read" },
 ];
 
-export function parseRoute(hash: string): Route {
-  const path = hash.replace(/^#\/?/, "");
-  if (path.startsWith("run/")) {
-    const id = path.slice("run/".length);
-    return id ? { name: "run", id } : { name: "runs" };
-  }
-  if (path === "runs") return { name: "runs" };
-  if (path === "questions") return { name: "questions" };
-  if (path === "risk") return { name: "risk" };
-  if (path === "knowledge") return { name: "knowledge" };
-  return { name: "overview" };
-}
-
-function navigate(path: string): void {
-  window.location.hash = `#/${path}`;
-}
-
 export function App() {
   const queryClient = useQueryClient();
-  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
+  const { route, navigate } = useRoute();
   const fetching = useIsFetching();
 
   // The cookie is the session; this query only discovers who it belongs to.
@@ -86,14 +66,8 @@ export function App() {
     queryKey: ["overview"],
     queryFn: fetchOverview,
     enabled: me.isSuccess,
-    refetchInterval: 30_000,
+    refetchInterval: REFRESH.overview,
   });
-
-  useEffect(() => {
-    const onChange = () => setRoute(parseRoute(window.location.hash));
-    window.addEventListener("hashchange", onChange);
-    return () => window.removeEventListener("hashchange", onChange);
-  }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });

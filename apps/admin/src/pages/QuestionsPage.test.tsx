@@ -35,6 +35,7 @@ const run: RunSummary = {
   step_number: 3,
   steps_total: 20,
   entered_at: "2026-10-20T09:00:00Z",
+  updated_at: "2026-10-24T09:00:00Z",
   status: "active",
 };
 
@@ -70,8 +71,8 @@ function renderPage(
 }
 
 beforeEach(() => {
-  vi.mocked(fetchQuestions).mockResolvedValue({ items: [question] });
-  vi.mocked(fetchRuns).mockResolvedValue({ items: [run] });
+  vi.mocked(fetchQuestions).mockResolvedValue({ items: [question], total: 1, next_cursor: null });
+  vi.mocked(fetchRuns).mockResolvedValue({ items: [run], total: 1, next_cursor: null });
   vi.mocked(resolveQuestion).mockResolvedValue({
     id: 7,
     employee_id: "e-1",
@@ -89,7 +90,11 @@ describe("QuestionsPage", () => {
     expect(screen.getByText("Анна Петрова")).toBeInTheDocument();
     expect(screen.getByText("Оператор · Производство")).toBeInTheDocument();
     expect(screen.getByText("Нет источника")).toBeInTheDocument();
-    expect(fetchQuestions).toHaveBeenCalledWith("unanswered");
+    expect(fetchQuestions).toHaveBeenCalledWith({
+      status: "unanswered",
+      cursor: null,
+      limit: 50,
+    });
   });
 
   it("sends the reply to the API and closes the form", async () => {
@@ -120,6 +125,8 @@ describe("QuestionsPage", () => {
 
   it("shows the resolution instead of the form once the question is closed", async () => {
     vi.mocked(fetchQuestions).mockResolvedValue({
+      total: 1,
+      next_cursor: null,
       items: [
         {
           ...question,
@@ -146,7 +153,7 @@ describe("QuestionsPage", () => {
   });
 
   it("shows an empty state rather than a blank page", async () => {
-    vi.mocked(fetchQuestions).mockResolvedValue({ items: [] });
+    vi.mocked(fetchQuestions).mockResolvedValue({ items: [], total: 0, next_cursor: null });
 
     renderPage();
 

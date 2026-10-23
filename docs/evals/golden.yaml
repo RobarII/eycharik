@@ -78,3 +78,31 @@ cases:
     audience: dept:it
     expect_escalation: true
     expect_reason: no_sources
+
+  - id: gift-limit
+    question: "Сколько денег можно потратить на деловой подарок?"
+    audience: all
+    expect_docs: [company/anti-corruption]
+    expect_contains: ["3 000"]
+    expect_escalation: false
+
+  - id: report-bribery
+    question: "Кому сообщить о попытке подкупа?"
+    audience: all
+    expect_docs: [company/anti-corruption]
+    expect_contains: ["генеральному директору"]
+    expect_escalation: false
+
+  - id: commercial-secret-scope
+    question: "Что считается коммерческой тайной?"
+    audience: all
+    expect_docs: [company/commercial-secret]
+    expect_contains: ["коммерческая тайна"]
+    expect_escalation: false
+
+  - id: guest-photo-permission
+    question: "Можно ли фотографировать оборудование гостям?"
+    audience: all
+    expect_docs: [company/commercial-secret]
+    expect_contains: ["разрешения"]
+    expect_escalation: false

@@ -1,9 +1,12 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
-  plugins: [react()],
+import { previewApi } from "./preview/plugin";
+
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), ...(mode === "preview" ? [previewApi()] : [])],
   server: {
+    host: "127.0.0.1",
     port: 5173,
     proxy: {
       "/admin/api": {
@@ -13,4 +16,4 @@ export default defineConfig({
     },
   },
   build: { outDir: "dist", sourcemap: false },
-});
+}));

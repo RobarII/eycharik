@@ -3,9 +3,10 @@ import type { UseMutationResult } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { fetchQuestions, fetchRuns, resolveQuestion } from "../api";
+import { ArrowUpRightIcon } from "../components/Icons";
 import { AnswerPill, ReasonPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
-import { formatDateTime } from "../format";
+import { countLabel, formatDateTime, initials } from "../format";
 import type { Question, ResolvedQuestion, RunSummary } from "../types";
 import { useUnauthorized } from "../useUnauthorized";
 
@@ -50,7 +51,8 @@ export function QuestionsPage({
   return (
     <section className="page">
       <header className="page-head">
-        <div>
+        <div className="page-head-text">
+          <p className="eyebrow">Очередь</p>
           <h1>Вопросы сотрудников</h1>
           <p className="muted">
             Всё, что бот не смог закрыть сам. Ответьте здесь — сообщение уйдёт сотруднику в MAX, а
@@ -58,7 +60,9 @@ export function QuestionsPage({
           </p>
         </div>
         <div className="page-count" aria-live="polite">
-          {query.isSuccess ? `${query.data.items.length} в выборке` : "…"}
+          {query.isSuccess
+            ? countLabel(query.data.items.length, "вопрос", "вопроса", "вопросов")
+            : "…"}
         </div>
       </header>
 
@@ -126,11 +130,16 @@ function QuestionCard({
   return (
     <li className="card question-card">
       <div className="question-head">
-        <div>
-          <p className="question-author">{question.employee_name}</p>
-          <p className="muted small">
-            {run ? `${run.role} · ${run.department}` : "Профиль не найден"}
-          </p>
+        <div className="question-identity">
+          <span className="avatar avatar-sm" aria-hidden="true">
+            {initials(question.employee_name)}
+          </span>
+          <div>
+            <p className="question-author">{question.employee_name}</p>
+            <p className="muted small">
+              {run ? `${run.role} · ${run.department}` : "Профиль не найден"}
+            </p>
+          </div>
         </div>
         <AnswerPill answered={question.answered} />
       </div>
@@ -140,7 +149,8 @@ function QuestionCard({
         <time dateTime={question.asked_at}>{formatDateTime(question.asked_at)}</time>
         {run ? (
           <button type="button" className="link-button" onClick={() => onOpenRun(run.run_id)}>
-            Открыть сотрудника →
+            Открыть сотрудника
+            <ArrowUpRightIcon width={13} height={13} />
           </button>
         ) : null}
       </div>

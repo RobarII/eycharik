@@ -3,19 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchDigest, fetchOverview } from "../api";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { useUnauthorized } from "../useUnauthorized";
-import { formatDateTime } from "../format";
-
-const TAG_LABELS: Record<string, string> = {
-  access: "Доступы",
-  manager: "Руководитель",
-  colleagues: "Команда",
-  workload: "Нагрузка",
-  clarity: "Ясность задач",
-  integration: "Адаптация",
-  hr: "HR",
-  it: "ИТ",
-  other: "Другое",
-};
+import { formatDateTime, tagLabel, countLabel } from "../format";
 
 export function RiskPage({
   onOpenRun,
@@ -40,14 +28,17 @@ export function RiskPage({
   return (
     <section className="page">
       <header className="page-head">
-        <div>
+        <div className="page-head-text">
+          <p className="eyebrow">Риск-радар</p>
           <h1>Риски адаптации</h1>
           <p className="muted">
             Что модель услышала в ответах и что из этого требует человека. Окно — семь дней.
           </p>
         </div>
         <div className="page-count" aria-live="polite">
-          {digest.isSuccess ? `${digest.data.items.length} сигналов` : "…"}
+          {digest.isSuccess
+            ? countLabel(digest.data.items.length, "сигнал", "сигнала", "сигналов")
+            : "…"}
         </div>
       </header>
 
@@ -71,7 +62,7 @@ export function RiskPage({
           <span className="muted">Частые темы:</span>
           {overview.data.top_tags.map((tag) => (
             <span key={tag.tag} className="tag">
-              {TAG_LABELS[tag.tag] ?? tag.tag} · {tag.count}
+              {tagLabel(tag.tag)} · {tag.count}
             </span>
           ))}
         </p>
@@ -90,7 +81,10 @@ export function RiskPage({
       {digest.isSuccess && digest.data.items.length > 0 ? (
         <ul className="digest">
           {digest.data.items.map((item) => (
-            <li key={`${item.employee_id}-${item.step_id}-${item.at}`} className="digest-row">
+            <li
+              key={`${item.employee_id}-${item.step_id}-${item.at}`}
+              className={item.level === "high" ? "digest-row digest-row-high" : "digest-row"}
+            >
               <div className="digest-main">
                 <div className="digest-head">
                   <span className={`pill ${item.level === "high" ? "pill-warn" : "pill-muted"}`}>
@@ -108,7 +102,7 @@ export function RiskPage({
               <div className="digest-tags">
                 {item.tags.map((tag) => (
                   <span key={tag} className="tag">
-                    {TAG_LABELS[tag] ?? tag}
+                    {tagLabel(tag)}
                   </span>
                 ))}
                 {item.run_id ? (

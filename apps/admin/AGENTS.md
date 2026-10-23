@@ -3,6 +3,9 @@
 React 18 + TypeScript + Vite + TanStack Query. No router library: the URL hash is the router.
 No component library: `styles.css` holds the tokens and the few primitives the cabinet needs.
 
+Read [`README.md`](README.md) before the first change: screens, tokens and their scopes, the
+knowledge document schema, the preview mode, and the known limits.
+
 ## Rules
 
 1. The cabinet is read-only except for two writes: resolving a question and offboarding an
@@ -21,8 +24,9 @@ No component library: `styles.css` holds the tokens and the few primitives the c
 
 ```bash
 npm install
-npm run dev        # :5173, proxies /admin/api to :8000
-npm run build      # tsc -b + vite build
+npm run dev          # :5173, proxies /admin/api to :8000
+npm run preview:demo # :5173, dev-only demo API with the documented cohort
+npm run build        # tsc -b + vite build
 npm run typecheck
 npm run test       # vitest: api client, formatting, the reply flow
 ```

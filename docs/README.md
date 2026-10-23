@@ -8,6 +8,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Question | File |
 |---|---|
 | What is the system made of, and how does a message travel through it? | [architecture.md](architecture.md) |
+| What did the client actually ask for? | [case/poliplastic-2026.md](case/poliplastic-2026.md) |
 | What do the words mean? | [glossary.md](glossary.md) |
 | How do we write code, tests, and commits? | [conventions.md](conventions.md) |
 | What exactly does the MAX API give us? | [contracts/max-api.md](contracts/max-api.md) |
@@ -41,6 +42,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | `decisions/` | immutable records of why | never edit an accepted ADR; add a new one |
 | `runbooks/` | steps under stress | keep short, imperative, tested in staging |
 | `product/` | rules the bot and the cockpit obey | edit with a matching test or eval case |
+| `case/` | transcript of the client brief | append corrections with a date; never reword the quotes |
 | `evals/` | the quality gate | every new failure mode becomes a case |
 | `measurements/`, `incidents/` | evidence | one file per event, never rewritten |
 

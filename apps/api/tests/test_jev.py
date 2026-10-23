@@ -321,6 +321,21 @@ async def test_a_malformed_answer_falls_back_on_the_same_text() -> None:
     assert audit.events[-1][1]["reason"] == "jev_format"
 
 
+async def test_an_error_envelope_is_an_outage_not_a_format_error() -> None:
+    """OpenRouter refuses a blocked key with ``success: false``; the reason must reach the audit."""
+    body = {"success": False, "error": "Access denied by security policy."}
+
+    audit = RecordingAudit()
+    subject, client = classifier(lambda _: httpx.Response(200, json=body), audit=audit)
+    async with client:
+        signal = await subject.classify("Доступ не выдали", source="day_three")
+
+    assert signal.sentiment is Sentiment.NEGATIVE
+    assert audit.names() == ["sentiment_fallback"]
+    assert audit.events[0][1]["reason"] == "jev_unavailable"
+    assert "Access denied" in str(audit.events[0][1]["error"])
+
+
 async def test_a_401_is_not_retried() -> None:
     calls = 0
 

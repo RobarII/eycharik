@@ -25,11 +25,17 @@ async def fallback_signal(
     *,
     provider: str,
     reason: str,
+    error: str = "",
 ) -> RiskSignal:
-    """Audit why the model did not answer, then label with the deterministic classifier."""
-    await (audit or NullAudit()).record(
-        "sentiment_fallback", source=source, provider=provider, reason=reason
-    )
+    """Audit why the model did not answer, then label with the deterministic classifier.
+
+    ``error`` carries the provider's own words (a status, a policy denial) so an operator does not
+    have to guess between a dead network and a broken answer. It never carries a key or the text.
+    """
+    fields: dict[str, object] = {"source": source, "provider": provider, "reason": reason}
+    if error:
+        fields["error"] = error[:200]
+    await (audit or NullAudit()).record("sentiment_fallback", **fields)
     return keyword_signal(text, source=source)
 
 

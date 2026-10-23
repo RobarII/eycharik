@@ -172,8 +172,8 @@ class JevSentimentClassifier:
         try:
             payload, elapsed_s = await self._ask(state)
             verdict = parse_jev(payload, self._rubric)
-        except JevUnavailableError:
-            return await self._fallback(text, source, reason="jev_unavailable")
+        except JevUnavailableError as error:
+            return await self._fallback(text, source, reason="jev_unavailable", detail=str(error))
         except JevFormatError as error:
             await self._audit.record(
                 "sentiment_format_error", source=source, provider="jev", error=str(error)
@@ -244,12 +244,28 @@ class JevSentimentClassifier:
             raise JevFormatError(f"jev response is not JSON: {error}") from None
         if not isinstance(payload, dict):
             raise JevFormatError("response must be an object")
+        _refuse_an_error_envelope(payload)
         return payload, elapsed_s
 
-    async def _fallback(self, text: str, source: str, *, reason: str) -> RiskSignal:
+    async def _fallback(
+        self, text: str, source: str, *, reason: str, detail: str = ""
+    ) -> RiskSignal:
         return await fallback_signal(
-            self._audit, text, source, provider="jev", reason=reason
+            self._audit, text, source, provider="jev", reason=reason, error=detail
         )
+
+
+def _refuse_an_error_envelope(payload: dict[str, Any]) -> None:
+    """A 200 with ``success: false`` is an outage with a reason, not a malformed answer.
+
+    OpenRouter answers a blocked key or a policy denial this way. Reading it as a format error
+    would send an operator to the rubric for something only the provider account can fix.
+    """
+    if payload.get("success") is not False and "answers" in payload:
+        return
+    error = payload.get("error")
+    detail = error if isinstance(error, str) else "no reason given"
+    raise JevUnavailableError(f"jev endpoint refused the call: {detail[:200]}")
 
 
 def _reported_cost(payload: Any) -> float | None:

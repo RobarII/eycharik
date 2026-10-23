@@ -1,15 +1,16 @@
-"""One model gateway: timeout, one retry, a circuit breaker, and cost accounting.
+"""One model gateway: the answer call, its envelope, and its cost accounting.
 
-Every call in the application goes through this class. The model itself is a profile
+Every chat call in the application goes through this class. The model itself is a profile
 (``apps/api/model-profiles/answer/<name>.yaml``): dialect, capabilities, envelope, and prices.
 Providers are interchangeable behind it, so a model change is a profile change, not a code change.
+The retry policy and the breaker live in ``transport.py``, shared with every other model call.
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import httpx
 
@@ -19,8 +20,8 @@ from onboarding.app.llm.providers import (
     GigaChatProvider,
     OpenAICompatibleProvider,
     Provider,
-    ProviderError,
 )
+from onboarding.app.llm.transport import ModelTransport, RejectedError, TransportError
 from onboarding.app.settings import Settings
 from onboarding.core.breaker import CircuitBreaker
 from onboarding.ports import (
@@ -31,9 +32,6 @@ from onboarding.ports import (
     CompletionRequest,
     LLMUnavailableError,
 )
-
-RETRYABLE_STATUS = frozenset({408, 429, 500, 502, 503, 504})
-MAX_BACKOFF_S = 4.0
 
 
 class LLMResponseError(RuntimeError):
@@ -59,10 +57,10 @@ class GatewayLLM(LLM):
         self._provider = provider
         self._profile = profile
         self._clock = clock
-        self._client = client
-        self._breaker = breaker or CircuitBreaker()
         self._max_retries = max(0, profile.max_retries if max_retries is None else max_retries)
-        self._sleep = sleep
+        self._transport = ModelTransport(
+            client=client, clock=clock, breaker=breaker or CircuitBreaker(), sleep=sleep
+        )
 
     @property
     def profile(self) -> AnswerProfile:
@@ -70,65 +68,27 @@ class GatewayLLM(LLM):
 
     @property
     def breaker(self) -> CircuitBreaker:
-        return self._breaker
+        return self._transport.breaker
 
     async def complete(self, request: CompletionRequest) -> Completion:
-        now = self._clock.now()
-        if not self._breaker.allows(now):
-            raise LLMUnavailableError("circuit breaker is open")
-
         payload = self._payload(request)
         timeout = request.timeout_s if request.timeout_s is not None else self._profile.timeout_s
-        last_error: str = "no attempt"
-        for attempt in range(self._max_retries + 1):
-            if not self._breaker.allows(self._clock.now()):
-                break
-            started = self._clock.now()
-            try:
-                prepared = await self._provider.prepare(self._client)
-                response = await self._client.post(
-                    prepared.url,
-                    headers=prepared.headers,
-                    json=payload,
-                    timeout=timeout,
-                )
-            except (httpx.TimeoutException, httpx.TransportError) as error:
-                last_error = f"{type(error).__name__}: {error}"
-                self._breaker = self._breaker.record_failure(now)
-                await self._backoff(attempt)
-                continue
-            except ProviderError as error:
-                last_error = str(error)
-                self._breaker = self._breaker.record_failure(now)
-                await self._backoff(attempt)
-                continue
+        try:
+            return await self._transport.call(
+                prepare=lambda: self._provider.prepare(self._transport.client),
+                payload=payload,
+                timeout_s=timeout,
+                max_retries=self._max_retries,
+                parse=self._parse,
+                retry_parse=self._retry_empty,
+            )
+        except RejectedError as error:
+            raise LLMResponseError(f"provider rejected the request with {error}") from None
+        except TransportError as error:
+            raise LLMUnavailableError(str(error)) from None
 
-            if response.status_code in RETRYABLE_STATUS:
-                last_error = f"HTTP {response.status_code}"
-                self._breaker = self._breaker.record_failure(now)
-                await self._backoff(attempt)
-                continue
-            if response.status_code >= 400:
-                self._breaker = self._breaker.record_success()
-                raise LLMResponseError(
-                    f"provider rejected the request with HTTP {response.status_code}"
-                )
-
-            self._breaker = self._breaker.record_success()
-            try:
-                return self._parse(response, started)
-            except EmptyCompletionError as error:
-                last_error = str(error)
-                if attempt < self._max_retries and self._profile.retry_empty_completion:
-                    await self._backoff(attempt)
-                    continue
-                raise
-
-        raise LLMUnavailableError(last_error)
-
-    async def _backoff(self, attempt: int) -> None:
-        if attempt < self._max_retries:
-            await self._sleep(min(MAX_BACKOFF_S, 0.5 * (2**attempt)))
+    def _retry_empty(self, error: Exception) -> bool:
+        return isinstance(error, EmptyCompletionError) and self._profile.retry_empty_completion
 
     def _payload(self, request: CompletionRequest) -> dict[str, object]:
         """Build the request from the profile's capabilities, not from assumptions about one API."""
@@ -150,7 +110,7 @@ class GatewayLLM(LLM):
             payload["reasoning_effort"] = self._profile.reasoning_effort
         return payload
 
-    def _parse(self, response: httpx.Response, started: datetime) -> Completion:
+    def _parse(self, response: httpx.Response, elapsed_s: float) -> Completion:
         try:
             body = response.json()
             if not isinstance(body, dict):
@@ -177,20 +137,21 @@ class GatewayLLM(LLM):
         input_tokens = _int_or_zero(usage.get("prompt_tokens"))
         output_tokens = _int_or_zero(usage.get("completion_tokens"))
         cached_tokens = min(_cached_tokens(usage), input_tokens)
-        latency_ms = int((self._clock.now() - started).total_seconds() * 1000)
-        cost = (
-            (input_tokens - cached_tokens) / 1000 * self._profile.price_input_rub_per_1k
-            + cached_tokens / 1000 * self._profile.price_cache_read_rub_per_1k
-            + output_tokens / 1000 * self._profile.price_output_rub_per_1k
-        )
         return Completion(
             text=content,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cached_input_tokens=cached_tokens,
             model=str(body.get("model") or self._profile.model),
-            latency_ms=latency_ms,
-            cost_rub=round(cost, 6),
+            latency_ms=int(elapsed_s * 1000),
+            cost_rub=round(self._cost(input_tokens, output_tokens, cached_tokens), 6),
+        )
+
+    def _cost(self, input_tokens: int, output_tokens: int, cached_tokens: int) -> float:
+        return (
+            (input_tokens - cached_tokens) / 1000 * self._profile.price_input_rub_per_1k
+            + cached_tokens / 1000 * self._profile.price_cache_read_rub_per_1k
+            + output_tokens / 1000 * self._profile.price_output_rub_per_1k
         )
 
 

@@ -20,6 +20,7 @@ def record(**overrides: object) -> RunRecord:
         "department": "Производство",
         "scenario_id": "onboarding_default",
         "scenario_version": 1,
+        "tone": "formal",
         "step_id": "meet_the_team",
         "entered_at": datetime(2026, 10, 23, 9, 0, tzinfo=UTC),
         "active": True,

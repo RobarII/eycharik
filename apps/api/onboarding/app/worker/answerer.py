@@ -40,7 +40,7 @@ from onboarding.ports import (
 )
 
 PROMPT_NAME = "answer"
-PROMPT_VERSION = 3
+PROMPT_VERSION = 4
 
 log = logging.getLogger(__name__)
 

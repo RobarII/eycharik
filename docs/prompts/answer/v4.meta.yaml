@@ -1,0 +1,13 @@
+version: 4
+name: answer
+model: deepseek-v4.1-flash
+temperature: 0.2
+max_tokens: 700
+supersedes: 3
+eval: null        # filled only from docs/measurements/, never guessed
+notes: >
+  Version 3 treated a personal pronoun as a personal question, and the answer model read it that
+  way: "Обязательна ли двухфакторная аутентификация?" and "Почему меня не пускает в систему?"
+  came back as `restricted` on the 2026-10-23 full eval. The guard now needs a personal marker and a
+  personal subject, and the prompt names those two counter-examples so a model cannot learn the
+  wrong rule from the examples alone.

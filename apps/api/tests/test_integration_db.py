@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from onboarding.api.app import create_app
 from onboarding.app.admin.actions import QuestionResolver
 from onboarding.app.admin.queries import AdminQueries
+from onboarding.app.channels.profiles import ChannelProfileLibrary
 from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
 from onboarding.app.db.blobs import PostgresBlobStore
@@ -63,6 +64,8 @@ from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import (
     Action,
     ActionKind,
+    Address,
+    Channel,
     ChatId,
     EmployeeId,
     Event,
@@ -91,6 +94,12 @@ pytestmark = pytest.mark.integration
 
 ROOT = Path(__file__).resolve().parents[3]
 SCENARIOS = ROOT / "apps" / "api" / "onboarding" / "scenarios"
+# The shipped profiles, so the outbox splits text exactly as a deployment would.
+PROFILES = ChannelProfileLibrary(
+    ROOT / "apps" / "api" / "channel-profiles",
+    ROOT / "docs" / "contracts" / "channel-profile.schema.json",
+).load_all()
+MAX = Address(channel=Channel.MAX, chat_id=ChatId(1))
 COPY = load_copy(ROOT / "docs" / "product" / "copy.yaml")
 
 
@@ -168,7 +177,7 @@ async def test_start_persists_a_run_and_reaches_the_admin_view(database: Databas
     messaging = RecordingMessaging()
     service = build_service(database, messaging=messaging, knowledge=FakeKnowledgeBase())
 
-    result = await service.start(EMPLOYEE, ChatId(1))
+    result = await service.start(EMPLOYEE, MAX)
 
     assert result.handled
     assert len(messaging.sent) == 2
@@ -198,7 +207,7 @@ async def test_survey_progress_survives_a_save_and_load(database: Database) -> N
     )
     await runs.create(StoredRun(state=state, reminder=ScheduleReminder(
         due_at=NOW, step_id="week_two_check", action=TimeoutAction.REMIND
-    ), chat_id=ChatId(1)))
+    ), address=MAX))
 
     loaded = await runs.load(state.run_id)
 
@@ -211,8 +220,8 @@ async def test_survey_progress_survives_a_save_and_load(database: Database) -> N
 async def test_second_start_is_rejected_by_the_partial_index(database: Database) -> None:
     service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
 
-    first = await service.start(EMPLOYEE, ChatId(1))
-    second = await service.start(EMPLOYEE, ChatId(1))
+    first = await service.start(EMPLOYEE, MAX)
+    second = await service.start(EMPLOYEE, MAX)
 
     assert first.handled
     assert not second.handled
@@ -227,18 +236,16 @@ async def test_event_deduper_accepts_one_delivery(database: Database) -> None:
 
 async def test_outbox_and_dispatcher_deliver_a_message(database: Database) -> None:
     direct = RecordingMessaging()
-    outbox = OutboxMessaging(database, direct)
+    outbox = OutboxMessaging(database, {Channel.MAX: direct}, PROFILES)
 
-    message_id = await outbox.send(
-        OutboundMessage(chat_id=ChatId(7), text="привет", image="welcome.jpg")
-    )
+    message_id = await outbox.send(OutboundMessage(address=MAX, text="привет"))
 
     assert message_id.isdigit()
     assert direct.sent == []
-    delivered = await MessageDispatcher(database, direct).run_once()
+    delivered = await MessageDispatcher(database, {Channel.MAX: direct}).run_once()
     assert delivered == 1
     assert direct.sent[0].text == "привет"
-    assert direct.sent[0].image == "welcome.jpg"
+    assert direct.sent[0].address == MAX
 
 
 async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Database) -> None:
@@ -247,6 +254,7 @@ async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Databa
     async with database.session() as session:
         session.add(
             MessageRow(
+                channel="max",
                 chat_id=7,
                 text="после падения воркера",
                 status="sending",
@@ -254,7 +262,7 @@ async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Databa
             )
         )
 
-    delivered = await MessageDispatcher(database, direct).run_once()
+    delivered = await MessageDispatcher(database, {Channel.MAX: direct}).run_once()
 
     assert delivered == 1
     assert direct.sent[0].text == "после падения воркера"
@@ -266,7 +274,7 @@ async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Databa
 
 async def test_scheduler_enqueues_a_due_reminder(database: Database) -> None:
     service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, MAX)
     async with database.session() as session:
         await session.execute(text("UPDATE runs SET reminder_at = now() - interval '1 minute'"))
 
@@ -279,11 +287,11 @@ async def test_scheduler_enqueues_a_due_reminder(database: Database) -> None:
 async def test_transition_is_persisted(database: Database) -> None:
     messaging = RecordingMessaging()
     service = build_service(database, messaging=messaging, knowledge=FakeKnowledgeBase())
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, MAX)
 
     result = await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        MAX,
         Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="checklist_done"),
     )
 
@@ -297,7 +305,7 @@ async def test_transition_is_persisted(database: Database) -> None:
 async def test_question_is_logged_with_citations(database: Database) -> None:
     knowledge = FakeKnowledgeBase(chunks=(scored_chunk(),))
     direct = RecordingMessaging()
-    outbox = OutboxMessaging(database, direct)
+    outbox = OutboxMessaging(database, {Channel.MAX: direct}, PROFILES)
     answerer = Answerer(
         knowledge=knowledge,
         llm=ScriptedLLM(
@@ -326,7 +334,7 @@ async def test_question_is_logged_with_citations(database: Database) -> None:
     await executor.execute(
         Action(kind=ActionKind.ANSWER),
         ActionContext(
-            chat_id=ChatId(1),
+            address=MAX,
             on_date=date(2026, 10, 23),
             profile=await SqlDirectory(database).profile(EMPLOYEE),
             question="Сколько дней отпуска?",
@@ -426,7 +434,7 @@ async def test_creating_a_run_for_an_unknown_employee_is_not_a_race(
 
     with pytest.raises(IntegrityError) as raised:
         await DatabaseRunRepository(database).create(
-            StoredRun(state=transition.state, reminder=transition.reminder, chat_id=ChatId(1))
+            StoredRun(state=transition.state, reminder=transition.reminder, address=MAX)
         )
 
     assert not isinstance(raised.value, RunAlreadyActiveError)
@@ -445,7 +453,7 @@ async def test_a_second_active_run_for_the_same_employee_is_a_race(
         NOW,
     )
     await repository.create(
-        StoredRun(state=first.state, reminder=first.reminder, chat_id=ChatId(1))
+        StoredRun(state=first.state, reminder=first.reminder, address=MAX)
     )
 
     second = start_run(
@@ -456,13 +464,13 @@ async def test_a_second_active_run_for_the_same_employee_is_a_race(
     )
     with pytest.raises(RunAlreadyActiveError):
         await repository.create(
-            StoredRun(state=second.state, reminder=second.reminder, chat_id=ChatId(1))
+            StoredRun(state=second.state, reminder=second.reminder, address=MAX)
         )
 
 
 async def test_completion_is_attached_to_the_employee(database: Database) -> None:
     service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, MAX)
 
     for event in (
         Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="checklist_done"),
@@ -470,7 +478,7 @@ async def test_completion_is_attached_to_the_employee(database: Database) -> Non
         Event(kind=EventKind.FILE_RECEIVED, at=NOW, file_id="file-1"),
         Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="готово"),
     ):
-        await service.handle(EMPLOYEE, ChatId(1), event)
+        await service.handle(EMPLOYEE, MAX, event)
 
     events = await AdminQueries(database).events(str(EMPLOYEE))
     assert "run_completed" in [event.name for event in events]
@@ -482,7 +490,7 @@ async def test_analytics_and_digest_follow_the_risk_audit(database: Database) ->
         messaging=RecordingMessaging(),
         knowledge=FakeKnowledgeBase(chunks=(scored_chunk(),)),
     )
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, MAX)
     audit = DatabaseAuditLog(database)
     await audit.record(
         "risk_assessed",
@@ -543,7 +551,7 @@ async def test_analytics_and_digest_follow_the_risk_audit(database: Database) ->
 async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
     messaging = RecordingMessaging()
     service = build_service(database, messaging=messaging, knowledge=FakeKnowledgeBase())
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, MAX)
     async with database.session() as session:
         await session.execute(text("UPDATE runs SET reminder_at = now() - interval '1 minute'"))
     direct = RecordingMessaging()
@@ -558,11 +566,11 @@ async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
     queued, handled, delivered = await tick_once(
         scheduler=ReminderScheduler(database),
         runner=runner,
-        dispatcher=MessageDispatcher(database, direct),
+        dispatcher=MessageDispatcher(database, {Channel.MAX: direct}),
     )
 
     assert (queued, handled, delivered) == (1, 1, 0)
-    assert messaging.sent[-1].chat_id == ChatId(1)
+    assert messaging.sent[-1].address == MAX
     assert messaging.sent[-1].text.startswith("Напоминаем:")
 
 
@@ -629,7 +637,7 @@ async def seed_question(database: Database, text_value: str = "Сколько д
     log = DatabaseQuestionLog(database)
     await log.record_question(
         employee_id=EMPLOYEE,
-        chat_id=ChatId(1),
+        address=MAX,
         text=text_value,
         answered=False,
         reason="no_sources",
@@ -730,7 +738,7 @@ async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Data
     service = build_service(
         database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase()
     )
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, MAX)
     await seed_question(database)
     async with database.session() as session:
         session.add(MessageRow(chat_id=1, text="Напоминание, которое уже не нужно"))
@@ -853,7 +861,7 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
                     created_at=old,
                     available_at=old,
                 ),
-                MessageRow(chat_id=1, text="свежее в очереди", status="pending"),
+                MessageRow(channel="max", chat_id=1, text="свежее в очереди", status="pending"),
             ]
         )
 

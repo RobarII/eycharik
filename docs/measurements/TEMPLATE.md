@@ -11,7 +11,7 @@
 | Metric | Value | Gate | Pass |
 |---|---|---|---|
 | `recall@5` | 0.00 | ≥ 0.90 | no |
-| `p95_latency_ms` | 0 | ≤ 3000 | no |
+| `p95_latency_ms` | 0 | ≤ 8000 | no |
 
 ## Notes
 

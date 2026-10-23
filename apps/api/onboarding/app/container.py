@@ -26,6 +26,7 @@ from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.db.session import Database
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
+from onboarding.app.llm.rerank import RemoteReranker
 from onboarding.app.max.client import MaxClient
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.scenarios import ScenarioCatalog
@@ -92,6 +93,17 @@ def build_container(settings: Settings) -> Container:
         messages_per_second=settings.max_messages_per_second,
     )
     outbox = OutboxMessaging(database, sender)
+    reranker = (
+        RemoteReranker(
+            client=http,
+            base_url=settings.rerank_base_url,
+            api_key=settings.rerank_api_key.get_secret_value(),
+            model=settings.rerank_model,
+            timeout_s=settings.rerank_timeout_s,
+        )
+        if settings.rerank_base_url
+        else None
+    )
     answerer = Answerer(
         knowledge=knowledge,
         llm=llm,
@@ -99,6 +111,7 @@ def build_container(settings: Settings) -> Container:
         copy=copy,
         settings=settings,
         audit=audit,
+        reranker=reranker,
     )
     executor = ActionExecutor(
         messaging=outbox,

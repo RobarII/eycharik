@@ -42,7 +42,8 @@ They share code and the database, not memory. The reminder tick runs inside the 
    `messages` outbox, one transaction per message. A crash between the two repeats a message at
    worst; it never loses a step.
 4. For a question, retrieval runs: ACL and validity predicates in SQL, vector and lexical search,
-   reciprocal rank fusion, then one model call with a versioned prompt and a JSON answer contract.
+   reciprocal rank fusion, an optional hosted rerank (ADR 0008), then one model call with a
+   versioned prompt and a JSON answer contract.
 5. The answer is validated: every citation in the JSON list and every inline `[doc#N]` token
    must be a chunk that retrieval returned, and confidence must clear `ANSWER_MIN_CONFIDENCE`.
    Otherwise the decision degrades to escalation with the matching copy.
@@ -71,6 +72,7 @@ They share code and the database, not memory. The reminder tick runs inside the 
 | Model provider 5xx, timeout, or open breaker | one retry, then an escalation with `unavailable` copy |
 | Model returns ungrounded or malformed JSON | answer rejected, escalation, `answer_rejected` audit row |
 | Embedder or database fails during retrieval | escalation with `unavailable` copy |
+| Reranker fails or answers nonsense | hybrid order stands, `rerank_failed` in the audit |
 | Knowledge is stale | `valid_to` excludes the document; the question escalates |
 | Worker backlog | jobs wait; the webhook keeps accepting; state is not lost |
 | Postgres unavailable | webhook answers 503; MAX retries |
@@ -110,6 +112,7 @@ holds state, vectors, queue, outbox, questions, and audit; the workload does not
 
 ## Performance targets
 
-One question is one retrieval, one model call, one validation, one send. Target p95 end-to-end
-delivery is 3 seconds with a warm model. The webhook itself stays under 200 ms: it does two
+One question is one retrieval, one optional rerank, one model call, one validation, one send.
+Target p95 end-to-end delivery is 8 seconds with a hosted model (ADR 0009); the offline extractive
+provider reports zero latency by construction. The webhook itself stays under 200 ms: it does two
 inserts and returns.

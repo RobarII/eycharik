@@ -121,6 +121,7 @@ def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date
             embed_provider=settings.embed_provider,
             note=note,
             on_date=on_date,
+            retrieval=_retrieval_label(settings),
         ),
         encoding="utf-8",
     )
@@ -133,6 +134,12 @@ def _model_label(settings: Settings, *, retrieval_only: bool) -> str:
     if settings.llm_provider == "extractive":
         return "extractive (offline)"
     return f"{settings.llm_provider}/{settings.llm_model} @ {settings.llm_base_url}"
+
+
+def _retrieval_label(settings: Settings) -> str:
+    embed = f"{settings.embed_provider}/{settings.embed_model}"
+    rerank = settings.rerank_model if settings.rerank_base_url else "none"
+    return f"{embed} + rerank:{rerank}"
 
 
 def _commit() -> str:

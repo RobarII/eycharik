@@ -28,6 +28,8 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why does one Postgres hold state, vectors, and the outbox? | [decisions/0005-single-postgres.md](decisions/0005-single-postgres.md) |
 | Why refuse instead of guessing? | [decisions/0006-refuse-over-guess.md](decisions/0006-refuse-over-guess.md) |
 | Why is there an offline provider? | [decisions/0007-extractive-demo-provider.md](decisions/0007-extractive-demo-provider.md) |
+| Why a hosted reranker? | [decisions/0008-hosted-rerank.md](decisions/0008-hosted-rerank.md) |
+| Why is the latency gate 8 s? | [decisions/0009-latency-budget.md](decisions/0009-latency-budget.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |

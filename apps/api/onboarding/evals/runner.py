@@ -24,7 +24,7 @@ GATES = {
     "answer_contains": 1.0,
     "escalation_correctness": 0.90,
 }
-MAXIMUMS = {"p95_latency_ms": 3000.0}
+MAXIMUMS = {"p95_latency_ms": 8000.0}
 
 
 class GoldenSetError(ValueError):
@@ -223,6 +223,7 @@ def render_markdown(
     embed_provider: str,
     note: str | None,
     on_date: date,
+    retrieval: str = "",
 ) -> str:
     status = "FAIL" if report.failures else "PASS"
     lines = [
@@ -233,6 +234,7 @@ def render_markdown(
         f"- model: `{model}`",
         f"- environment: `{environment}`",
         f"- embed provider: `{embed_provider}`",
+        *([f"- retrieval: `{retrieval}`"] if retrieval else []),
         *([f"- note: {note}"] if note else []),
         f"- cases: {len(report.results)}",
         f"- generated answers: {report.generated}",

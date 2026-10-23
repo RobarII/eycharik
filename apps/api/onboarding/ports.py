@@ -74,6 +74,10 @@ class KnowledgeUnavailableError(RuntimeError):
     """Retrieval could not run: the embedder or the database is down."""
 
 
+class RerankUnavailableError(RuntimeError):
+    """The reranker did not answer; retrieval keeps its own order."""
+
+
 class RunAlreadyActiveError(RuntimeError):
     """An employee already has an active run; the database enforced it."""
 
@@ -82,6 +86,15 @@ class RunAlreadyActiveError(RuntimeError):
 class Embedder(Protocol):
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         """One vector per input text, in the same order."""
+        ...
+
+
+@runtime_checkable
+class Reranker(Protocol):
+    async def rerank(
+        self, query: str, documents: Sequence[str], *, top_n: int
+    ) -> tuple[int, ...]:
+        """Indices of the best documents, best first. Never invents an index."""
         ...
 
 

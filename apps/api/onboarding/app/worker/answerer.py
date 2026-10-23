@@ -31,6 +31,8 @@ from onboarding.ports import (
     KnowledgeUnavailableError,
     LLMUnavailableError,
     Message,
+    Reranker,
+    RerankUnavailableError,
     SearchQuery,
 )
 
@@ -58,6 +60,7 @@ class Answerer:
         copy: Copy,
         settings: Settings,
         audit: AuditLog | None = None,
+        reranker: Reranker | None = None,
     ) -> None:
         self._knowledge = knowledge
         self._llm = llm
@@ -65,6 +68,7 @@ class Answerer:
         self._copy = copy
         self._settings = settings
         self._audit = audit or NullAudit()
+        self._reranker = reranker
 
     async def answer(
         self,
@@ -90,7 +94,34 @@ class Answerer:
         if not retrieved:
             return self._escalate(EscalationReason.NO_SOURCES, ())
 
+        retrieved = await self._rerank(normalized, retrieved)
         return await self._generate(normalized, profile, on_date, retrieved)
+
+    async def _rerank(
+        self, question: str, retrieved: tuple[ScoredChunk, ...]
+    ) -> tuple[ScoredChunk, ...]:
+        """Reorder the candidates; a reranker outage keeps the hybrid order untouched."""
+        if self._reranker is None or len(retrieved) < 2:
+            return retrieved
+        try:
+            order = await self._reranker.rerank(
+                question,
+                tuple(chunk.chunk.text for chunk in retrieved),
+                top_n=self._settings.rerank_limit,
+            )
+        except RerankUnavailableError:
+            await self._audit.record("rerank_failed", retrieved=len(retrieved))
+            return retrieved
+        if not order:
+            return retrieved
+        reordered = tuple(retrieved[index] for index in order if 0 <= index < len(retrieved))
+        await self._audit.record(
+            "rerank_completed",
+            model=self._settings.rerank_model,
+            candidates=len(retrieved),
+            kept=len(reordered),
+        )
+        return reordered
 
     async def _generate(
         self,

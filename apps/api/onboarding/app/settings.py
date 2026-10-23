@@ -49,9 +49,16 @@ class Settings(BaseSettings):
     llm_extra_headers_raw: SecretStr = Field(default=SecretStr(""), alias="LLM_EXTRA_HEADERS")
 
     embed_provider: Literal["openai", "gigachat", "hashing"] = "hashing"
+    embed_base_url: str = ""
+    embed_api_key: SecretStr = SecretStr("")
     embed_model: str = "Embeddings"
     embed_dim: int = 1024
     llm_embed_scope: str = "GIGACHAT_API_PERS"
+
+    rerank_base_url: str = ""
+    rerank_api_key: SecretStr = SecretStr("")
+    rerank_model: str = ""
+    rerank_timeout_s: float = 3.0
 
     answer_min_confidence: float = 0.45
     recall_limit: int = 30
@@ -100,6 +107,14 @@ class Settings(BaseSettings):
             ]
             if missing:
                 raise ValueError(f"production requires {missing}")
+        return self
+
+    @model_validator(mode="after")
+    def _check_rerank(self) -> Settings:
+        if self.rerank_base_url and not self.rerank_model:
+            raise ValueError("RERANK_MODEL is required when RERANK_BASE_URL is set")
+        if self.rerank_timeout_s <= 0:
+            raise ValueError("RERANK_TIMEOUT_S must be positive")
         return self
 
     @property

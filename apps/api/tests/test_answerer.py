@@ -12,7 +12,7 @@ from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.app.worker.answerer import PROMPT_NAME, PROMPT_VERSION, Answerer
 from onboarding.core.models import ChunkId, EmployeeId, EscalationReason
-from onboarding.ports import LLMUnavailableError
+from onboarding.ports import LLMUnavailableError, RerankUnavailableError
 
 from .fakes import FakeKnowledgeBase, RecordingAudit, ScriptedLLM, profile, scored_chunk
 
@@ -31,10 +31,29 @@ def settings() -> Settings:
     )
 
 
+class ReversingReranker:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int]] = []
+
+    async def rerank(
+        self, query: str, documents: tuple[str, ...], *, top_n: int
+    ) -> tuple[int, ...]:
+        self.calls.append((query, len(documents)))
+        return tuple(range(len(documents)))[::-1]
+
+
+class BrokenReranker:
+    async def rerank(
+        self, query: str, documents: tuple[str, ...], *, top_n: int
+    ) -> tuple[int, ...]:
+        raise RerankUnavailableError("down")
+
+
 def build(
     responses: list[str | Exception],
     chunks: tuple[object, ...] = (),
     audit: RecordingAudit | None = None,
+    reranker: object | None = None,
 ) -> tuple[Answerer, ScriptedLLM, FakeKnowledgeBase, RecordingAudit]:
     llm = ScriptedLLM(responses=list(responses))
     kb = FakeKnowledgeBase(chunks=chunks)  # type: ignore[arg-type]
@@ -46,6 +65,7 @@ def build(
         copy=load_copy(COPY),
         settings=settings(),
         audit=recorder,
+        reranker=reranker,  # type: ignore[arg-type]
     )
     return answerer, llm, kb, recorder
 
@@ -193,3 +213,32 @@ def test_the_answerer_uses_an_existing_prompt_version() -> None:
     prompt = PromptLibrary(PROMPTS).load(PROMPT_NAME, PROMPT_VERSION)
 
     assert prompt.version == PROMPT_VERSION
+
+
+async def test_reranker_decides_what_the_model_sees() -> None:
+    chunks = (scored_chunk("hr/a#0"), scored_chunk("hr/b#0"))
+    reranker = ReversingReranker()
+    answerer, llm, _, audit = build(
+        [answer_json("hr/b#0")], chunks, reranker=reranker
+    )
+
+    await answerer.answer("Сколько дней отпуска?", profile(), ON_DATE)
+
+    assert reranker.calls == [("Сколько дней отпуска?", 2)]
+    prompt = llm.requests[0].messages[0].content
+    assert prompt.index('id="hr/b#0"') < prompt.index('id="hr/a#0"')
+    assert "rerank_completed" in audit.names()
+
+
+async def test_a_reranker_outage_keeps_the_retrieval_order() -> None:
+    chunks = (scored_chunk("hr/a#0"), scored_chunk("hr/b#0"))
+    answerer, llm, _, audit = build(
+        [answer_json("hr/a#0")], chunks, reranker=BrokenReranker()
+    )
+
+    outcome = await answerer.answer("Сколько дней отпуска?", profile(), ON_DATE)
+
+    assert not outcome.escalated
+    prompt = llm.requests[0].messages[0].content
+    assert prompt.index('id="hr/a#0"') < prompt.index('id="hr/b#0"')
+    assert "rerank_failed" in audit.names()

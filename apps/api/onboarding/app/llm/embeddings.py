@@ -6,6 +6,7 @@ model fails at startup instead of writing vectors that cannot be compared.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 
 import httpx
@@ -42,21 +43,7 @@ class RemoteEmbedder:
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         if not texts:
             return ()
-        try:
-            response = await self._client.post(
-                self._endpoint,
-                headers={
-                    "Authorization": await self._authorization(),
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                json={"model": self._model, "input": list(texts)},
-                timeout=self._timeout,
-            )
-        except httpx.HTTPError as error:
-            raise KnowledgeUnavailableError(f"embedding request failed: {error}") from None
-        if response.status_code >= 400:
-            raise KnowledgeUnavailableError(f"embedding endpoint answered {response.status_code}")
+        response = await self._post_with_retry(list(texts))
         payload = response.json()
         data = payload.get("data") if isinstance(payload, dict) else None
         if not isinstance(data, list) or len(data) != len(texts):
@@ -72,6 +59,36 @@ class RemoteEmbedder:
             vectors.append(tuple(float(value) for value in raw))
         return tuple(vectors)
 
+    async def _post_with_retry(self, texts: list[str]) -> httpx.Response:
+        """Cheap gateways answer 429/503 under load; two retries turn an outage into a delay."""
+        last = "no attempt"
+        for attempt in range(3):
+            if attempt:
+                await asyncio.sleep(0.2 * attempt)
+            try:
+                response = await self._client.post(
+                    self._endpoint,
+                    headers={
+                        "Authorization": await self._authorization(),
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    json={"model": self._model, "input": texts},
+                    timeout=self._timeout,
+                )
+            except httpx.HTTPError as error:
+                last = f"embedding request failed: {error}"
+                continue
+            if response.status_code in {429, 500, 502, 503, 504}:
+                last = f"embedding endpoint answered {response.status_code}"
+                continue
+            if response.status_code >= 400:
+                raise KnowledgeUnavailableError(
+                    f"embedding endpoint answered {response.status_code}"
+                )
+            return response
+        raise KnowledgeUnavailableError(last)
+
 
 def build_embedder(
     settings: Settings, client: httpx.AsyncClient
@@ -79,7 +96,7 @@ def build_embedder(
     if settings.embed_provider == "hashing":
         return HashingEmbedder(dim=settings.embed_dim)
 
-    base_url = settings.llm_base_url.rstrip("/")
+    base_url = (settings.embed_base_url or settings.llm_base_url).rstrip("/")
     if settings.embed_provider == "gigachat":
         provider = GigaChatProvider(
             base_url=base_url,
@@ -95,7 +112,9 @@ def build_embedder(
             dim=settings.embed_dim,
         )
 
-    key = SecretStr(settings.llm_api_key.get_secret_value())
+    key = SecretStr(
+        settings.embed_api_key.get_secret_value() or settings.llm_api_key.get_secret_value()
+    )
     return RemoteEmbedder(
         client=client,
         endpoint=f"{base_url}/embeddings",

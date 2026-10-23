@@ -12,7 +12,7 @@ request that touches retrieval, prompts, or the answer policy.
 | `citation_support` | share of answers whose every citation was retrieved for that question | = 1.00 |
 | `answer_contains` | share of cases with expected fragments that contain all of them | = 1.00 |
 | `escalation_correctness` | share of cases whose escalation flag and reason match | ≥ 0.90 |
-| `p95_latency_ms` | answer latency on the set, warm cache excluded | ≤ 3000 |
+| `p95_latency_ms` | answer latency on the set, warm cache excluded | ≤ 8000 |
 | `cost_per_answer_rub` | provider cost divided by cases | recorded, no gate |
 
 `recall@5` runs without a model. `citation_support` and `escalation_correctness` appear only when

@@ -8,11 +8,12 @@ knowledge document schema, the preview mode, and the known limits.
 
 ## Rules
 
-1. The cabinet is read-only except for two writes: resolving a question and offboarding an
-   employee. Both call `/admin/api/*` with a bearer token; the cabinet never talks to MAX. A reply
-   is queued through the outbox in the same transaction that closes the question.
-2. The token lives in `localStorage` under `onboarding.admin.token` and nowhere else. A `401`
-   clears it and returns to the gate.
+1. Writes are the four the contract allows: resolve a question, publish a knowledge document,
+   upload a PDF or a deck, and offboard an employee. The cabinet calls `/admin/api/*` and never MAX;
+   a reply is queued through the outbox in the same transaction that closes the question.
+2. The token never lives in the page. It is exchanged on the gate for an HttpOnly cookie
+   (`docs/decisions/0018`) and is not readable by script afterwards. A `401` returns to the gate.
+   What a role may see is decided by `capabilities` from `GET /admin/api/me`, never by the client.
 3. Every list shows an explicit empty state and an explicit error with a retry. "Nothing" and
    "failed" must never look the same.
 4. Timestamps arrive as UTC ISO strings and are formatted for the reader, never recomputed.
@@ -28,7 +29,8 @@ npm run dev          # :5173, proxies /admin/api to :8000
 npm run preview:demo # :5173, dev-only demo API with the documented cohort
 npm run build        # tsc -b + vite build
 npm run typecheck
-npm run test       # vitest: api client, formatting, the reply flow
+npm run lint         # eslint: typescript, hooks, jsx-a11y
+npm run test         # vitest: routing, lists, write flows, format
 ```
 
 ## API

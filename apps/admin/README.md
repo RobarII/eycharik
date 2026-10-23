@@ -30,15 +30,24 @@ The URL hash is the router; there is no router dependency.
 | `#/risk` | Risks | Counters, weekly digest, risk topics |
 | `#/knowledge` | Knowledge | Upload a markdown document, list indexed documents |
 
-The default route is `#/overview`. The token gate is shown before any route when no token is stored.
+The default route is `#/overview`. The gate is shown before any route when the session cookie is
+missing or expired. Filters live in the query string (`#/questions?status=answered`), so a screen is
+a link someone can send.
 
 ## Authentication and tokens
 
-There is no session and no cookie. Every API request carries a bearer token:
+The gate posts the token once and gets an HttpOnly cookie back
+([`docs/decisions/0018`](../../docs/decisions/0018-session-cookie-for-the-cabinet.md)); script cannot
+read the token afterwards and every later request carries the cookie:
 
 ```http
-Authorization: Bearer <token>
+POST /admin/api/session   {"token": "…"}   → 204 Set-Cookie: onboarding_session=…
+GET  /admin/api/runs                        → cookie, no header
 ```
+
+A bearer header is still accepted, so `curl` and the tests keep working. The token is opaque: what a
+role may do is read from `GET /admin/api/me`, which returns `capabilities`, and the cabinet hides
+what it may not use.
 
 The server maps tokens to `(role, subject)` from `ADMIN_TOKENS`, a comma-separated list of
 `token:role:subject` entries:
@@ -52,17 +61,16 @@ ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
 | `recruiter` | recruiter id, e.g. `rec-1` | Employees whose `recruiter_id` equals the subject |
 | `hr_admin` | HR identity, e.g. `hr-1` | Every employee, every question, every knowledge document |
 
-The current token parser (`Settings.admin_principals`) accepts exactly `recruiter` and `hr_admin`.
-`manager` appears in the API contract and in `AdminPrincipal.is_manager`, but a manager token makes
-the process refuse to start today. Do not issue one until the parser, the server tests, and this
-table agree.
+`Settings.admin_principals` accepts all three. A `manager` token's subject is a department name
+(`ADMIN_TOKENS=dev-manager-token:manager:Производство`); the cabinet filters every list by that
+department in SQL.
 
 Status codes the frontend relies on:
 
 | Code | Meaning | Frontend behaviour |
 |---|---|---|
 | `401` | Missing or unknown token | Clear `onboarding.admin.token`, show the gate |
-| `403` | Role may not perform the mutation, e.g. recruiter uploads knowledge | Show the API `detail`, keep the session |
+| `403` | Role may not perform the mutation | Say "недостаточно прав"; the UI should not have offered it |
 | `404` | Run does not exist **or** is outside the caller's scope | Show the detail; never guess that another recruiter's employee exists |
 
 A run outside the scope is deliberately `404`, not `403`.
@@ -87,8 +95,9 @@ deploy, and keep them in the server environment. Example generation:
 openssl rand -hex 32
 ```
 
-The browser stores the token in `localStorage` under `onboarding.admin.token` and nowhere else.
-A `401` clears it. The token is never put in a URL, a log line, or a build artifact.
+The token is never stored in the page: it exists for the length of one form submit. The cookie is
+`HttpOnly`, `SameSite=Strict`, `Secure` outside local development, and scoped to `/admin/api`. A
+`401` (an expired token, a restarted server) drops the cabinet back to the gate.
 
 ### Token vs MAX bot token
 
@@ -275,13 +284,18 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 
 | Path | Responsibility |
 |---|---|
-| `src/App.tsx` | Shell, hash router, token state, navigation badge, global refresh |
-| `src/api.ts` | Fetch wrapper, bearer header, `Unauthorized`, query functions |
+| `src/App.tsx` | Shell, session bootstrap, capability-filtered navigation, global refresh |
+| `src/route.ts` | Hash router: parse, build, and the URL as screen state |
+| `src/session.ts` | Session context and `can(capability)` |
+| `src/errors.ts` | Status codes to Russian, conflict detection |
+| `src/config.ts` | Tenant name, scenario labels, refresh intervals |
+| `src/api.ts` | Fetch wrapper, session cookie, `Unauthorized`, typed endpoints |
 | `src/types.ts` | API response types; mirrors the contract |
 | `src/format.ts` | Dates, Russian plurals, reason/event/step/tag labels, initials |
 | `src/styles.css` | Tokens, layout, components, responsive rules |
 | `src/components/Icons.tsx` | Inline SVG icon set and logo mark |
 | `src/components/TokenGate.tsx` | Login by token |
+| `src/components/Boundary.tsx` | Keeps a crashed screen from becoming a white page |
 | `src/components/Pills.tsx` | Status, answer, reason pills |
 | `src/components/Progress.tsx` | Step progress |
 | `src/components/States.tsx` | Empty, error, skeleton |
@@ -295,15 +309,14 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 
 ## Limits and next mutations
 
-- The cabinet is read-only except `POST /admin/api/knowledge`.
-- Manual messages to an employee and escalation resolution are not implemented. They are the next
-  mutations in the contract; until then the human action happens in MAX and the decision is tracked
-  outside the cabinet.
-- No cursor pagination. `limit` is capped at 200.
-- A `manager` role is reserved in the contract and has an `AdminPrincipal.is_manager` property, but
-  the current `ADMIN_TOKENS` parser rejects it. Do not advertise manager access until the server
-  accepts and tests it.
-- The knowledge list is not role-scoped in the current server; see the gap above.
+- Writes: resolve a question, publish a markdown document, upload a PDF or a deck (queued, then
+  polled), offboard an employee. Manual messages to an employee are still not implemented.
+- Escalation resolution and assignment are not implemented; the human action happens in MAX and
+  the decision is tracked outside the cabinet.
+- Lists are keyset-paged: a screen asks for the next page with the cursor the server returned, and
+  the header prints `shown of total`. `limit` is capped at 200.
+- The knowledge list hides `hr_only` documents from non-HR callers, but a recruiter still sees the
+  titles of the rest: the corpus is shared, the audience is not a secret.
 - No in-app notifications, exports, saved views, or assignment. Those are product decisions that
   need a contract change first.
 - UI copy is Russian. Documentation is English, per the workspace rules.
@@ -312,7 +325,7 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 
 1. Read `docs/contracts/admin-api.md` and the relevant product doc before changing a screen.
 2. If a field is missing, change the contract and the server first; do not invent a shape in `types.ts`.
-3. Run `npm run typecheck` and `npm run build`.
+3. Run `npm run lint`, `npm run typecheck` and `npm run test`; `make check` does all of it.
 4. Keep the three list states and the accessibility rules.
 5. If the change is a product claim or a measured number, add the command, environment, and commit
    to `docs/measurements/`; the preview is not a measurement.

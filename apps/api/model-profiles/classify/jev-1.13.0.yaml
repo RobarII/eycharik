@@ -1,0 +1,12 @@
+name: jev-1.13.0
+role: classify
+description: "TypeSafe Jev: one state, typed questions, probabilities. A classifier, not an answer path."
+note: >
+  Jev bills input tokens only, so there is no output price. An outage degrades to the keyword
+  classifier inside the sentiment adapter, so this profile is never fatal.
+family: typesafe-jev
+model: jev-1.13.0
+rubric: sentiment-jev@1
+timeout_s: 8.0
+max_retries: 2
+price_input_rub_per_1k: 0.0

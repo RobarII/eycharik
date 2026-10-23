@@ -17,6 +17,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 _PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
+_RUBRIC_SELECTOR = re.compile(r"[a-z0-9][a-z0-9._-]*@[1-9][0-9]*")
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +31,9 @@ class AdminToken:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env.local", ".env"),
+        # Later files win, so the machine-local file overrides the shared one. The reverse order let
+        # a stray `.env` silently redirect a live run to the offline providers.
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
         populate_by_name=True,
@@ -80,10 +83,15 @@ class Settings(BaseSettings):
     rerank_timeout_s: float | None = None
 
     sentiment_provider: Literal["prompt", "jev"] = "prompt"
+    classify_profile: str = ""
+    sentiment_rubric: str = ""
     jev_base_url: str = "https://api.typesafe.ai/v1"
     jev_api_key: SecretStr = SecretStr("")
-    jev_timeout_s: float = 8.0
-    jev_max_retries: int = 2
+    jev_model: str = "jev-1.13.0"
+    # Explicit overrides. ``None`` means "the classify profile decides".
+    jev_timeout_s: float | None = None
+    jev_max_retries: int | None = None
+    jev_price_input_rub_per_1k: float | None = None
 
     extraction_profile: str = "native"
     extraction_profiles_dir: Path = Field(
@@ -119,6 +127,7 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _check(self) -> Settings:
         self._check_llm()
+        self._check_sentiment()
         self._check_limits()
         self._check_experiments()
         self._check_production()
@@ -151,9 +160,19 @@ class Settings(BaseSettings):
         if self.embed_timeout_s is not None and self.embed_timeout_s <= 0:
             raise ValueError("EMBED_TIMEOUT_S must be positive")
 
-    def _check_limits(self) -> None:
+    def _check_sentiment(self) -> None:
         if self.sentiment_provider == "jev" and not self.jev_api_key.get_secret_value():
             raise ValueError("SENTIMENT_PROVIDER=jev requires JEV_API_KEY")
+        if self.classify_profile and not _PROFILE_NAME.fullmatch(self.classify_profile):
+            raise ValueError("CLASSIFY_PROFILE must match [a-z0-9][a-z0-9._-]*")
+        if self.sentiment_rubric and not _RUBRIC_SELECTOR.fullmatch(self.sentiment_rubric):
+            raise ValueError("SENTIMENT_RUBRIC must match <name>@<version>, for example a@1")
+        if self.jev_timeout_s is not None and self.jev_timeout_s <= 0:
+            raise ValueError("JEV_TIMEOUT_S must be positive")
+        if self.jev_max_retries is not None and self.jev_max_retries < 0:
+            raise ValueError("JEV_MAX_RETRIES must not be negative")
+
+    def _check_limits(self) -> None:
         if not 0.0 <= self.answer_min_confidence <= 1.0:
             raise ValueError("ANSWER_MIN_CONFIDENCE must be within [0, 1]")
         if self.embed_dim < 8:

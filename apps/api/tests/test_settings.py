@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -92,6 +93,23 @@ def test_jev_without_a_key_is_refused_at_startup() -> None:
         Settings(_env_file=None, sentiment_provider="jev")
 
 
+def test_a_rubric_selector_must_be_named_and_versioned() -> None:
+    with pytest.raises(ValidationError, match="SENTIMENT_RUBRIC"):
+        Settings(_env_file=None, sentiment_rubric="sentiment-jev")
+
+    assert Settings(_env_file=None, sentiment_rubric="sentiment-jev@2").sentiment_rubric
+
+
+def test_a_classify_profile_name_cannot_escape_the_profiles_directory() -> None:
+    with pytest.raises(ValidationError, match="CLASSIFY_PROFILE"):
+        Settings(_env_file=None, classify_profile="../etc/passwd")
+
+
+def test_a_negative_jev_retry_count_is_refused() -> None:
+    with pytest.raises(ValidationError, match="JEV_MAX_RETRIES"):
+        Settings(_env_file=None, jev_max_retries=-1)
+
+
 def test_manager_token_is_supported() -> None:
     principals = Settings(
         _env_file=None, admin_tokens_raw="m-token:manager:ИТ"
@@ -128,3 +146,18 @@ def test_duplicate_tokens_are_refused() -> None:
 def test_retention_window_must_be_positive() -> None:
     with pytest.raises(ValidationError, match="DATA_RETENTION_DAYS"):
         Settings(_env_file=None, data_retention_days=0)
+
+
+def test_the_local_env_file_wins_over_the_shared_one(tmp_path: Path) -> None:
+    """`.env.local` is the developer's secrets file; a stray `.env` must not redirect it.
+
+    Both files are ignored by git, so the precedence is the only thing standing between a local
+    configuration and a silently offline run.
+    """
+    (tmp_path / ".env").write_text("LLM_PROVIDER=extractive\nEMBED_PROVIDER=hashing\n")
+    (tmp_path / ".env.local").write_text("LLM_PROVIDER=openai\nEMBED_PROVIDER=openai\n")
+
+    settings = Settings(_env_file=(tmp_path / ".env", tmp_path / ".env.local"))
+
+    assert settings.llm_provider == "openai"
+    assert settings.embed_provider == "openai"

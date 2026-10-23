@@ -2,7 +2,6 @@ version: 1
 name: sentiment-jev
 # The rubric is a prompt artifact: the questions below are the prompt. A wording change is a new
 # version plus an eval run, never an edit in place.
-model: jev-1.13.0
 tag_threshold: 0.5
 max_tags: 3
 questions:

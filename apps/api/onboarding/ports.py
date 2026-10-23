@@ -121,6 +121,24 @@ class RerankProfile:
     timeout_s: float = 3.0
 
 
+@dataclass(frozen=True, slots=True)
+class ClassifyProfile:
+    """One classifier model: its rubric, its envelope, and its input price.
+
+    Classifiers answer typed probabilities, not chat completions, so they have no temperature,
+    token budget, or output price. ``rubric`` is a ``<name>@<version>`` selector for the versioned
+    file in ``docs/prompts/``; the classifier never knows a file path.
+    """
+
+    name: str
+    model: str
+    rubric: str = ""
+    family: Literal["typesafe-jev"] = "typesafe-jev"
+    timeout_s: float = 8.0
+    max_retries: int = 2
+    price_input_rub_per_1k: float = 0.0
+
+
 @runtime_checkable
 class LLM(Protocol):
     async def complete(self, request: CompletionRequest) -> Completion:
@@ -195,6 +213,7 @@ class KnowledgeBase(Protocol):
 class OutboundMessage:
     chat_id: ChatId
     text: str
+    image: str | None = None
     keyboard: Keyboard = ()
     reply_to: str | None = None
 

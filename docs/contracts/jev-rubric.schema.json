@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moshackathon.local/contracts/jev-rubric.schema.json",
+  "title": "JevRubric",
+  "description": "The questions sent to TypeSafe Jev, as a versioned prompt artifact: docs/prompts/<name>/v<version>.yaml. Jev is not a chat model, so the rubric is the prompt. Wordings are Russian, like the survey answers they label. The schema owns the shape; the adapter owns the meaning (the sentiment question must be a choice over the Sentiment enum, and every tag_ question must name a SignalTag).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "version", "tag_threshold", "max_tags", "questions"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Matches v<version>.yaml and the version named by the classifier profile or SENTIMENT_RUBRIC."
+    },
+    "tag_threshold": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "A tag is routed when its probability reaches this value. One tag always survives: the most likely one."
+    },
+    "max_tags": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3,
+      "description": "Must not exceed the sentiment contract's maxItems for tags."
+    },
+    "questions": {
+      "type": "object",
+      "minProperties": 2,
+      "propertyNames": {
+        "pattern": "^(sentiment|tag_[a-z0-9_]+)$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/question"
+      }
+    }
+  },
+  "$defs": {
+    "question": {
+      "oneOf": [
+        {
+          "title": "ChoiceQuestion",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions", "criteria"],
+          "properties": {
+            "type": {"const": "choice"},
+            "instructions": {"type": "string", "minLength": 1},
+            "criteria": {
+              "type": "array",
+              "minItems": 2,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        {
+          "title": "NoulQuestion",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "instructions"],
+          "properties": {
+            "type": {"const": "noul"},
+            "instructions": {"type": "string", "minLength": 1}
+          }
+        }
+      ]
+    }
+  }
+}

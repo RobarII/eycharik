@@ -21,9 +21,9 @@ import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 
 from onboarding.app.settings import Settings
-from onboarding.ports import AnswerProfile, EmbeddingProfile, RerankProfile
+from onboarding.ports import AnswerProfile, ClassifyProfile, EmbeddingProfile, RerankProfile
 
-Role = Literal["answer", "embed", "rerank"]
+Role = Literal["answer", "embed", "rerank", "classify"]
 
 MAX_PROFILE_BYTES = 8_000
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
@@ -32,6 +32,7 @@ _NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
 _ANSWER = AnswerProfile(name="default", model="default")
 _EMBED = EmbeddingProfile(name="default", model="default")
 _RERANK = RerankProfile(name="default", model="default")
+_CLASSIFY = ClassifyProfile(name="default", model="default")
 
 _EMBED_FAMILY: dict[str, str] = {
     "hashing": "local",
@@ -61,6 +62,9 @@ class ProfileLibrary:
 
     def rerank(self, name: str) -> RerankProfile:
         return _rerank(self.raw("rerank", name))
+
+    def classify(self, name: str) -> ClassifyProfile:
+        return _classify(self.raw("classify", name))
 
     def available(self, role: Role) -> tuple[str, ...]:
         directory = self._root / role
@@ -200,6 +204,33 @@ def rerank_profile(settings: Settings) -> RerankProfile | None:
     )
 
 
+def classify_profile(settings: Settings) -> ClassifyProfile:
+    """The configured classifier: its rubric, envelope, and input price.
+
+    The rubric selector is the one value the environment may override, because it is a prompt
+    choice (ADR 0004), not a property of the model. Everything else follows ADR 0013.
+    """
+    if settings.classify_profile:
+        profile = library(settings).classify(settings.classify_profile)
+    else:
+        profile = ClassifyProfile(
+            name="env",
+            model=settings.jev_model,
+            timeout_s=_env_float(settings.jev_timeout_s, _CLASSIFY.timeout_s),
+            max_retries=_env_int(settings.jev_max_retries, _CLASSIFY.max_retries),
+            price_input_rub_per_1k=_env_float(settings.jev_price_input_rub_per_1k, 0.0),
+        )
+    return replace(
+        profile,
+        rubric=settings.sentiment_rubric or profile.rubric,
+        timeout_s=_env_float(settings.jev_timeout_s, profile.timeout_s),
+        max_retries=_env_int(settings.jev_max_retries, profile.max_retries),
+        price_input_rub_per_1k=_env_float(
+            settings.jev_price_input_rub_per_1k, profile.price_input_rub_per_1k
+        ),
+    )
+
+
 def _answer(data: dict[str, Any]) -> AnswerProfile:
     return AnswerProfile(
         name=_text(data, "name"),
@@ -236,6 +267,18 @@ def _rerank(data: dict[str, Any]) -> RerankProfile:
         model=_text(data, "model"),
         family=_family(data, ("cohere-rerank",), "cohere-rerank"),
         timeout_s=_number(data, "timeout_s", _RERANK.timeout_s),
+    )
+
+
+def _classify(data: dict[str, Any]) -> ClassifyProfile:
+    return ClassifyProfile(
+        name=_text(data, "name"),
+        model=_text(data, "model"),
+        rubric=_text(data, "rubric"),
+        family=_family(data, ("typesafe-jev",), "typesafe-jev"),
+        timeout_s=_number(data, "timeout_s", _CLASSIFY.timeout_s),
+        max_retries=_integer(data, "max_retries", _CLASSIFY.max_retries),
+        price_input_rub_per_1k=_number(data, "price_input_rub_per_1k", 0.0),
     )
 
 

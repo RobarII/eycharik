@@ -1,34 +1,39 @@
 """TypeSafe Jev as an alternative sentiment classifier.
 
 Jev is not a chat model: it takes one ``state`` and a map of typed questions and returns
-probabilities. The rubric in ``docs/prompts/sentiment-jev/v1.yaml`` is therefore the prompt, and
-this module only transports and validates. A malformed answer degrades to the keyword classifier,
+probabilities. The rubric in ``docs/prompts/sentiment-jev/`` is therefore the prompt, and this
+module only transports and validates. A malformed answer degrades to the keyword classifier,
 exactly like a broken chat completion does in ``sentiment.py``.
+
+The model, envelope, rubric, and price come from a ``classify`` profile
+(``apps/api/model-profiles/classify/<name>.yaml``), so a new classifier is a file plus an eval run,
+not a branch in the composition root.
 """
 
 from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import httpx
-import yaml
 from pydantic import SecretStr
 
 from onboarding.app.audit import NullAudit
+from onboarding.app.clock import SystemClock
+from onboarding.app.llm.providers import PreparedRequest
+from onboarding.app.llm.rubric import Rubric, RubricLibrary
+from onboarding.app.llm.transport import ModelTransport, RejectedError, TransportError
+from onboarding.core.breaker import CircuitBreaker
 from onboarding.core.models import RiskSignal, Sentiment, SignalTag
 from onboarding.core.risk import keyword_signal
-from onboarding.ports import AuditLog, SentimentAnalysis
+from onboarding.ports import AuditLog, ClassifyProfile, Clock, SentimentAnalysis
 
-RUBRIC_NAME = "sentiment-jev"
-RUBRIC_VERSION = 1
 MAX_ANSWER_CHARS = 2000
 MAX_TAGS = 3
 _PROBABILITY_TOLERANCE = 0.05
-_TAGS = {tag.value: tag for tag in SignalTag}
 
 
 class JevError(RuntimeError):
@@ -44,32 +49,6 @@ class JevFormatError(JevError):
 
 
 @dataclass(frozen=True, slots=True)
-class JevQuestion:
-    type: str
-    instructions: str
-    criteria: tuple[str, ...] = ()
-
-    def payload(self) -> dict[str, Any]:
-        body: dict[str, Any] = {"type": self.type, "instructions": self.instructions}
-        if self.criteria:
-            body["criteria"] = list(self.criteria)
-        return body
-
-
-@dataclass(frozen=True, slots=True)
-class JevRubric:
-    version: int
-    model: str
-    tag_threshold: float
-    max_tags: int
-    questions: dict[str, JevQuestion]
-
-    @property
-    def sentiment_criteria(self) -> tuple[str, ...]:
-        return self.questions["sentiment"].criteria
-
-
-@dataclass(frozen=True, slots=True)
 class JevVerdict:
     sentiment: Sentiment
     tags: tuple[SignalTag, ...]
@@ -77,86 +56,7 @@ class JevVerdict:
     probabilities: dict[str, float]
 
 
-def load_rubric(path: Path) -> JevRubric:
-    """Read the versioned rubric and refuse to run on a shape this module cannot map."""
-    payload = _read_rubric(path)
-    model, threshold, max_tags = _header(payload, path)
-    questions = _questions(payload.get("questions"), path)
-    sentiment = questions.get("sentiment")
-    if sentiment is None or sentiment.type != "choice":
-        raise JevFormatError(f"{path}: a choice question named 'sentiment' is required")
-    if set(sentiment.criteria) != {item.value for item in Sentiment}:
-        raise JevFormatError(f"{path}: sentiment criteria must match the Sentiment enum")
-    if not any(key.startswith("tag_") for key in questions):
-        raise JevFormatError(f"{path}: at least one tag question is required")
-    return JevRubric(
-        version=RUBRIC_VERSION,
-        model=model,
-        tag_threshold=threshold,
-        max_tags=max_tags,
-        questions=questions,
-    )
-
-
-def _read_rubric(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        raise JevFormatError(f"missing rubric {path}")
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise JevFormatError(f"{path}: rubric must be a mapping")
-    return payload
-
-
-def _header(payload: dict[str, Any], path: Path) -> tuple[str, float, int]:
-    if payload.get("name") != RUBRIC_NAME:
-        raise JevFormatError(f"{path}: name must be {RUBRIC_NAME!r}")
-    if payload.get("version") != RUBRIC_VERSION:
-        raise JevFormatError(f"{path}: version must be {RUBRIC_VERSION}")
-    model = payload.get("model")
-    if not isinstance(model, str) or not model:
-        raise JevFormatError(f"{path}: model must be a non-empty string")
-    threshold = _unit_interval(payload.get("tag_threshold"), f"{path}: tag_threshold")
-    max_tags = payload.get("max_tags")
-    if not isinstance(max_tags, int) or isinstance(max_tags, bool) or not 1 <= max_tags <= MAX_TAGS:
-        raise JevFormatError(f"{path}: max_tags must be within [1, {MAX_TAGS}]")
-    return model, threshold, max_tags
-
-
-def _questions(raw: Any, path: Path) -> dict[str, JevQuestion]:
-    if not isinstance(raw, dict) or not raw:
-        raise JevFormatError(f"{path}: questions must be a non-empty mapping")
-    questions: dict[str, JevQuestion] = {}
-    for key, value in raw.items():
-        if not isinstance(key, str) or not isinstance(value, dict):
-            raise JevFormatError(f"{path}: questions must map names to mappings")
-        questions[key] = _question(key, value, path)
-    return questions
-
-
-def _question(key: str, value: dict[str, Any], path: Path) -> JevQuestion:
-    question_type = value.get("type")
-    instructions = value.get("instructions")
-    if question_type not in {"noul", "choice"}:
-        raise JevFormatError(f"{path}: {key}: unsupported type {question_type!r}")
-    if not isinstance(instructions, str) or not instructions.strip():
-        raise JevFormatError(f"{path}: {key}: instructions must be a non-empty string")
-    criteria = value.get("criteria") or []
-    if not isinstance(criteria, list) or not all(isinstance(item, str) for item in criteria):
-        raise JevFormatError(f"{path}: {key}: criteria must be a list of strings")
-    if question_type == "choice" and len(criteria) < 2:
-        raise JevFormatError(f"{path}: {key}: a choice needs at least two options")
-    if question_type == "noul" and criteria:
-        raise JevFormatError(f"{path}: {key}: a noul question takes no criteria list")
-    if key.startswith("tag_") and key.removeprefix("tag_") not in _TAGS:
-        raise JevFormatError(f"{path}: {key}: unknown signal tag")
-    return JevQuestion(
-        type=str(question_type),
-        instructions=instructions.strip(),
-        criteria=tuple(criteria),
-    )
-
-
-def parse_jev(payload: Any, rubric: JevRubric) -> JevVerdict:
+def parse_jev(payload: Any, rubric: Rubric) -> JevVerdict:
     """Validate one response against the rubric. Extra answers are ignored, missing ones fail."""
     if not isinstance(payload, dict):
         raise JevFormatError("response must be an object")
@@ -170,11 +70,9 @@ def parse_jev(payload: Any, rubric: JevRubric) -> JevVerdict:
     confidence = _confidence(choice.get("confidence"), probabilities)
 
     scored: list[tuple[float, SignalTag]] = []
-    for key, question in rubric.questions.items():
-        if question.type != "noul" or not key.startswith("tag_"):
-            continue
+    for key, tag in rubric.tags.items():
         probability = _noul(answers.get(key), key)
-        scored.append((probability, _TAGS[key.removeprefix("tag_")]))
+        scored.append((probability, tag))
     scored.sort(key=lambda item: (-item[0], item[1].value))
     tags = tuple(tag for probability, tag in scored if probability >= rubric.tag_threshold)[
         : rubric.max_tags
@@ -240,25 +138,41 @@ class JevSentimentClassifier:
         client: httpx.AsyncClient,
         endpoint: str,
         api_key: SecretStr,
-        rubric: JevRubric,
+        profile: ClassifyProfile,
+        rubric: Rubric,
         audit: AuditLog | None = None,
-        timeout_s: float = 8.0,
-        max_retries: int = 2,
+        clock: Clock | None = None,
+        breaker: CircuitBreaker | None = None,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
-        if max_retries < 0:
-            raise ValueError("max_retries must not be negative")
-        self._client = client
         self._endpoint = endpoint
         self._api_key = api_key
+        self._profile = profile
         self._rubric = rubric
         self._audit = audit or NullAudit()
-        self._timeout = timeout_s
-        self._max_retries = max_retries
+        self._transport = ModelTransport(
+            client=client,
+            clock=clock or SystemClock(),
+            breaker=breaker or CircuitBreaker(),
+            sleep=sleep,
+        )
+
+    @property
+    def profile(self) -> ClassifyProfile:
+        return self._profile
+
+    @property
+    def rubric(self) -> Rubric:
+        return self._rubric
+
+    @property
+    def breaker(self) -> CircuitBreaker:
+        return self._transport.breaker
 
     async def classify(self, text: str, *, source: str) -> RiskSignal:
         state = text[:MAX_ANSWER_CHARS]
         try:
-            payload = await self._ask(state)
+            payload, elapsed_s = await self._ask(state)
             verdict = parse_jev(payload, self._rubric)
         except JevUnavailableError:
             return await self._fallback(text, source, reason="jev_unavailable")
@@ -267,16 +181,21 @@ class JevSentimentClassifier:
                 "sentiment_format_error", source=source, provider="jev", error=str(error)
             )
             return await self._fallback(text, source, reason="jev_format")
+        input_tokens = _input_tokens(payload)
         await self._audit.record(
             "sentiment_classified",
             source=source,
             provider="jev",
-            model=self._rubric.model,
+            model=self._profile.model,
+            rubric=self._rubric.selector,
             rubric_version=self._rubric.version,
             sentiment=verdict.sentiment.value,
             tags=[tag.value for tag in verdict.tags],
             confidence=verdict.confidence,
             probabilities=verdict.probabilities,
+            input_tokens=input_tokens,
+            latency_ms=int(elapsed_s * 1000),
+            cost_rub=round(input_tokens / 1000 * self._profile.price_input_rub_per_1k, 6),
         )
         return RiskSignal(
             source=source,
@@ -286,38 +205,44 @@ class JevSentimentClassifier:
             text=text,
         )
 
-    async def _ask(self, state: str) -> Any:
-        body = {
-            "model": self._rubric.model,
-            "state": state,
-            "questions": {key: value.payload() for key, value in self._rubric.questions.items()},
-        }
+    async def _ask(self, state: str) -> tuple[Any, float]:
         headers = {
             "Authorization": f"Bearer {self._api_key.get_secret_value()}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        last = "no attempt"
-        for attempt in range(self._max_retries + 1):
-            if attempt:
-                await asyncio.sleep(0.2 * attempt)
-            try:
-                response = await self._client.post(
-                    self._endpoint, headers=headers, json=body, timeout=self._timeout
-                )
-            except httpx.HTTPError as error:
-                last = f"jev request failed: {error}"
-                continue
-            if response.status_code in {429, 500, 502, 503, 504} and attempt < self._max_retries:
-                last = f"jev endpoint answered {response.status_code}"
-                continue
-            if response.status_code >= 400:
-                raise JevUnavailableError(f"jev endpoint answered {response.status_code}")
-            try:
-                return response.json()
-            except ValueError as error:
-                raise JevFormatError(f"jev response is not JSON: {error}") from None
-        raise JevUnavailableError(last)
+        try:
+            payload, elapsed_s = await self._transport.call(
+                prepare=lambda: self._prepare(headers),
+                payload=self._body(state),
+                timeout_s=self._profile.timeout_s,
+                max_retries=self._profile.max_retries,
+                parse=self._parse,
+            )
+        except RejectedError as error:
+            raise JevUnavailableError(f"jev endpoint answered {error.status_code}") from None
+        except TransportError as error:
+            raise JevUnavailableError(f"jev request failed: {error}") from None
+        return payload, elapsed_s
+
+    async def _prepare(self, headers: dict[str, str]) -> PreparedRequest:
+        return PreparedRequest(url=self._endpoint, headers=headers)
+
+    def _body(self, state: str) -> dict[str, object]:
+        return {
+            "model": self._profile.model,
+            "state": state,
+            "questions": {key: value.payload() for key, value in self._rubric.questions.items()},
+        }
+
+    def _parse(self, response: httpx.Response, elapsed_s: float) -> tuple[Any, float]:
+        try:
+            payload: Any = response.json()
+        except ValueError as error:
+            raise JevFormatError(f"jev response is not JSON: {error}") from None
+        if not isinstance(payload, dict):
+            raise JevFormatError("response must be an object")
+        return payload, elapsed_s
 
     async def _fallback(self, text: str, source: str, *, reason: str) -> RiskSignal:
         await self._audit.record(
@@ -326,22 +251,32 @@ class JevSentimentClassifier:
         return keyword_signal(text, source=source)
 
 
+def _input_tokens(payload: Any) -> int:
+    usage = payload.get("usage") if isinstance(payload, dict) else None
+    tokens = usage.get("input_tokens") if isinstance(usage, dict) else None
+    return tokens if isinstance(tokens, int) and not isinstance(tokens, bool) else 0
+
+
 def build_jev_classifier(
     *,
     client: httpx.AsyncClient,
     endpoint: str,
     api_key: SecretStr,
-    rubric_path: Path,
+    profile: ClassifyProfile,
+    rubrics: RubricLibrary,
     audit: AuditLog | None = None,
-    timeout_s: float = 8.0,
-    max_retries: int = 2,
+    clock: Clock | None = None,
+    breaker: CircuitBreaker | None = None,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> SentimentAnalysis:
     return JevSentimentClassifier(
         client=client,
         endpoint=endpoint,
         api_key=api_key,
-        rubric=load_rubric(rubric_path),
+        profile=profile,
+        rubric=rubrics.load(profile.rubric),
         audit=audit,
-        timeout_s=timeout_s,
-        max_retries=max_retries,
+        clock=clock,
+        breaker=breaker,
+        sleep=sleep,
     )

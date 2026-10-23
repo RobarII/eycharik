@@ -6,7 +6,9 @@ client, a database or a model adapter on its own.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -38,7 +40,9 @@ from onboarding.app.knowledge.extract.router import RoutingExtraction
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
 from onboarding.app.llm.jev import build_jev_classifier
+from onboarding.app.llm.profiles import classify_profile
 from onboarding.app.llm.rerank import build_reranker
+from onboarding.app.llm.rubric import RubricLibrary
 from onboarding.app.llm.sentiment import SentimentClassifier
 from onboarding.app.max.client import MaxClient
 from onboarding.app.prompts import PromptLibrary
@@ -48,6 +52,7 @@ from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.service import OnboardingService
+from onboarding.core.breaker import CircuitBreaker
 from onboarding.ports import (
     LLM,
     AuditLog,
@@ -59,6 +64,7 @@ from onboarding.ports import (
 )
 
 SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
+SCENARIO_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "scenario"
 
 
 @dataclass(slots=True)
@@ -105,14 +111,26 @@ def _classifier(
             client=http,
             endpoint=f"{settings.jev_base_url.rstrip('/')}/systemone",
             api_key=settings.jev_api_key,
-            rubric_path=settings.prompts_dir / "sentiment-jev" / "v1.yaml",
+            profile=classify_profile(settings),
+            rubrics=RubricLibrary(
+                settings.prompts_dir, settings.contracts_dir / "jev-rubric.schema.json"
+            ),
             audit=audit,
-            timeout_s=settings.jev_timeout_s,
-            max_retries=settings.jev_max_retries,
+            clock=SystemClock(),
+            breaker=breaker(settings),
+            sleep=asyncio.sleep,
         )
     if not settings.is_llm_configured:
         return None
     return SentimentClassifier(llm=llm, prompts=prompts, audit=audit)
+
+
+def breaker(settings: Settings) -> CircuitBreaker:
+    """One outage policy for every model call: the answer path and the classifier share it."""
+    return CircuitBreaker(
+        threshold=settings.llm_breaker_threshold,
+        cooldown=timedelta(seconds=settings.llm_breaker_cooldown_s),
+    )
 
 
 def build_container(settings: Settings) -> Container:
@@ -139,6 +157,7 @@ def build_container(settings: Settings) -> Container:
         token=settings.max_bot_token,
         client=http,
         messages_per_second=settings.max_messages_per_second,
+        assets_dir=SCENARIO_ASSETS_DIR,
     )
     outbox = OutboxMessaging(database, sender)
     reranker = build_reranker(settings, http)
@@ -183,7 +202,7 @@ def build_container(settings: Settings) -> Container:
             max_pages=settings.extraction_max_pages,
         ),
         cache=extraction_cache,
-        writer=PostgresKnowledgeWriter(database),
+        writer=PostgresKnowledgeWriter(database, embedder),
         embedder=embedder,
         schema_path=settings.contracts_dir / "doc.schema.json",
         profile=extraction_profile,

@@ -8,67 +8,223 @@
       "title": "AnswerProfile",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "role", "model"],
+      "required": [
+        "name",
+        "role",
+        "model"
+      ],
       "properties": {
-        "name": {"$ref": "#/$defs/name"},
-        "role": {"const": "answer"},
-        "description": {"$ref": "#/$defs/description"},
-        "note": {"$ref": "#/$defs/note"},
-        "model": {"$ref": "#/$defs/model"},
-        "family": {"enum": ["openai-chat", "gigachat"]},
-        "json_mode": {"type": "boolean", "description": "Honour response_format=json_object."},
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "role": {
+          "const": "answer"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "note": {
+          "$ref": "#/$defs/note"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "family": {
+          "enum": [
+            "openai-chat",
+            "gigachat"
+          ]
+        },
+        "json_mode": {
+          "type": "boolean",
+          "description": "Honour response_format=json_object."
+        },
         "max_tokens_field": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
           "description": "Some providers want max_completion_tokens instead of max_tokens."
         },
-        "reasoning_effort": {"enum": ["none", "low", "medium", "high"]},
-        "temperature": {"type": "number", "minimum": 0, "maximum": 2},
-        "max_tokens": {"type": "integer", "minimum": 1, "maximum": 32000},
-        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
-        "max_retries": {"type": "integer", "minimum": 0, "maximum": 5},
+        "reasoning_effort": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32000
+        },
+        "timeout_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 120
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
         "retry_empty_completion": {
           "type": "boolean",
           "description": "Retry a 200 with empty content instead of escalating it."
         },
-        "price_input_rub_per_1k": {"type": "number", "minimum": 0},
-        "price_output_rub_per_1k": {"type": "number", "minimum": 0}
+        "price_input_rub_per_1k": {
+          "type": "number",
+          "minimum": 0
+        },
+        "price_output_rub_per_1k": {
+          "type": "number",
+          "minimum": 0
+        },
+        "price_cache_read_rub_per_1k": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cached prompt tokens, billed by some providers at a lower rate. Reported by usage.prompt_tokens_details.cached_tokens."
+        }
       }
     },
     {
       "title": "EmbeddingProfile",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "role", "model", "dim"],
+      "required": [
+        "name",
+        "role",
+        "model",
+        "dim"
+      ],
       "properties": {
-        "name": {"$ref": "#/$defs/name"},
-        "role": {"const": "embed"},
-        "description": {"$ref": "#/$defs/description"},
-        "note": {"$ref": "#/$defs/note"},
-        "model": {"$ref": "#/$defs/model"},
-        "family": {"enum": ["openai-chat", "gigachat", "local"]},
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "role": {
+          "const": "embed"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "note": {
+          "$ref": "#/$defs/note"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "family": {
+          "enum": [
+            "openai-chat",
+            "gigachat",
+            "local"
+          ]
+        },
         "dim": {
           "type": "integer",
           "minimum": 8,
           "maximum": 4096,
           "description": "Vector width. It must equal kb_chunks.embedding; a change is a migration."
         },
-        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120}
+        "timeout_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 120
+        },
+        "dimensions_param": {
+          "type": "boolean",
+          "default": false,
+          "description": "Send the requested width as a `dimensions` field: Matryoshka models answer shorter vectors, so a 4096-wide model can fill the frozen 1024-wide column without a migration."
+        }
+      }
+    },
+    {
+      "title": "ClassifyProfile",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "role",
+        "model",
+        "rubric"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "role": {
+          "const": "classify"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "note": {
+          "$ref": "#/$defs/note"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "family": {
+          "const": "typesafe-jev"
+        },
+        "rubric": {
+          "$ref": "#/$defs/rubric"
+        },
+        "timeout_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "description": "The whole call, all retries included: a dead classifier costs one timeout, not one per attempt."
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "price_input_rub_per_1k": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Jev bills input tokens only; a classify profile has no output price."
+        }
       }
     },
     {
       "title": "RerankProfile",
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "role", "model"],
+      "required": [
+        "name",
+        "role",
+        "model"
+      ],
       "properties": {
-        "name": {"$ref": "#/$defs/name"},
-        "role": {"const": "rerank"},
-        "description": {"$ref": "#/$defs/description"},
-        "note": {"$ref": "#/$defs/note"},
-        "model": {"$ref": "#/$defs/model"},
-        "family": {"const": "cohere-rerank"},
-        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120}
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "role": {
+          "const": "rerank"
+        },
+        "description": {
+          "$ref": "#/$defs/description"
+        },
+        "note": {
+          "$ref": "#/$defs/note"
+        },
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "family": {
+          "const": "cohere-rerank"
+        },
+        "timeout_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 120
+        }
       }
     }
   ],
@@ -78,8 +234,23 @@
       "pattern": "^[a-z0-9][a-z0-9._-]*$",
       "description": "Matches the file stem, so a measurement can name exactly what ran."
     },
-    "model": {"type": "string", "minLength": 1, "description": "Identifier sent to the provider."},
-    "description": {"type": "string", "minLength": 1},
-    "note": {"type": "string", "minLength": 1}
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Identifier sent to the provider."
+    },
+    "rubric": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*@[1-9][0-9]*$",
+      "description": "The rubric this classifier reads, as <name>@<version>; validated by contracts/jev-rubric.schema.json."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "note": {
+      "type": "string",
+      "minLength": 1
+    }
   }
 }

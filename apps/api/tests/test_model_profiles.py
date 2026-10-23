@@ -13,6 +13,7 @@ from onboarding.app.llm.profiles import (
     ProfileError,
     ProfileLibrary,
     answer_profile,
+    classify_profile,
     embedding_profile,
     rerank_profile,
 )
@@ -39,7 +40,7 @@ def write_profile(root: Path, role: str, name: str, body: str) -> Path:
 def test_every_shipped_profile_satisfies_the_contract() -> None:
     library = ProfileLibrary(SHIPPED, CONTRACTS / "model-profile.schema.json")
 
-    for role in ("answer", "embed", "rerank"):
+    for role in ("answer", "embed", "rerank", "classify"):
         names = library.available(role)
         assert names, f"no {role} profiles"
         for name in names:
@@ -61,6 +62,10 @@ def test_shipped_profiles_load_into_typed_values() -> None:
 
     rerank = library.rerank("openrouter-cohere-rerank-v3.5")
     assert rerank.model == "cohere/rerank-v3.5"
+
+    classify = library.classify("jev-1.13.0")
+    assert classify.family == "typesafe-jev"
+    assert classify.rubric == "sentiment-jev@1"
 
 
 def test_an_unknown_field_is_rejected(tmp_path: Path) -> None:
@@ -108,6 +113,48 @@ def test_a_rerank_profile_rejects_generation_fields(tmp_path: Path) -> None:
 
     with pytest.raises(ProfileError, match="temperature"):
         library.rerank("noisy")
+
+
+def test_a_classify_profile_needs_a_rubric(tmp_path: Path) -> None:
+    write_profile(tmp_path, "classify", "bare", "name: bare\nrole: classify\nmodel: m\n")
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="rubric"):
+        library.classify("bare")
+
+
+def test_a_classify_profile_rejects_a_chat_field(tmp_path: Path) -> None:
+    write_profile(
+        tmp_path,
+        "classify",
+        "chatty",
+        "name: chatty\nrole: classify\nmodel: m\nrubric: sentiment-jev@1\ntemperature: 0.2\n",
+    )
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="temperature"):
+        library.classify("chatty")
+
+
+def test_a_classify_profile_rejects_a_rubric_without_a_version(tmp_path: Path) -> None:
+    write_profile(
+        tmp_path,
+        "classify",
+        "unversioned",
+        "name: unversioned\nrole: classify\nmodel: m\nrubric: sentiment-jev\n",
+    )
+    library = ProfileLibrary(tmp_path, CONTRACTS / "model-profile.schema.json")
+
+    with pytest.raises(ProfileError, match="rubric"):
+        library.classify("unversioned")
+
+
+def test_the_classifier_profile_is_built_from_the_environment_when_none_is_chosen() -> None:
+    profile = classify_profile(settings(jev_model="jev-env", jev_timeout_s=2.5))
+
+    assert profile.name == "env"
+    assert profile.model == "jev-env"
+    assert profile.timeout_s == 2.5
 
 
 def test_a_missing_profile_names_the_known_ones() -> None:

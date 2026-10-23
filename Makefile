@@ -1,4 +1,5 @@
 SHELL := /bin/bash
+export PYTHONPATH := apps/api
 PY := uv run
 
 .DEFAULT_GOAL := check

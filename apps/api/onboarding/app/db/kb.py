@@ -125,8 +125,8 @@ async def _semantic_ids(
     limit: int,
 ) -> tuple[ChunkId, ...]:
     rows = await session.scalars(
-        select(ChunkRow.id)
-        .where(*_filters(query))
+        _filtered(query)
+        .with_only_columns(ChunkRow.id)
         .order_by(ChunkRow.embedding.cosine_distance(list(vector)))
         .limit(limit)
     )
@@ -139,11 +139,9 @@ async def _lexical_ids(
     ts_query = func.plainto_tsquery("russian", query.text)
     rank = func.ts_rank_cd(ChunkRow.ts, ts_query)
     rows = await session.scalars(
-        select(ChunkRow.id)
-        .where(
-            *_filters(query),
-            ChunkRow.ts.op("@@")(ts_query),
-        )
+        _filtered(query)
+        .with_only_columns(ChunkRow.id)
+        .where(ChunkRow.ts.op("@@")(ts_query))
         .order_by(rank.desc())
         .limit(limit)
     )

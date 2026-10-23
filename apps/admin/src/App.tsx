@@ -83,8 +83,10 @@ export function App() {
     async (token: string) => {
       await openSession(token);
       try {
-        queryClient.clear();
-        await queryClient.fetchQuery({ queryKey: ["me"], queryFn: fetchMe });
+        const identity = await fetchMe();
+        // Everything the previous person loaded is stale: keep the identity, drop the rest.
+        queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+        queryClient.setQueryData(["me"], identity);
       } catch (failure) {
         await closeSession().catch(() => undefined);
         throw failure;

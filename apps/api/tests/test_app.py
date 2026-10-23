@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from fastapi.testclient import TestClient
 
 from onboarding.api.app import create_app
@@ -135,3 +137,29 @@ def test_metrics_can_require_a_token() -> None:
         response = http.get("/metrics", headers={"Authorization": "Bearer scrape-token"})
 
     assert response.status_code == 200
+
+
+def test_webhook_rejects_invalid_json() -> None:
+    with client() as http:
+        response = http.post(
+            "/webhook",
+            content=b"not json",
+            headers={"X-Max-Bot-Api-Secret": "secret"},
+        )
+
+    assert response.status_code == 400
+
+
+def test_webhook_limits_a_streamed_body() -> None:
+    def chunks() -> Iterator[bytes]:
+        yield b"{"
+        yield b" " * 1_000_001
+
+    with client() as http:
+        response = http.post(
+            "/webhook",
+            content=chunks(),
+            headers={"X-Max-Bot-Api-Secret": "secret"},
+        )
+
+    assert response.status_code == 413

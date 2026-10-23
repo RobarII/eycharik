@@ -7,6 +7,7 @@ answer is a fast acknowledgement after the event is durably queued.
 from __future__ import annotations
 
 import hmac
+import json
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -35,10 +36,15 @@ async def receive(request: Request) -> Response:
 
     declared = request.headers.get("content-length")
     if declared is not None and declared.isdigit() and int(declared) > MAX_BODY_BYTES:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "body too large")
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "body too large")
 
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > MAX_BODY_BYTES:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "body too large")
     try:
-        payload: Any = await request.json()
+        payload: Any = json.loads(body)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid json") from None
     if not isinstance(payload, dict):

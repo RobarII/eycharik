@@ -28,6 +28,7 @@ recruiter's employee is not disclosed.
 | `GET` | `/admin/api/runs?limit=50` | active and completed runs, newest activity first |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
+| `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
 | `GET` | `/admin/api/knowledge` | active knowledge documents, newest first |
@@ -70,15 +71,37 @@ newest 20.
 
 ```json
 {
+  "id": 42,
   "employee_id": "1001",
   "employee_name": "Анна Смирнова",
   "text": "Сколько дней отпуска?",
   "answered": false,
   "reason": "no_sources",
   "citations": [],
-  "asked_at": "2026-10-23T07:12:00Z"
+  "asked_at": "2026-10-23T07:12:00Z",
+  "resolved_at": null,
+  "resolved_by": null
 }
 ```
+
+`POST /admin/api/questions/{question_id}/resolve` takes `{"text": "до 2000 символов"}` and answers
+`200` with the closed question:
+
+```json
+{
+  "id": 42,
+  "employee_id": "1001",
+  "answered": true,
+  "resolved_at": "2026-10-23T09:30:00Z",
+  "resolved_by": "rec-1"
+}
+```
+
+The reply is written to the outbox in the same transaction that closes the question, so MAX
+delivery keeps its pacing and at-least-once retries. The audit log gets `question_resolved` with
+the question id, the employee id, the actor, and the reply length — never the reply text. A
+question outside the caller's scope answers `404`; resolving an already closed question answers
+`409`. `text` is stripped; an empty reply answers `422`.
 
 `AnalyticsOverview`:
 
@@ -157,7 +180,8 @@ The cabinet shows the detail text and never guesses from the status code alone.
 
 ## Rules
 
-- The API is read-only today. Manual messages and escalation resolution are the next mutations.
+- Mutations are limited to the knowledge upload and the question resolution above. The cabinet
+  never talks to MAX directly: every outbound message is an outbox row.
 - Every answer attempt already writes an audit row and a question row; the cabinet does not
   assemble them from logs.
 - Timestamps are UTC ISO 8601.

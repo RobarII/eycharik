@@ -1,10 +1,10 @@
 # Sentiment eval — keyword
 
 - command: `python -m onboarding.evals.sentiment --provider keyword --split test --repeat 1`
-- commit: `939de3b`
+- commit: `eb70b76`
 - environment: `local`
 - split: `test`
-- cases: 58 (dev 0, test 58)
+- cases: 58 (dev 58, test 0)
 - repetitions per case: 1
 - calls: 58
 
@@ -13,6 +13,7 @@
 | metric | value | 95% CI |
 |---|---|---|
 | `sentiment_accuracy` | 0.345 | [0.24, 0.47] |
+| `case_accuracy` | 0.345 | majority over repetitions |
 | `sentiment_macro_f1` | 0.297 | — |
 | `tag_precision` | 0.827 | — |
 | `tag_recall` | 0.597 | — |
@@ -63,6 +64,8 @@ Rows are the label, columns are the prediction.
 | `it` | 0.600 | 5 |
 | `integration` | 0.400 | 5 |
 | `other` | 0.000 | 4 |
+
+Note: Set v2 (107 cases, dev/test split) replaces the 16-case v1 set; these numbers are not comparable with the 2026-10-23 v1 rows. Labels were written by one annotator: there is no inter-annotator kappa yet. Label rules: docs/evals/sentiment-guide.md.
 
 ## Missed escalations
 

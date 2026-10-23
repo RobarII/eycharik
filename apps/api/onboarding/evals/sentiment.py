@@ -192,9 +192,7 @@ class Report:
         scores: list[float] = []
         for sentiment in Sentiment:
             expected = [result for result in self.results if result.case.sentiment is sentiment]
-            predicted = [
-                result for result in self.results if result.signal.sentiment is sentiment
-            ]
+            predicted = [result for result in self.results if result.signal.sentiment is sentiment]
             if not expected and not predicted:
                 continue
             hits = sum(
@@ -520,9 +518,7 @@ async def evaluate(
             started = time.perf_counter()
             signal = await classifier.classify(case.text, source=case.id)
             elapsed = (time.perf_counter() - started) * 1000
-            results.append(
-                CaseResult(case=case, signal=signal, latency_ms=elapsed, rep=rep)
-            )
+            results.append(CaseResult(case=case, signal=signal, latency_ms=elapsed, rep=rep))
     return Report(
         provider=provider,
         split=split,
@@ -573,8 +569,7 @@ def render_markdown(
         "|---|---|---|",
         f"| `sentiment_accuracy` | {report.sentiment_accuracy:.3f} | "
         f"{intervals['sentiment_accuracy'].render()} |",
-        f"| `case_accuracy` | {report.case_accuracy:.3f} | "
-        "majority over repetitions |",
+        f"| `case_accuracy` | {report.case_accuracy:.3f} | majority over repetitions |",
         f"| `sentiment_macro_f1` | {report.macro_f1:.3f} | — |",
         f"| `tag_precision` | {report.tag_precision:.3f} | — |",
         f"| `tag_recall` | {report.tag_recall:.3f} | — |",
@@ -704,8 +699,7 @@ def _comparison_markdown(comparison: Comparison) -> str:
             f"- paired cases: {comparison.paired_cases}",
             f"- baseline: {comparison.baseline:.3f}",
             f"- candidate: {comparison.candidate:.3f}",
-            f"- delta: {comparison.delta:+.3f} "
-            f"(95% bootstrap CI {comparison.interval.render()})",
+            f"- delta: {comparison.delta:+.3f} (95% bootstrap CI {comparison.interval.render()})",
             f"- p(delta <= 0): {comparison.p_value:.3f}",
             f"- reading: {verdict}",
         ]

@@ -90,6 +90,18 @@ the radar escalates on calm text. `unknown` recall is 0.5 on six cases and one c
 (`workload-overtime-every-day`) flips between `negative` and `neutral` across repetitions, which
 caps how tight a gate can be.
 
+The same test split, three repetitions except where noted:
+
+| provider | `sentiment_accuracy` | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
+|---|---|---|---|---|---|---|---|
+| `keyword` | 0.345 | 0.600 | 0.188 | 0.694 | 0 | 0 | 0 |
+| `prompt` (`opencode-deepseek-v4.1-flash`, one repetition) | 0.741 | 0.700 | 0.375 | 0.770 | 0.224 | 4701 | not priced in the profile |
+| `jev` (`typesafe/jev-1.14`) | 0.833 | 1.000 | 0.396 | 0.637 | 0 | 525 | 0.0432 |
+
+Jev is the only provider that escalated every crisis case, and it is nine times faster than the
+prompt path, which matters because the radar runs on answers as they arrive. The price of that
+recall is precision: a false alarm costs a recruiter a look, a missed crisis costs the employee.
+
 The run also caught a contract defect that mocked tests could not: the live API rejects
 `criteria` as a list with `400 invalid_type, expected record`. The schema and rubric v1 said list;
 the payload said record. Fixed in `4e8901f` — the criteria record is now the option-to-meaning map,
@@ -113,7 +125,9 @@ shape, so v1 was corrected in place rather than superseded.
   `CLASSIFY_PROFILE` (or an explicit `SENTIMENT_RUBRIC`), because the rubric selector is data and
   the adapter no longer carries a version. `JEV_TIMEOUT_S` and `JEV_MAX_RETRIES` become overrides
   of the profile rather than the only source, and `JEV_MODEL` is new. `.env.example` states it.
-- `SENTIMENT_PROVIDER` still defaults to `prompt`. Jev remains off until measured.
+- `SENTIMENT_PROVIDER` still defaults to `prompt`. Flipping the default is now a decision with
+  numbers behind it (accuracy and escalation recall up, false alarms up, cost 4.3 cents per
+  thousand), but it is a separate change with its own commit and rollout.
 
 ## Alternatives
 

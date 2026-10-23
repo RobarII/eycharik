@@ -1,6 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
-import { fetchRun } from "../api";
+import { fetchRun, offboardEmployee } from "../api";
 import { ArrowLeftIcon } from "../components/Icons";
 import { StatusPill } from "../components/Pills";
 import { Progress } from "../components/Progress";
@@ -15,6 +16,7 @@ import {
   reasonLabel,
 } from "../format";
 import { useUnauthorized } from "../useUnauthorized";
+import { useSession } from "../session";
 import { SCENARIO_LABELS } from "../config";
 
 export function RunDetailPage({
@@ -26,6 +28,8 @@ export function RunDetailPage({
   onBack: () => void;
   onUnauthorized: () => void;
 }) {
+  const queryClient = useQueryClient();
+  const { can } = useSession();
   const query = useQuery({
     queryKey: ["run", runId],
     queryFn: () => fetchRun(runId),
@@ -59,7 +63,20 @@ export function RunDetailPage({
                 </p>
               </div>
             </div>
-            <StatusPill status={query.data.status} />
+            <div className="detail-actions">
+              <StatusPill status={query.data.status} />
+              {can("employees.offboard") && query.data.status !== "completed" ? (
+                <OffboardButton
+                  employeeId={query.data.employee_id}
+                  name={query.data.name}
+                  onDone={() => {
+                    void queryClient.invalidateQueries({ queryKey: ["runs"] });
+                    void queryClient.invalidateQueries({ queryKey: ["questions"] });
+                  }}
+                  onUnauthorized={onUnauthorized}
+                />
+              ) : null}
+            </div>
           </header>
 
           <div className="detail-grid">
@@ -167,5 +184,71 @@ export function RunDetailPage({
         </>
       ) : null}
     </section>
+  );
+}
+
+/**
+ * Ending an onboarding is destructive and irreversible: it deletes the transcript.
+ *
+ * So the button does not act on the first click. It opens the consequences — what is deleted, what
+ * survives in the audit — and waits for a second, deliberate press.
+ */
+function OffboardButton({
+  employeeId,
+  name,
+  onDone,
+  onUnauthorized,
+}: {
+  employeeId: string;
+  name: string;
+  onDone: () => void;
+  onUnauthorized: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  const mutation = useMutation({
+    mutationFn: () => offboardEmployee(employeeId),
+    onSuccess: onDone,
+  });
+
+  useUnauthorized(mutation.error, onUnauthorized);
+
+  if (mutation.isSuccess) {
+    return (
+      <p className="note note-ok" role="status">
+        {name} офборджен: удалено {countLabel(mutation.data.questions_deleted, "вопрос", "вопроса", "вопросов")}
+        , {countLabel(mutation.data.messages_deleted, "сообщение", "сообщения", "сообщений")}.
+      </p>
+    );
+  }
+
+  if (!armed) {
+    return (
+      <button type="button" className="button button-quiet" onClick={() => setArmed(true)}>
+        Офбордить
+      </button>
+    );
+  }
+
+  return (
+    <div className="confirm">
+      <p className="confirm-text">
+        Переписка {name} будет удалена сразу, сценарий закрыт. В аудите останутся только факты
+        удаления. Отменить это нельзя.
+      </p>
+      <div className="confirm-actions">
+        <button
+          type="button"
+          className="button button-danger"
+          disabled={mutation.isPending}
+          onClick={() => mutation.mutate()}
+        >
+          {mutation.isPending ? "Удаляем…" : "Да, офбордить"}
+        </button>
+        <button type="button" className="button button-quiet" onClick={() => setArmed(false)}>
+          Отмена
+        </button>
+      </div>
+      {mutation.isError ? <ErrorNote message={mutation.error.message} /> : null}
+    </div>
   );
 }

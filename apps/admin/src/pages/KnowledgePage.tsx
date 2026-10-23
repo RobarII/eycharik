@@ -1,11 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { fetchKnowledge, uploadKnowledge } from "../api";
+import {
+  fetchExtraction,
+  fetchKnowledge,
+  uploadKnowledge,
+  uploadKnowledgeFile,
+  type FileMetadata,
+} from "../api";
 import { ErrorNote } from "../components/States";
 import { useUnauthorized } from "../useUnauthorized";
 import { useSession } from "../session";
 import { countLabel, formatDateTime } from "../format";
+import { REFRESH } from "../config";
 
 const TEMPLATE = `---
 id: hr/new-policy
@@ -29,7 +36,7 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
   const query = useQuery({
     queryKey: ["knowledge"],
     queryFn: fetchKnowledge,
-    refetchInterval: 30_000,
+    refetchInterval: REFRESH.knowledge,
   });
   const upload = useMutation({
     mutationFn: uploadKnowledge,
@@ -116,6 +123,8 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
         </section>
         ) : null}
 
+        {canWrite ? <FileUpload onUnauthorized={onUnauthorized} /> : null}
+
         <section className="card">
           <div className="card-head">
             <h2>{canWrite ? "Активные документы" : "Что ассистент знает"}</h2>
@@ -153,6 +162,162 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
           ) : null}
         </section>
       </div>
+    </section>
+  );
+}
+
+const UPLOAD_ACCEPT = ".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+const TERMINAL = new Set(["indexed", "refused"]);
+
+/**
+ * A PDF or a deck: recognition takes seconds per page, so the server answers 202 and the cabinet
+ * polls. Showing a spinner without a state is a lie — every poll prints what the worker is doing.
+ */
+function FileUpload({ onUnauthorized }: { onUnauthorized: () => void }) {
+  const queryClient = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+  const [metadata, setMetadata] = useState<FileMetadata>({
+    id: "",
+    title: "",
+    owner: "hr",
+    audience: ["all"],
+    valid_from: new Date().toISOString().slice(0, 10),
+  });
+  const [hash, setHash] = useState<string | null>(null);
+
+  const upload = useMutation({
+    mutationFn: () => uploadKnowledgeFile(file as File, metadata),
+    onSuccess: (queued) => setHash(queued.content_hash),
+  });
+
+  const extraction = useQuery({
+    queryKey: ["extraction", hash],
+    queryFn: () => fetchExtraction(hash as string),
+    enabled: hash !== null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && TERMINAL.has(status) ? false : REFRESH.extraction;
+    },
+  });
+
+  useUnauthorized(upload.error ?? extraction.error, onUnauthorized);
+
+  const done = extraction.data ? TERMINAL.has(extraction.data.status) : false;
+
+  // The new document is only in the index once the worker says so: refresh the list then, once.
+  useEffect(() => {
+    if (done) void queryClient.invalidateQueries({ queryKey: ["knowledge"] });
+  }, [done, queryClient]);
+
+  function reset() {
+    setFile(null);
+    setHash(null);
+    setMetadata((current) => ({ ...current, id: "", title: "" }));
+    upload.reset();
+    queryClient.removeQueries({ queryKey: ["extraction", hash] });
+  }
+
+  const field = <K extends keyof FileMetadata>(key: K) => ({
+    value: key === "audience" ? metadata.audience.join(", ") : String(metadata[key]),
+    onChange: (event: { target: { value: string } }) =>
+      setMetadata((current) => ({
+        ...current,
+        [key]:
+          key === "audience"
+            ? event.target.value
+                .split(",")
+                .map((part) => part.trim())
+                .filter(Boolean)
+            : event.target.value,
+      })),
+  });
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>PDF или презентация</h2>
+        <span className="card-note">Распознаётся в фоне</span>
+      </div>
+      <p className="upload-hint">
+        Файл сохраняется по хешу, страницы распознаются воркером и попадают в тот же индекс, что и
+        markdown. Прогресс виден здесь; закрывать вкладку не обязательно.
+      </p>
+
+      <form
+        className="upload"
+        onSubmit={(event) => {
+          event.preventDefault();
+          upload.mutate();
+        }}
+      >
+        <label className="upload-label" htmlFor="knowledge-file">
+          Файл
+        </label>
+        <input
+          id="knowledge-file"
+          type="file"
+          accept={UPLOAD_ACCEPT}
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          disabled={upload.isPending || hash !== null}
+        />
+
+        <div className="upload-fields">
+          <label>
+            id
+            <input type="text" required placeholder="hr/onboarding-guide" {...field("id")} />
+          </label>
+          <label>
+            Название
+            <input type="text" required placeholder="Гид по онбордингу" {...field("title")} />
+          </label>
+          <label>
+            owner
+            <input type="text" required {...field("owner")} />
+          </label>
+          <label>
+            audience
+            <input type="text" {...field("audience")} />
+          </label>
+          <label>
+            valid_from
+            <input type="date" required {...field("valid_from")} />
+          </label>
+        </div>
+
+        <div className="upload-actions">
+          <button
+            type="submit"
+            className="button button-primary"
+            disabled={!file || !metadata.id || !metadata.title || upload.isPending || hash !== null}
+          >
+            {upload.isPending ? "Отправляем…" : "Загрузить файл"}
+          </button>
+        </div>
+
+        {upload.isError ? <ErrorNote message={upload.error.message} /> : null}
+
+        {hash ? (
+          <div className="note" role="status">
+            {extraction.isPending ? <p>В очереди на распознавание…</p> : null}
+            {extraction.data ? (
+              <p>
+                {extraction.data.status === "indexed"
+                  ? `Готово: ${countLabel(extraction.data.pages, "страница", "страницы", "страниц")}, движок ${extraction.data.engine}.`
+                  : extraction.data.status === "refused"
+                    ? `Распознавание отказано: ${extraction.data.reason ?? "причина не указана"}.`
+                    : "Распознаём страницы…"}
+              </p>
+            ) : null}
+            {extraction.isError ? <ErrorNote message={extraction.error.message} /> : null}
+            {done ? (
+              <button type="button" className="button button-quiet" onClick={reset}>
+                Загрузить ещё
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </form>
     </section>
   );
 }

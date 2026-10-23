@@ -1,0 +1,106 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  fetchExtraction,
+  fetchKnowledge,
+  uploadKnowledge,
+  uploadKnowledgeFile,
+} from "../api";
+import type { Capability } from "../types";
+import { SessionProvider, sessionFor } from "../session";
+import { KnowledgePage } from "./KnowledgePage";
+
+vi.mock("../api", () => ({
+  fetchKnowledge: vi.fn(),
+  uploadKnowledge: vi.fn(),
+  uploadKnowledgeFile: vi.fn(),
+  fetchExtraction: vi.fn(),
+}));
+
+function renderPage(capabilities: Capability[]) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={client}>
+      <SessionProvider
+        value={sessionFor({
+          role: capabilities.includes("knowledge.write") ? "hr_admin" : "recruiter",
+          subject: "rec-1",
+          scope: { recruiter_id: "rec-1", department: null },
+          capabilities,
+          expires_at: null,
+        })}
+      >
+        <KnowledgePage onUnauthorized={() => undefined} />
+      </SessionProvider>
+    </QueryClientProvider>,
+  );
+}
+
+describe("KnowledgePage", () => {
+  beforeEach(() => {
+    vi.mocked(fetchKnowledge).mockResolvedValue({ items: [] });
+    vi.mocked(uploadKnowledgeFile).mockReset();
+    vi.mocked(fetchExtraction).mockReset();
+    vi.mocked(uploadKnowledge).mockReset();
+  });
+
+  it("hides both write forms from a role that may only read", async () => {
+    renderPage(["knowledge.read"]);
+
+    await screen.findByText("База пуста. Загрузите первый документ или выполните make ingest.");
+    expect(screen.queryByLabelText("Файл")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Загрузить файл" })).not.toBeInTheDocument();
+  });
+
+  it("uploads a file and follows the extraction until it is indexed", async () => {
+    vi.mocked(uploadKnowledgeFile).mockResolvedValue({
+      content_hash: "hash-1",
+      status: "queued",
+    });
+    vi.mocked(fetchExtraction).mockResolvedValue({
+      content_hash: "hash-1",
+      status: "indexed",
+      reason: null,
+      engine: "pdf-text",
+      route: "text",
+      pages: 3,
+      min_confidence: 0.9,
+      document_id: "hr/guide",
+    });
+
+    renderPage(["knowledge.read", "knowledge.write"]);
+    await userEvent.upload(
+      screen.getByLabelText("Файл"),
+      new File(["%PDF-1.7"], "guide.pdf", { type: "application/pdf" }),
+    );
+    await userEvent.type(screen.getByLabelText("id"), "hr/guide");
+    await userEvent.type(screen.getByLabelText("Название"), "Гид");
+    await userEvent.click(screen.getByRole("button", { name: "Загрузить файл" }));
+
+    expect(await screen.findByText(/Готово: 3 страницы, движок pdf-text/)).toBeInTheDocument();
+    expect(uploadKnowledgeFile).toHaveBeenCalledWith(
+      expect.any(File),
+      expect.objectContaining({ id: "hr/guide", title: "Гид", audience: ["all"] }),
+    );
+    expect(screen.getByRole("button", { name: "Загрузить ещё" })).toBeInTheDocument();
+  });
+
+  it("keeps the submit disabled until the file and the id are there", async () => {
+    renderPage(["knowledge.read", "knowledge.write"]);
+
+    const submit = screen.getByRole("button", { name: "Загрузить файл" });
+    expect(submit).toBeDisabled();
+
+    await userEvent.upload(
+      screen.getByLabelText("Файл"),
+      new File(["%PDF-1.7"], "guide.pdf", { type: "application/pdf" }),
+    );
+
+    expect(submit).toBeDisabled();
+  });
+});

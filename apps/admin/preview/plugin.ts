@@ -154,6 +154,34 @@ async function handle(
     return;
   }
 
+  if (request.method === "POST" && path === "/admin/api/knowledge/files") {
+    if (role !== "hr_admin") {
+      send(response, 403, { detail: "only hr_admin may change the knowledge base" });
+      return;
+    }
+    polls.clear();
+    send(response, 202, { content_hash: "demo-file", status: "queued" });
+    return;
+  }
+
+  if (request.method === "GET" && path.startsWith("/admin/api/knowledge/files/")) {
+    const hash = path.slice("/admin/api/knowledge/files/".length);
+    const seen = (polls.get(hash) ?? 0) + 1;
+    polls.set(hash, seen);
+    const indexed = seen > 1;
+    send(response, 200, {
+      content_hash: hash,
+      status: indexed ? "indexed" : "running",
+      reason: null,
+      engine: "pdf-text",
+      route: "text",
+      pages: 4,
+      min_confidence: 0.93,
+      document_id: indexed ? "hr/demo-guide" : null,
+    });
+    return;
+  }
+
   if (request.method === "POST" && path === "/admin/api/knowledge") {
     if (role !== "hr_admin") {
       send(response, 403, { detail: "only hr_admin may change the knowledge base" });
@@ -173,10 +201,14 @@ async function handle(
   send(response, 405, { detail: "method not allowed" });
 }
 
+/** How many times the demo has polled each hash, so a fake extraction can finish. */
+const polls = new Map<string, number>();
+
 /**
  * Serves the documented demo cohort on `/admin/api/*` during `vite --mode preview`.
  * It is never part of a production build: `apply: "serve"` keeps it out of `vite build`.
  */
+
 export function previewApi(): Plugin {
   return {
     name: "onboarding-demo-api",

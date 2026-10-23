@@ -16,6 +16,11 @@
    `LLM_BREAKER_COOLDOWN_S` and the gateway fails fast without a request.
 4. Read the run's profile: `LLM_PROFILE` names the file, and the file states the model, the
    capabilities, and the envelope. The answer guard is the same for every profile.
+5. If `SENTIMENT_PROVIDER=jev`, the classifier is on the same envelope: `CLASSIFY_PROFILE` names
+   its file, the same breaker covers it, and a dead endpoint costs one `timeout_s`, not one per
+   retry. Survey answers keep arriving and are labeled by `keyword_signal`; watch
+   `sentiment_fallback` with `provider=jev` in `audit_log` — a spike there is the classifier, not
+   the radar.
 
 ## Action
 
@@ -29,6 +34,7 @@
 | Model too slow for the budget | switch `LLM_PROFILE` to a faster profile after `make eval` passes |
 | Model returns empty completions | set `retry_empty_completion` in the profile; if it persists, switch profiles (ADR 0010) |
 | Cost looks wrong | the profile owns the prices; an override is `LLM_PRICE_*`, and a real price change is a profile commit |
+| Classifier degraded to keywords | check `sentiment_fallback` reasons: `jev_unavailable` is the network, `jev_format` is the answer shape; the second one is a rubric/model defect, not an outage |
 
 The bot must never answer from model memory when retrieval or the provider is unavailable.
 Scenario steps and reminders keep working: they do not need the model.

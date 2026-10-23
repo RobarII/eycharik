@@ -226,3 +226,27 @@ def _assert_same_signal(actual: RiskSignal, expected: RiskSignal) -> None:
     assert actual.tags == expected.tags
     assert actual.source == expected.source
     assert actual.text == expected.text
+
+
+async def test_the_prompt_classifier_reports_the_same_usage_fields_as_jev() -> None:
+    """One Cost section prices either path, so both audit events carry tokens and latency."""
+    audit = RecordingAudit()
+    classifier = SentimentClassifier(
+        llm=ScriptedLLM(
+            responses=[
+                '{"sentiment": "negative", "tags": ["access"], "confidence": 0.9, "reason": "x"}'
+            ]
+        ),
+        prompts=PromptLibrary(PROMPTS),
+        audit=audit,
+    )
+
+    await classifier.classify("Доступ не выдали третий день", source="day_three")
+
+    name, fields = audit.events[0]
+    assert name == "sentiment_classified"
+    assert fields["provider"] == "prompt"
+    assert fields["input_tokens"] == 10
+    assert fields["output_tokens"] == 5
+    assert fields["model"] == "scripted"
+    assert "latency_ms" in fields

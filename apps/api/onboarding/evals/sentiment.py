@@ -132,6 +132,7 @@ class Report:
     rubric: str = ""
     prompt_version: int | None = None
     input_tokens: int = 0
+    output_tokens: int = 0
     cost_rub: float = 0.0
     cost_usd: float = 0.0
     priced_calls: int = 0
@@ -474,6 +475,7 @@ class CountingAudit:
         self.format_errors = 0
         self.reasons: Counter[str] = Counter()
         self.input_tokens = 0
+        self.output_tokens = 0
         self.cost_rub = 0.0
         self.cost_usd = 0.0
         self.priced_calls = 0
@@ -533,6 +535,7 @@ async def evaluate(
         rubric=identity.rubric if identity else "",
         prompt_version=identity.prompt_version if identity else None,
         input_tokens=audit.input_tokens,
+        output_tokens=audit.output_tokens,
         cost_rub=audit.cost_rub,
         cost_usd=audit.cost_usd,
         priced_calls=audit.priced_calls,
@@ -589,6 +592,7 @@ def render_markdown(
         f"| `cost_rub_total` | {report.cost_rub:.4f} |",
         f"| `cost_rub_per_1k_calls` | {report.cost_per_1k_calls:.4f} |",
         f"| `input_tokens_total` | {report.input_tokens} |",
+        f"| `output_tokens_total` | {report.output_tokens} |",
         f"| `cost_usd_total` | {report.cost_usd:.6f} |",
         f"| `cost_usd_per_1k_calls` | {report.cost_usd_per_1k_calls:.6f} |",
         f"| `priced_calls` | {report.priced_calls} / {len(report.results)} |",
@@ -815,6 +819,7 @@ def load_artifact(path: Path) -> Report:
         rubric=str(header.get("rubric") or ""),
         prompt_version=header.get("prompt_version"),
         input_tokens=int(header.get("input_tokens", 0)),
+        output_tokens=int(header.get("output_tokens", 0)),
         cost_rub=float(header.get("cost_rub", 0.0)),
         cost_usd=float(header.get("cost_usd", 0.0)),
         priced_calls=int(header.get("priced_calls", 0)),
@@ -833,6 +838,7 @@ def render_artifact(report: Report, *, command: str) -> str:
         "rubric": report.rubric or None,
         "model": report.model or None,
         "input_tokens": report.input_tokens,
+        "output_tokens": report.output_tokens,
         "cost_rub": round(report.cost_rub, 6),
         "cost_usd": round(report.cost_usd, 9),
         "priced_calls": report.priced_calls,

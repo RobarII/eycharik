@@ -175,10 +175,16 @@ class SentimentClassifier:
             "sentiment_classified",
             source=source,
             provider="prompt",
+            model=completion.model,
             sentiment=draft.sentiment.value,
             tags=[tag.value for tag in draft.tags],
             confidence=draft.confidence,
             prompt_version=PROMPT_VERSION,
+            # The same fields the Jev adapter records, so one Cost section prices either path.
+            input_tokens=completion.input_tokens,
+            output_tokens=completion.output_tokens,
+            latency_ms=completion.latency_ms,
+            cost_rub=completion.cost_rub,
         )
         return RiskSignal(
             source=source,

@@ -8,7 +8,7 @@
 
 ## Checks, in order
 
-1. **Reachability**: `curl -v https://$HOST/webhook` must complete a TLS handshake with a trusted
+1. **Reachability**: `curl -v https://$HOST/webhook/max` must complete a TLS handshake with a trusted
    chain, on port 443, with the URL host matching the certificate. A `401` from this curl is the
    correct answer: the route exists and rejected an unsigned request.
 2. **Secret configuration**: an empty `MAX_WEBHOOK_SECRET` makes the route answer `503`. The

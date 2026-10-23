@@ -14,14 +14,21 @@ NOW = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)
 
 class StubService:
     def __init__(self) -> None:
-        self.started: list[tuple[str, int]] = []
-        self.handled: list[tuple[str, int, str]] = []
+        self.started: list[tuple[str, str, int]] = []
+        self.handled: list[tuple[str, str, int, str]] = []
 
-    async def start(self, employee_id: object, chat_id: object) -> None:
-        self.started.append((str(employee_id), int(chat_id)))  # type: ignore[arg-type]
+    async def start(self, employee_id: object, address: object) -> None:
+        self.started.append(_address(employee_id, address))
 
-    async def handle(self, employee_id: object, chat_id: object, event: object) -> None:
-        self.handled.append((str(employee_id), int(chat_id), event.kind.value))  # type: ignore[attr-defined,arg-type]
+    async def handle(self, employee_id: object, address: object, event: object) -> None:
+        owner, channel, chat_id = _address(employee_id, address)
+        self.handled.append((owner, channel, chat_id, event.kind.value))  # type: ignore[attr-defined]
+
+
+def _address(employee_id: object, address: object) -> tuple[str, str, int]:
+    channel = address.channel
+    chat_id = address.chat_id
+    return (str(employee_id), str(channel), int(chat_id))
 
 
 class StubExtractor:
@@ -69,9 +76,9 @@ def build_with_extractor() -> tuple[JobRunner, StubService, RecordingQueue, Stub
 async def test_start_job_starts_a_run() -> None:
     runner, service, _ = build()
 
-    await runner._dispatch("start", {"employee_id": "1001", "chat_id": 42})
+    await runner._dispatch("start", {"employee_id": "1001", "channel": "max", "chat_id": 42})
 
-    assert service.started == [("1001", 42)]
+    assert service.started == [("1001", "max", 42)]
 
 
 async def test_message_job_restores_the_event() -> None:
@@ -81,6 +88,7 @@ async def test_message_job_restores_the_event() -> None:
         "message",
         {
             "employee_id": "1001",
+            "channel": "max",
             "chat_id": 42,
             "event": {
                 "kind": "message_received",
@@ -90,29 +98,29 @@ async def test_message_job_restores_the_event() -> None:
         },
     )
 
-    assert service.handled == [("1001", 42, "message_received")]
+    assert service.handled == [("1001", "max", 42, "message_received")]
 
 
 async def test_timeout_job_uses_the_job_clock() -> None:
     runner, service, _ = build()
 
-    await runner._dispatch("timeout", {"employee_id": "1001", "chat_id": 42})
+    await runner._dispatch("timeout", {"employee_id": "1001", "channel": "max", "chat_id": 42})
 
-    assert service.handled == [("1001", 42, "timeout")]
+    assert service.handled == [("1001", "max", 42, "timeout")]
 
 
 async def test_unknown_kind_is_rejected() -> None:
     runner, _, _ = build()
 
     with pytest.raises(JobPayloadError, match="unknown job kind"):
-        await runner._dispatch("teleport", {"employee_id": "1001", "chat_id": 42})
+        await runner._dispatch("teleport", {"employee_id": "1001", "channel": "max", "chat_id": 42})
 
 
 async def test_missing_employee_is_rejected() -> None:
     runner, _, _ = build()
 
     with pytest.raises(JobPayloadError, match="employee_id"):
-        await runner._dispatch("start", {"chat_id": 42})
+        await runner._dispatch("start", {"channel": "max", "chat_id": 42})
 
 
 async def test_invalid_timestamp_is_rejected() -> None:
@@ -123,6 +131,7 @@ async def test_invalid_timestamp_is_rejected() -> None:
             "message",
             {
                 "employee_id": "1001",
+                "channel": "max",
                 "chat_id": 42,
                 "event": {"kind": "message_received", "at": "yesterday"},
             },

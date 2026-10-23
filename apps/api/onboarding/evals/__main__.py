@@ -232,10 +232,22 @@ def _model_label(settings: Settings, *, retrieval_only: bool) -> str:
 
 
 def _retrieval_label(settings: Settings) -> str:
+    """Everything that changes a retrieved list, in one line a later reader can diff.
+
+    The embedder and the reranker were here first; ``bm25`` and contextual retrieval were not,
+    which made two experiment arms produce the same header (ADR 0012, ADR 0016).
+    """
     embed = embedding_profile(settings)
     rerank = rerank_profile(settings)
     ranking = f"{rerank.name} ({rerank.model})" if rerank is not None else "none"
-    return f"{embed.name} ({embed.model}, dim {embed.dim}) + rerank:{ranking}"
+    bm25 = "on" if settings.bm25_enabled else "off"
+    contextual = (
+        f"v{settings.contextual_prompt_version}" if settings.contextual_retrieval else "off"
+    )
+    return (
+        f"{embed.name} ({embed.model}, dim {embed.dim}) + rerank:{ranking} "
+        f"+ bm25:{bm25} + contextual:{contextual}"
+    )
 
 
 def _commit() -> str:

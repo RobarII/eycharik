@@ -8,20 +8,22 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal, Protocol, runtime_checkable
 
 from onboarding.core.models import (
     AcceptancePolicy,
-    ChatId,
+    Address,
+    Channel,
     Chunk,
     DocId,
     Document,
     DocumentSniff,
     EmployeeId,
     EmployeeProfile,
+    Event,
     ExtractedDocument,
     ExtractedPage,
     Keyboard,
@@ -209,9 +211,19 @@ class KnowledgeBase(Protocol):
         ...
 
 
+class ChannelUnavailableError(RuntimeError):
+    """The messenger did not answer, or answered 5xx: the same send may work later."""
+
+
+class ChannelRejectedError(RuntimeError):
+    """The messenger refused the request: a retry repeats the refusal."""
+
+
 @dataclass(frozen=True, slots=True)
 class OutboundMessage:
-    chat_id: ChatId
+    """One rendered domain message. The adapter turns it into a wire payload."""
+
+    address: Address
     text: str
     image: str | None = None
     keyboard: Keyboard = ()
@@ -219,13 +231,59 @@ class OutboundMessage:
 
 
 @runtime_checkable
-class Messaging(Protocol):
+class Sender(Protocol):
+    """Anything a domain decision may send through: the outbox, in practice."""
+
     async def send(self, message: OutboundMessage) -> str:
-        """Send and return the provider message id."""
+        """Queue or send one message; return its identifier."""
         ...
 
-    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None:
+    async def edit(
+        self, address: Address, message_id: str, text: str, keyboard: Keyboard = ()
+    ) -> None:
         """Replace the text of a previously sent message."""
+        ...
+
+
+@runtime_checkable
+class Messaging(Sender, Protocol):
+    """One messenger's send path. ``channel`` is how the composition root routes a message."""
+
+    channel: Channel
+
+
+@dataclass(frozen=True, slots=True)
+class InboundMessage:
+    """One delivery, already typed. The adapter namespaces ``dedupe_key`` with its channel."""
+
+    dedupe_key: str
+    address: Address
+    sender: str
+    event: Event
+    starts_run: bool = False
+
+
+@runtime_checkable
+class Ingress(Protocol):
+    """One messenger's inbound path: authenticate, handshake, parse. Never touches the database."""
+
+    channel: Channel
+
+    @property
+    def configured(self) -> bool:
+        """False when the transport has no secret yet; the route then answers 503, not 401."""
+        ...
+
+    def verify(self, headers: Mapping[str, str], body: bytes) -> bool:
+        """True when this delivery comes from the messenger. Compare secrets in constant time."""
+        ...
+
+    def handshake(self, body: bytes) -> str | None:
+        """The plain-text answer a messenger needs before it delivers events, else ``None``."""
+        ...
+
+    def parse(self, body: bytes, *, received_at: datetime) -> InboundMessage | None:
+        """A typed inbound message, or ``None`` when this delivery is not ours to handle."""
         ...
 
 
@@ -233,6 +291,14 @@ class Messaging(Protocol):
 class Directory(Protocol):
     async def profile(self, employee_id: EmployeeId) -> EmployeeProfile | None:
         """Employee facts needed for the assistant context. ``None`` when unknown."""
+        ...
+
+    async def resolve(self, channel: Channel, external_id: str) -> EmployeeId | None:
+        """The employee behind one messenger account, or ``None`` when the account is unlinked."""
+        ...
+
+    async def link(self, channel: Channel, external_id: str, employee_id: EmployeeId) -> bool:
+        """Bind a messenger account to an employee. Idempotent; ``False`` for an unknown person."""
         ...
 
 
@@ -247,7 +313,7 @@ class EventDeduper(Protocol):
 class StoredRun:
     state: StepState
     reminder: ReminderPlan
-    chat_id: ChatId
+    address: Address
     active: bool = True
 
 
@@ -297,7 +363,7 @@ class QuestionLog(Protocol):
         self,
         *,
         employee_id: EmployeeId | None,
-        chat_id: ChatId,
+        address: Address,
         text: str,
         answered: bool,
         reason: str,

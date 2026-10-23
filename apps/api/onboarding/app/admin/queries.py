@@ -11,7 +11,17 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import and_, desc, func, literal_column, or_, select, text, tuple_
+from sqlalchemy import (
+    and_,
+    case,
+    desc,
+    func,
+    literal_column,
+    or_,
+    select,
+    text,
+    tuple_,
+)
 
 from onboarding.app.db.models import AuditRow, DocumentRow, EmployeeRow, QuestionRow, RunRow
 from onboarding.app.db.session import Database
@@ -489,20 +499,25 @@ def _after_question(cursor: QuestionCursor) -> Any:
     """Rows that sort after the cursor: unanswered first, then newest asked, then highest id.
 
     Postgres compares row values in one direction only, and this order mixes directions, so the
-    predicate is spelled out instead of using a row-value comparison. `answered` is a boolean, and
-    SQLAlchemy refuses `>` against `True`/`False`, so the two buckets are written as an explicit
-    branch: after an answered row nothing follows on that side of the split.
+    predicate is spelled out instead of using a row-value comparison. ``answered`` is a boolean
+    column, and SQLAlchemy refuses an ordering comparison against a Python ``bool``, so the order
+    is spelled as a rank: unanswered is 0, answered is 1.
     """
-    within_bucket = or_(
-        QuestionRow.asked_at < cursor.asked_at,
+    rank = case((QuestionRow.answered.is_(False), 0), else_=1)
+    position = 0 if not cursor.answered else 1
+    return or_(
+        rank > position,
         and_(
-            QuestionRow.asked_at == cursor.asked_at,
-            QuestionRow.id < cursor.id,
+            rank == position,
+            or_(
+                QuestionRow.asked_at < cursor.asked_at,
+                and_(
+                    QuestionRow.asked_at == cursor.asked_at,
+                    QuestionRow.id < cursor.id,
+                ),
+            ),
         ),
     )
-    if cursor.answered:
-        return and_(QuestionRow.answered.is_(True), within_bucket)
-    return or_(QuestionRow.answered.is_(True), and_(QuestionRow.answered.is_(False), within_bucket))
 
 
 def _filter_runs(

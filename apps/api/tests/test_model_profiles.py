@@ -52,12 +52,12 @@ def test_every_shipped_profile_satisfies_the_contract() -> None:
 def test_shipped_profiles_load_into_typed_values() -> None:
     library = ProfileLibrary(SHIPPED, CONTRACTS / "model-profile.schema.json")
 
-    answer = library.answer("openrouter-gpt-4.1-mini")
+    answer = library.answer("opencode-deepseek-v4.1-flash")
     assert answer.family == "openai-chat"
-    assert answer.model == "openai/gpt-4.1-mini"
+    assert answer.model == "deepseek-v4.1-flash"
     assert answer.json_mode
 
-    embed = library.embed("openrouter-bge-m3")
+    embed = library.embed("openrouter-qwen3-embedding-8b")
     assert embed.dim == 1024
 
     rerank = library.rerank("openrouter-cohere-rerank-v3.5")
@@ -198,15 +198,15 @@ def test_the_environment_overrides_the_selected_profile() -> None:
 
 
 def test_the_profile_owns_defaults_the_environment_does_not_set() -> None:
-    profile = answer_profile(settings(llm_profile="openrouter-gpt-4.1-mini"))
+    profile = answer_profile(settings(llm_profile="opencode-deepseek-v4.1-flash"))
 
     assert profile.max_tokens == 700
-    assert profile.timeout_s == 8.0
+    assert profile.timeout_s == 30.0
     assert profile.max_retries == 1
 
 
 def test_a_profile_vector_width_that_contradicts_embed_dim_is_rejected() -> None:
-    configured = settings(embed_profile="openrouter-bge-m3", embed_dim=768)
+    configured = settings(embed_profile="openrouter-qwen3-embedding-8b", embed_dim=768)
 
     with pytest.raises(ProfileError, match="migration"):
         embedding_profile(configured)
@@ -250,7 +250,7 @@ async def test_build_llm_wires_the_selected_profile() -> None:
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200)))
     try:
         llm = build_llm(
-            settings(llm_profile="openrouter-gpt-4.1-mini", llm_api_key="sk-test"),
+            settings(llm_profile="opencode-deepseek-v4.1-flash", llm_api_key="sk-test"),
             FrozenClock(NOW),
             client,
         )
@@ -258,5 +258,5 @@ async def test_build_llm_wires_the_selected_profile() -> None:
         await client.aclose()
 
     assert isinstance(llm, GatewayLLM)
-    assert llm.profile.name == "openrouter-gpt-4.1-mini"
-    assert llm.profile.model == "openai/gpt-4.1-mini"
+    assert llm.profile.name == "opencode-deepseek-v4.1-flash"
+    assert llm.profile.model == "deepseek-v4.1-flash"

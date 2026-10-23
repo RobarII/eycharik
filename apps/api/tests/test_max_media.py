@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from onboarding.app.max.media import ImageAssetError, asset_path, image_attachment, upload_token
+from onboarding.app.channels.max.media import (
+    ImageAssetError,
+    asset_path,
+    image_attachment,
+    upload_token,
+)
 
 
 def test_resolves_a_bundled_image(tmp_path: Path) -> None:

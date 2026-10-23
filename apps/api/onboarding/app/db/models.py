@@ -84,6 +84,7 @@ class RunRow(Base):
     question_index: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
     pending_reason: Mapped[str | None] = mapped_column(String(64))
     tone: Mapped[str] = mapped_column(String(16), server_default=sql_text("'formal'"))
+    channel: Mapped[str] = mapped_column(String(16), server_default=sql_text("'max'"))
     chat_id: Mapped[int] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(String(16), server_default=sql_text("'active'"))
     updated_at: Mapped[datetime] = mapped_column(
@@ -100,6 +101,27 @@ class RunRow(Base):
         Index("runs_reminder_idx", "reminder_at", postgresql_where=sql_text("status = 'active'")),
         Index("runs_status_idx", "status"),
     )
+
+
+class ChannelIdentityRow(Base):
+    """One sender on one messenger, linked to one employee.
+
+    The link is the access gate: an unlinked sender gets no run. It is also what makes a person one
+    employee across several messengers instead of one per app (ADR 0019).
+    """
+
+    __tablename__ = "channel_identities"
+
+    channel: Mapped[str] = mapped_column(String(16), primary_key=True)
+    external_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    employee_id: Mapped[str] = mapped_column(
+        ForeignKey("employees.id", ondelete="CASCADE"), nullable=False
+    )
+    linked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (Index("channel_identities_employee_idx", "employee_id"),)
 
 
 class EventRow(Base):
@@ -136,6 +158,7 @@ class MessageRow(Base):
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    channel: Mapped[str] = mapped_column(String(16), server_default=sql_text("'max'"))
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
     image: Mapped[str | None] = mapped_column(String(80))
@@ -162,6 +185,7 @@ class QuestionRow(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     employee_id: Mapped[str | None] = mapped_column(String(64))
+    channel: Mapped[str] = mapped_column(String(16), server_default=sql_text("'max'"))
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
     answered: Mapped[bool] = mapped_column(Boolean)

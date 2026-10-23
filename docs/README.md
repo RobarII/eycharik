@@ -12,6 +12,10 @@ from this table. If a question is not answered here, the answer does not exist y
 | What do the words mean? | [glossary.md](glossary.md) |
 | How do we write code, tests, and commits? | [conventions.md](conventions.md) |
 | What exactly does the MAX API give us? | [contracts/max-api.md](contracts/max-api.md) |
+| How does one core serve several messengers? | [contracts/channel.md](contracts/channel.md), [decisions/0019-a-channel-is-an-address.md](decisions/0019-a-channel-is-an-address.md) |
+| What does Telegram give us? | [contracts/telegram-api.md](contracts/telegram-api.md) |
+| What does VK give us? | [contracts/vk-api.md](contracts/vk-api.md) |
+| What can one messenger carry, and where is that written? | [contracts/channel-profile.schema.json](contracts/channel-profile.schema.json), profiles in `apps/api/channel-profiles/` |
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
 | What exactly does the model see? | [prompts/answer/v4.md](prompts/answer/v4.md) (current), [v3](prompts/answer/v3.md), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
 | How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
@@ -57,6 +61,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | The provider is blocked from this network — how do I still measure? | [runbooks/provider-tunnel.md](runbooks/provider-tunnel.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
+| How do I turn on Telegram or VK? | [runbooks/channels.md](runbooks/channels.md) |
 | How is answer quality measured? | [evals/README.md](evals/README.md), case contract [contracts/golden.schema.json](contracts/golden.schema.json) |
 | How is the risk radar scored, and what does a label mean? | [evals/sentiment-guide.md](evals/sentiment-guide.md) |
 | How is the retrieval corpus built, and what can it prove? | [evals/corpus-design.md](evals/corpus-design.md) |

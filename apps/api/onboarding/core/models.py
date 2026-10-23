@@ -18,8 +18,29 @@ ChatId = NewType("ChatId", int)
 DocId = NewType("DocId", str)
 ChunkId = NewType("ChunkId", str)
 
+# The domain cap for one message body. A channel profile may lower it; nothing may raise it, so a
+# scenario step stays renderable on the strictest supported messenger.
 MAX_MESSAGE_CHARS = 4000
 MAX_TITLE_CHARS = 80
+
+
+class Channel(StrEnum):
+    """Where a conversation happens. A value, not a client: adapters live in ``app/channels``."""
+
+    MAX = "max"
+    TELEGRAM = "telegram"
+    VK = "vk"
+
+
+@dataclass(frozen=True, slots=True)
+class Address:
+    """One conversation on one messenger. The run, the outbox and the question log store this."""
+
+    channel: Channel
+    chat_id: ChatId
+
+    def key(self) -> str:
+        return f"{self.channel}:{self.chat_id}"
 
 
 class EventKind(StrEnum):

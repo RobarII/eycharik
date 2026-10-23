@@ -1,0 +1,12 @@
+channel: vk
+description: "VK Callback API and messages.send. Facts and sources: docs/contracts/vk-api.md."
+max_text_chars: 4000           # VK allows 4096; the domain cap stays the ceiling
+max_keyboard_rows: 10
+max_buttons_per_row: 5
+callback_payload_bytes: 255    # button payload is at most 255 characters
+keyboard_scope: dialog         # the keyboard belongs to the conversation, not to a message
+supports_image: true
+supports_edit: true
+markup: none
+messages_per_second: 20
+per_chat_per_second: null      # VK documents a per-method rate, not a per-chat one

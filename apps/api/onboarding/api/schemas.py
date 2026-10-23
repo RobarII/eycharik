@@ -7,6 +7,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from onboarding.core.models import Channel
+
 
 class SessionRequest(BaseModel):
     """The one place a raw token travels in a body instead of a header."""
@@ -104,6 +106,20 @@ class ResolvedQuestion(BaseModel):
     answered: bool
     resolved_at: datetime
     resolved_by: str
+
+
+class LinkIdentity(BaseModel):
+    """HR links one messenger account to an employee: without a link there is no run (ADR 0019)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    channel: Channel
+    external_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
+    ]
+    employee_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)
+    ]
 
 
 class OffboardedEmployee(BaseModel):

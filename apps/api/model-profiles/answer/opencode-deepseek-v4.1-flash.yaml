@@ -9,7 +9,8 @@ max_tokens_field: max_tokens
 reasoning_effort: none
 temperature: 0.2
 max_tokens: 700
-# Reasoning models answer slower than gpt-4.1-mini even with effort off; the gate is p95 <= 8000 ms.
+# Reasoning tokens are billed as output, so effort is off and the timeout stays generous: the
+# gate is p95 completion <= 8000 ms.
 timeout_s: 30.0
 max_retries: 1
 retry_empty_completion: true

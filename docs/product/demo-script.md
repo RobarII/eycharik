@@ -73,7 +73,7 @@ make admin-dev   # терминал 3: кабинет на :5173
 8. **Живой вопрос.** Если есть второй терминал:
 
    ```bash
-   curl -X POST http://localhost:8000/webhook \
+   curl -X POST http://localhost:8000/webhook/max \
      -H "X-Max-Bot-Api-Secret: dev-secret" -H "Content-Type: application/json" \
      -d "{\"update_type\":\"message_created\",\"timestamp\":$(($(date +%s)*1000)),\
    \"chat_id\":1001,\"user\":{\"user_id\":1001},\"message\":{\"sender\":{\"user_id\":1001},\

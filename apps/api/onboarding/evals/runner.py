@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -56,6 +56,12 @@ GATES: dict[str, float] = {
     "answer_contains": 1.0,
     "answer_excludes": 1.0,
     "escalation_correctness": 0.90,
+    # ``escalation_correctness`` is averaged over every case, so one missed crisis in 137 answers
+    # costs it less than one percent. These three gate the decisions themselves, on the cases that
+    # actually decide: a missed escalation, a false alarm, and a wrong routing reason.
+    "escalation_recall": 0.90,
+    "escalation_precision": 0.90,
+    "reason_accuracy": 0.90,
 }
 MAXIMUMS: dict[str, float] = {
     "p95_completion_ms": 8000.0,
@@ -76,6 +82,9 @@ STRATUM_GATE_METRICS: tuple[str, ...] = (
     "answer_contains",
     "answer_excludes",
     "escalation_correctness",
+    "escalation_recall",
+    "escalation_precision",
+    "reason_accuracy",
 )
 COMPARE_METRICS: tuple[str, ...] = (
     "recall",
@@ -83,6 +92,7 @@ COMPARE_METRICS: tuple[str, ...] = (
     "rr",
     "citation_supported",
     "escalation_correct",
+    "escalation_matched",
     "contains_expected",
     "forbidden_clean",
 )
@@ -420,24 +430,55 @@ def derive_baseline(report: Report, *, commit: str) -> Baseline:
     return Baseline(commit=commit, overall=overall, strata=strata)
 
 
-def _sample_size(report: Report, metric: str) -> int:
-    if metric == "leak_rate":
-        return max(1, sum(1 for r in report.results if r.case.expect_absent_docs and not r.error))
-    if metric in {"recall_at_5", "mrr"}:
-        return max(1, sum(1 for r in report.results if r.case.expect_docs and not r.error))
-    if metric == "answer_excludes":
-        return max(1, sum(1 for r in report.results if r.case.expect_not_contains and not r.error))
-    if metric == "answer_contains":
-        return max(
-            1,
-            sum(
-                1
-                for r in report.results
-                if r.case.expect_contains and r.answer is not None and not r.error
-            ),
-        )
-    return max(1, sum(1 for r in report.results if not r.error))
+def _any_result(result: CaseResult) -> bool:
+    return True
 
+
+def _expects_absent_docs(result: CaseResult) -> bool:
+    return bool(result.case.expect_absent_docs)
+
+
+def _expects_docs(result: CaseResult) -> bool:
+    return bool(result.case.expect_docs)
+
+
+def _expects_escalation(result: CaseResult) -> bool:
+    return result.case.expect_escalation
+
+
+def _escalated(result: CaseResult) -> bool:
+    return bool(result.escalated)
+
+
+def _expects_reason(result: CaseResult) -> bool:
+    return result.case.expect_reason is not None
+
+
+def _bans_phrases(result: CaseResult) -> bool:
+    return bool(result.case.expect_not_contains)
+
+
+def _expects_phrases(result: CaseResult) -> bool:
+    return bool(result.case.expect_contains) and result.answer is not None
+
+
+# Which cases belong in a metric's denominator. A case that expects no document cannot miss one,
+# and a call that never returned is an outage rather than a quality signal, so neither counts.
+SAMPLE_DENOMINATORS: dict[str, Callable[[CaseResult], bool]] = {
+    "leak_rate": _expects_absent_docs,
+    "recall_at_5": _expects_docs,
+    "mrr": _expects_docs,
+    "escalation_recall": _expects_escalation,
+    "escalation_precision": _escalated,
+    "reason_accuracy": _expects_reason,
+    "answer_excludes": _bans_phrases,
+    "answer_contains": _expects_phrases,
+}
+
+
+def _sample_size(report: Report, metric: str) -> int:
+    predicate = SAMPLE_DENOMINATORS.get(metric, _any_result)
+    return max(1, sum(1 for result in report.results if not result.error and predicate(result)))
 
 def _floor(value: float) -> float:
     return int(value * 100.0) / 100.0
@@ -542,6 +583,27 @@ def _metrics(results: Sequence[CaseResult], *, generated: bool) -> dict[str, flo
     metrics["escalation_correctness"] = mean(
         [1.0 if result.escalation_correct else 0.0 for result in answered]
     )
+    # The denominators are the cases that decide, not the whole set: a missed crisis is only
+    # visible when the metric asks "of the cases that had to escalate, how many did".
+    expected_escalations = [result for result in answered if result.case.expect_escalation]
+    if expected_escalations:
+        metrics["escalation_recall"] = mean(
+            [1.0 if result.escalated else 0.0 for result in expected_escalations]
+        )
+    escalations = [result for result in answered if result.escalated]
+    if escalations:
+        metrics["escalation_precision"] = mean(
+            [1.0 if result.case.expect_escalation else 0.0 for result in escalations]
+        )
+    reasoned = [
+        result
+        for result in answered
+        if result.case.expect_escalation and result.case.expect_reason is not None
+    ]
+    if reasoned:
+        metrics["reason_accuracy"] = mean(
+            [1.0 if result.reason == result.case.expect_reason else 0.0 for result in reasoned]
+        )
     content_cases = [result for result in answered if result.case.expect_contains]
     if content_cases:
         metrics["answer_contains"] = mean(
@@ -597,6 +659,10 @@ def case_record(result: CaseResult) -> dict[str, Any]:
         "rr": result.rr,
         "citation_supported": 1.0 if result.citation_supported else 0.0,
         "escalation_correct": 1.0 if result.escalation_correct else 0.0,
+        "escalation_matched": 1.0
+        if result.escalated is not None
+        and result.escalated == result.case.expect_escalation
+        else 0.0,
         "contains_expected": 1.0 if result.contains_expected else 0.0,
         "forbidden_clean": 1.0 if result.forbidden_clean else 0.0,
         "escalated": result.escalated,

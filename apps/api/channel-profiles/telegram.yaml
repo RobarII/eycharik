@@ -1,0 +1,10 @@
+channel: telegram
+description: "Telegram Bot API. Facts and sources: docs/contracts/telegram-api.md."
+max_text_chars: 4000           # Telegram allows 4096; the domain cap stays the ceiling
+callback_payload_bytes: 64     # callback_data is 1..64 bytes
+keyboard_scope: message
+supports_image: true
+supports_edit: true
+markup: markdownv2
+messages_per_second: 30
+per_chat_per_second: 1

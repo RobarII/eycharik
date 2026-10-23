@@ -27,17 +27,18 @@ class ReminderScheduler:
                     RunRow.reminder_at <= func.now(),
                 )
                 .values(reminder_at=None)
-                .returning(RunRow.id, RunRow.employee_id, RunRow.chat_id)
+                .returning(RunRow.id, RunRow.employee_id, RunRow.channel, RunRow.chat_id)
                 .execution_options(synchronize_session=False)
             )
             rows = (await session.execute(due)).all()
-            for run_id, employee_id, chat_id in rows[: self._batch]:
+            for run_id, employee_id, channel, chat_id in rows[: self._batch]:
                 session.add(
                     JobRow(
                         kind="timeout",
                         payload={
                             "run_id": str(run_id),
                             "employee_id": employee_id,
+                            "channel": channel,
                             "chat_id": chat_id,
                         },
                     )

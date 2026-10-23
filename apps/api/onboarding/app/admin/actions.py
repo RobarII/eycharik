@@ -15,8 +15,16 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 
 from onboarding.app.admin.queries import employee_scope_filters
-from onboarding.app.db.models import AuditRow, EmployeeRow, MessageRow, QuestionRow, RunRow
+from onboarding.app.db.models import (
+    AuditRow,
+    ChannelIdentityRow,
+    EmployeeRow,
+    MessageRow,
+    QuestionRow,
+    RunRow,
+)
 from onboarding.app.db.session import Database
+from onboarding.core.models import Address, Channel, ChatId
 from onboarding.core.retention import redact_fields
 from onboarding.ports import Clock
 
@@ -41,7 +49,7 @@ class UnknownAssigneeError(Exception):
 class Resolution:
     question_id: int
     employee_id: str
-    chat_id: int
+    address: Address
     resolved_at: datetime
     resolved_by: str
 
@@ -181,7 +189,9 @@ class QuestionResolver:
                     raise QuestionNotFoundError(f"question {question_id} not found")
                 raise QuestionAlreadyResolvedError(f"question {question_id} already resolved")
 
-            session.add(MessageRow(chat_id=row.chat_id, text=text))
+            session.add(
+                MessageRow(channel=row.channel, chat_id=row.chat_id, text=text)
+            )
             session.add(
                 AuditRow(
                     name="question_resolved",
@@ -196,7 +206,7 @@ class QuestionResolver:
             return Resolution(
                 question_id=row.id,
                 employee_id=row.employee_id or "",
-                chat_id=row.chat_id,
+                address=Address(channel=Channel(row.channel), chat_id=ChatId(row.chat_id)),
                 resolved_at=now,
                 resolved_by=actor,
             )
@@ -235,26 +245,39 @@ class EmployeeOffboarder:
             # A queued reminder or reply must not reach a person who has already left. The outbox
             # has no employee id, so collect every chat the employee ever used before the run and
             # question rows that carry them disappear.
-            chats = set(
-                await session.scalars(
-                    select(RunRow.chat_id).where(RunRow.employee_id == employee_id)
+            addresses = {
+                (row.channel, row.chat_id)
+                for row in await session.execute(
+                    select(RunRow.channel, RunRow.chat_id).where(
+                        RunRow.employee_id == employee_id
+                    )
                 )
-            )
-            chats |= set(
-                await session.scalars(
-                    select(QuestionRow.chat_id).where(QuestionRow.employee_id == employee_id)
+            }
+            addresses |= {
+                (row.channel, row.chat_id)
+                for row in await session.execute(
+                    select(QuestionRow.channel, QuestionRow.chat_id).where(
+                        QuestionRow.employee_id == employee_id
+                    )
                 )
+            }
+            # A left employee keeps no way back in: the messenger accounts go with the transcript.
+            await session.execute(
+                delete(ChannelIdentityRow).where(ChannelIdentityRow.employee_id == employee_id)
             )
             deleted = await session.execute(
                 delete(QuestionRow).where(QuestionRow.employee_id == employee_id)
             )
-            messages = (
-                await session.execute(
-                    delete(MessageRow).where(MessageRow.chat_id.in_(sorted(chats)))
+            messages_deleted = 0
+            for channel, chat_id in sorted(addresses):
+                deleted_messages = await session.execute(
+                    delete(MessageRow).where(
+                        MessageRow.channel == channel, MessageRow.chat_id == chat_id
+                    )
                 )
-                if chats
-                else None
-            )
+                messages_deleted += int(
+                    cast(CursorResult[Any], deleted_messages).rowcount or 0
+                )
             audits = (
                 await session.scalars(
                     select(AuditRow).where(AuditRow.fields["employee_id"].astext == employee_id)
@@ -268,9 +291,6 @@ class EmployeeOffboarder:
                     redacted += 1
 
             questions_deleted = int(cast(CursorResult[Any], deleted).rowcount or 0)
-            messages_deleted = (
-                int(cast(CursorResult[Any], messages).rowcount or 0) if messages else 0
-            )
             runs_closed = int(cast(CursorResult[Any], closed).rowcount or 0)
             session.add(
                 AuditRow(

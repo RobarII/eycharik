@@ -7,17 +7,19 @@ import httpx
 import pytest
 from pydantic import SecretStr
 
-import onboarding.app.max.client as client_module
-from onboarding.app.max.client import (
+import onboarding.app.channels.max.client as client_module
+from onboarding.app.channels.max.client import (
     MaxClient,
     MaxRejectedError,
     MaxUnavailableError,
     Subscription,
 )
-from onboarding.app.max.keyboards import to_attachments
-from onboarding.app.max.media import ImageAssetError
-from onboarding.core.models import Button, ChatId
+from onboarding.app.channels.max.media import ImageAssetError
+from onboarding.app.channels.max.render import to_attachments
+from onboarding.core.models import Address, Button, Channel, ChatId
 from onboarding.ports import OutboundMessage
+
+ADDRESS = Address(channel=Channel.MAX, chat_id=ChatId(1))
 
 
 def build(
@@ -54,7 +56,7 @@ async def test_send_posts_text_and_keyboard() -> None:
 
     client = build(httpx.MockTransport(handler))
     message = OutboundMessage(
-        chat_id=ChatId(111),
+        address=Address(channel=Channel.MAX, chat_id=ChatId(111)),
         text="Привет",
         keyboard=((Button(id="go", text="Дальше"),),),
     )
@@ -77,7 +79,7 @@ async def test_send_without_keyboard_has_no_attachments() -> None:
         seen.append(request)
         return httpx.Response(200, json={"message": {"body": {"mid": "m"}}})
 
-    await build(httpx.MockTransport(handler)).send(OutboundMessage(chat_id=ChatId(1), text="x"))
+    await build(httpx.MockTransport(handler)).send(OutboundMessage(address=ADDRESS, text="x"))
 
     assert "attachments" not in json.loads(seen[0].content)
 
@@ -103,7 +105,7 @@ async def test_send_uploads_an_image_once_and_reuses_the_token(tmp_path: Path) -
 
     client = build(httpx.MockTransport(handler), assets_dir=tmp_path)
     message = OutboundMessage(
-        chat_id=ChatId(7),
+        address=Address(channel=Channel.MAX, chat_id=ChatId(7)),
         text="Привет",
         image="welcome.jpg",
         keyboard=((Button(id="go", text="Дальше"),),),
@@ -142,7 +144,7 @@ async def test_an_unprocessed_image_is_retried(
 
     client = build(httpx.MockTransport(handler), assets_dir=tmp_path)
 
-    mid = await client.send(OutboundMessage(chat_id=ChatId(1), text="x", image="welcome.jpg"))
+    mid = await client.send(OutboundMessage(address=ADDRESS, text="x", image="welcome.jpg"))
 
     assert mid == "mid-1"
     assert attempts == 2
@@ -154,7 +156,7 @@ async def test_a_missing_image_fails_before_the_request(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ImageAssetError, match="missing"):
-        await client.send(OutboundMessage(chat_id=ChatId(1), text="x", image="ghost.jpg"))
+        await client.send(OutboundMessage(address=ADDRESS, text="x", image="ghost.jpg"))
 
 
 async def test_edit_uses_put() -> None:
@@ -164,7 +166,7 @@ async def test_edit_uses_put() -> None:
         seen.append(request)
         return httpx.Response(200, json={})
 
-    await build(httpx.MockTransport(handler)).edit("mid-1", "Новый текст")
+    await build(httpx.MockTransport(handler)).edit(ADDRESS, "mid-1", "Новый текст")
 
     assert seen[0].method == "PUT"
     assert seen[0].url.path == "/messages/mid-1"
@@ -174,14 +176,14 @@ async def test_client_error_is_rejected() -> None:
     handler = httpx.MockTransport(lambda request: httpx.Response(401, json={}))
 
     with pytest.raises(MaxRejectedError):
-        await build(handler).send(OutboundMessage(chat_id=ChatId(1), text="x"))
+        await build(handler).send(OutboundMessage(address=ADDRESS, text="x"))
 
 
 async def test_server_error_is_unavailable() -> None:
     handler = httpx.MockTransport(lambda request: httpx.Response(503, json={}))
 
     with pytest.raises(MaxUnavailableError):
-        await build(handler).send(OutboundMessage(chat_id=ChatId(1), text="x"))
+        await build(handler).send(OutboundMessage(address=ADDRESS, text="x"))
 
 
 async def test_subscription_posts_the_secret() -> None:

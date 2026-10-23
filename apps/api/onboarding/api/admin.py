@@ -50,6 +50,7 @@ from onboarding.api.schemas import (
     KnowledgeList,
     KnowledgeUpload,
     KnowledgeUploaded,
+    LinkIdentity,
     OffboardedEmployee,
     Question,
     QuestionList,
@@ -88,6 +89,7 @@ from onboarding.app.knowledge.ingest import (
 from onboarding.app.knowledge.pipeline import ingest_document
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 from onboarding.app.worker.jobs import EXTRACT_DOCUMENT
+from onboarding.core.models import EmployeeId
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 
@@ -307,6 +309,30 @@ async def resolve_question(
         resolved_at=resolution.resolved_at,
         resolved_by=resolution.resolved_by,
     )
+
+
+@router.post(
+    "/identities",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def link_identity(
+    request: Request,
+    principal: Admin,
+    body: LinkIdentity,
+) -> Response:
+    """Link a messenger account to an employee, which is what unblocks their first message."""
+    if not principal.is_hr:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="only hr_admin may link a messenger account",
+        )
+    container = request.app.state.container
+    linked = await container.directory.link(
+        body.channel, body.external_id, EmployeeId(body.employee_id)
+    )
+    if not linked:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "employee not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch(
@@ -577,7 +603,7 @@ async def upload_knowledge(
             text=body.text,
             source="upload",
             schema_path=container.settings.contracts_dir / "doc.schema.json",
-            writer=PostgresKnowledgeWriter(container.database, container.embedder),
+            writer=PostgresKnowledgeWriter(container.database),
             embedder=container.embedder,
         )
     except CorpusError as error:

@@ -31,7 +31,7 @@ def test_healthz_is_open() -> None:
 def test_webhook_rejects_a_wrong_secret() -> None:
     with client() as http:
         response = http.post(
-            "/webhook",
+            "/webhook/max",
             json={"update_type": "message_created"},
             headers={"X-Max-Bot-Api-Secret": "wrong"},
         )
@@ -142,7 +142,7 @@ def test_metrics_can_require_a_token() -> None:
 def test_webhook_rejects_invalid_json() -> None:
     with client() as http:
         response = http.post(
-            "/webhook",
+            "/webhook/max",
             content=b"not json",
             headers={"X-Max-Bot-Api-Secret": "secret"},
         )
@@ -157,7 +157,7 @@ def test_webhook_limits_a_streamed_body() -> None:
 
     with client() as http:
         response = http.post(
-            "/webhook",
+            "/webhook/max",
             content=chunks(),
             headers={"X-Max-Bot-Api-Secret": "secret"},
         )

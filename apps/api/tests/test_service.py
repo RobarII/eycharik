@@ -12,6 +12,8 @@ from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import (
+    Address,
+    Channel,
     ChatId,
     EmployeeId,
     Event,
@@ -25,6 +27,7 @@ from onboarding.core.models import (
 from onboarding.ports import StoredRun
 
 from .fakes import (
+    ADDRESS,
     EMPLOYEE,
     NOW,
     InMemoryRuns,
@@ -72,7 +75,7 @@ def build(*, scenario_id: str = "onboarding_default") -> tuple[
 async def test_start_creates_a_run_and_sends_the_first_messages() -> None:
     service, runs, messaging, audit, _ = build()
 
-    result = await service.start(EMPLOYEE, ChatId(1))
+    result = await service.start(EMPLOYEE, ADDRESS)
 
     assert result.handled
     assert len(runs.runs) == 1
@@ -88,7 +91,7 @@ async def test_start_creates_a_run_and_sends_the_first_messages() -> None:
 async def test_start_uses_the_scenario_named_by_the_directory() -> None:
     service, runs, _, audit, _ = build(scenario_id="onboarding_plant")
 
-    result = await service.start(EMPLOYEE, ChatId(1))
+    result = await service.start(EMPLOYEE, ADDRESS)
 
     assert result.handled
     stored = next(iter(runs.runs.values()))
@@ -100,9 +103,9 @@ async def test_start_uses_the_scenario_named_by_the_directory() -> None:
 async def test_start_is_idempotent() -> None:
     service, _, messaging, audit, _ = build()
 
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
     sent_before = len(messaging.sent)
-    result = await service.start(EMPLOYEE, ChatId(1))
+    result = await service.start(EMPLOYEE, ADDRESS)
 
     assert not result.handled
     assert len(messaging.sent) == sent_before
@@ -111,11 +114,11 @@ async def test_start_is_idempotent() -> None:
 
 async def test_button_advances_the_run() -> None:
     service, runs, messaging, _, _ = build()
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
 
     result = await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
     )
 
@@ -127,11 +130,11 @@ async def test_button_advances_the_run() -> None:
 
 async def test_choosing_informal_tone_changes_the_next_message() -> None:
     service, runs, messaging, _, _ = build()
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
 
     await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_you"),
     )
 
@@ -146,7 +149,7 @@ async def test_completion_message_is_sent_at_the_terminal_step() -> None:
 
     result = await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Всё понятно"),
     )
 
@@ -159,7 +162,7 @@ async def test_unknown_employee_is_ignored() -> None:
 
     result = await service.handle(
         EmployeeId("stranger"),
-        ChatId(1),
+        ADDRESS,
         Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="привет"),
     )
 
@@ -170,11 +173,11 @@ async def test_unknown_employee_is_ignored() -> None:
 
 async def test_free_text_at_a_button_step_goes_to_the_assistant() -> None:
     service, runs, messaging, _, answerer = build()
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
 
     await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Сколько дней отпуска?"),
     )
 
@@ -220,11 +223,11 @@ def test_stored_run_helper_matches_the_scenario() -> None:
 
 async def test_a_stale_delivery_schedules_reminders_from_processing_time() -> None:
     service, runs, _, _, _ = build()
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
 
     await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(
             kind=EventKind.BUTTON_PRESSED,
             at=NOW - timedelta(days=2),
@@ -237,13 +240,45 @@ async def test_a_stale_delivery_schedules_reminders_from_processing_time() -> No
     assert stored.reminder.due_at == NOW + timedelta(hours=48)
 
 
-async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
-    service, runs, _, _, _ = build()
-    await service.start(EMPLOYEE, ChatId(1))
+async def test_a_start_in_another_messenger_resumes_the_run_there() -> None:
+    service, runs, messaging, audit, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    elsewhere = Address(channel=Channel.TELEGRAM, chat_id=ChatId(555))
+
+    result = await service.start(EMPLOYEE, elsewhere)
+
+    assert result.handled
+    stored = next(iter(runs.runs.values()))
+    assert stored.address == elsewhere
+    assert stored.state.step_id == "welcome"
+    assert messaging.sent[-1].address == elsewhere
+    assert audit.events[-1][1]["resumed"] is True
+
+
+async def test_an_answer_from_another_messenger_moves_the_run() -> None:
+    service, runs, messaging, audit, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    elsewhere = Address(channel=Channel.TELEGRAM, chat_id=ChatId(555))
 
     await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        elsewhere,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert stored.address == elsewhere
+    assert messaging.sent[-1].address == elsewhere
+    assert "channel_changed" in audit.names()
+
+
+async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
+    service, runs, _, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
         Event(
             kind=EventKind.BUTTON_PRESSED,
             at=datetime(2026, 10, 20, 9, 0),  # noqa: DTZ001 - exercising a naive payload
@@ -323,10 +358,10 @@ async def test_survey_answer_is_scored_without_escalating_on_a_score_alone(
     tmp_path: Path,
 ) -> None:
     service, _, audit = _build_survey(tmp_path)
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
 
     result = await service.handle(
-        EMPLOYEE, ChatId(1), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
     )
 
     assert not result.escalated
@@ -337,14 +372,14 @@ async def test_survey_answer_is_scored_without_escalating_on_a_score_alone(
 
 async def test_angry_reason_escalates_the_survey(tmp_path: Path) -> None:
     service, _, audit = _build_survey(tmp_path)
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
     await service.handle(
-        EMPLOYEE, ChatId(1), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
     )
 
     result = await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(
             kind=EventKind.MESSAGE_RECEIVED,
             at=NOW,
@@ -360,14 +395,14 @@ async def test_angry_reason_escalates_the_survey(tmp_path: Path) -> None:
 async def test_the_classifier_labels_free_text_answers(tmp_path: Path) -> None:
     labeler = RecordingClassifier(Sentiment.NEGATIVE, (SignalTag.MANAGER,))
     service, _, audit = _build_survey(tmp_path, labeler)
-    await service.start(EMPLOYEE, ChatId(1))
+    await service.start(EMPLOYEE, ADDRESS)
     await service.handle(
-        EMPLOYEE, ChatId(1), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
     )
 
     result = await service.handle(
         EMPLOYEE,
-        ChatId(1),
+        ADDRESS,
         Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Нормально, но руководитель занят"),
     )
 

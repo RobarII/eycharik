@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from onboarding.app.db.models import AuditRow, EmployeeRow, EventRow, QuestionRow, RunRow
 from onboarding.app.db.session import Database
 from onboarding.core.models import (
+    Address,
     CancelReminder,
+    Channel,
     ChatId,
     EmployeeId,
     KeepReminder,
@@ -45,7 +47,8 @@ class SqlRunRepository:
                 scenario_version=state.scenario_version,
                 step_id=state.step_id,
                 entered_at=state.entered_at,
-                chat_id=int(run.chat_id),
+                channel=run.address.channel.value,
+                chat_id=int(run.address.chat_id),
                 answers=_answers_payload(state),
                 question_index=state.question_index,
                 pending_reason=state.pending_reason,
@@ -73,7 +76,8 @@ class SqlRunRepository:
             .values(
                 step_id=state.step_id,
                 entered_at=state.entered_at,
-                chat_id=int(run.chat_id),
+                channel=run.address.channel.value,
+                chat_id=int(run.address.chat_id),
                 answers=_answers_payload(state),
                 question_index=state.question_index,
                 pending_reason=state.pending_reason,
@@ -132,7 +136,7 @@ def _stored_run(row: RunRow) -> StoredRun:
     return StoredRun(
         state=state,
         reminder=_reminder(row),
-        chat_id=ChatId(row.chat_id),
+        address=Address(channel=Channel(row.channel), chat_id=ChatId(row.chat_id)),
         active=row.status == "active",
     )
 
@@ -214,7 +218,7 @@ class SqlQuestionLog:
         self,
         *,
         employee_id: EmployeeId | None,
-        chat_id: ChatId,
+        address: Address,
         text: str,
         answered: bool,
         reason: str,
@@ -224,7 +228,8 @@ class SqlQuestionLog:
         self._session.add(
             QuestionRow(
                 employee_id=str(employee_id) if employee_id else None,
-                chat_id=int(chat_id),
+                channel=address.channel.value,
+                chat_id=int(address.chat_id),
                 text=text,
                 answered=answered,
                 reason=reason,
@@ -263,7 +268,7 @@ class DatabaseQuestionLog:
         self,
         *,
         employee_id: EmployeeId | None,
-        chat_id: ChatId,
+        address: Address,
         text: str,
         answered: bool,
         reason: str,
@@ -273,7 +278,7 @@ class DatabaseQuestionLog:
         async with self._database.session() as session:
             await SqlQuestionLog(session).record_question(
                 employee_id=employee_id,
-                chat_id=chat_id,
+                address=address,
                 text=text,
                 answered=answered,
                 reason=reason,

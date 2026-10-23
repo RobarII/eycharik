@@ -21,9 +21,21 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
+def _columns(table: str) -> set[str]:
+    inspector = sa.inspect(op.get_bind())
+    if table not in inspector.get_table_names():
+        return set()
+    return {column["name"] for column in inspector.get_columns(table)}
+
+
 def upgrade() -> None:
+    # The baseline is derived from ``Base.metadata``, so a fresh database already has the column.
+    if "image" in _columns("messages"):
+        return
     op.add_column("messages", sa.Column("image", sa.String(length=80), nullable=True))
 
 
 def downgrade() -> None:
+    if "image" not in _columns("messages"):
+        return
     op.drop_column("messages", "image")

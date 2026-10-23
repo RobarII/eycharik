@@ -16,10 +16,20 @@ from typing import Any
 import httpx
 from pydantic import SecretStr
 
-from onboarding.app.max.keyboards import to_attachments
-from onboarding.app.max.media import asset_path, content_type, image_attachment, upload_token
-from onboarding.core.models import Keyboard
-from onboarding.ports import Messaging, OutboundMessage
+from onboarding.app.channels.max.media import (
+    asset_path,
+    content_type,
+    image_attachment,
+    upload_token,
+)
+from onboarding.app.channels.max.render import to_attachments
+from onboarding.core.models import Address, Channel, Keyboard
+from onboarding.ports import (
+    ChannelRejectedError,
+    ChannelUnavailableError,
+    Messaging,
+    OutboundMessage,
+)
 
 ATTACHMENT_RETRY_SECONDS = (1.0, 2.0, 4.0)
 ATTACHMENT_NOT_READY = "attachment.not.ready"
@@ -29,11 +39,11 @@ class MaxError(RuntimeError):
     """Base class for MAX API failures."""
 
 
-class MaxUnavailableError(MaxError):
+class MaxUnavailableError(ChannelUnavailableError):
     """Transport failure or a 5xx: worth retrying later."""
 
 
-class MaxRejectedError(MaxError):
+class MaxRejectedError(ChannelRejectedError):
     """4xx: the request is wrong and a retry will not help."""
 
     def __init__(self, message: str, *, code: str | None = None) -> None:
@@ -49,6 +59,8 @@ class Subscription:
 
 
 class MaxClient(Messaging):
+    channel = Channel.MAX
+
     def __init__(
         self,
         *,
@@ -80,13 +92,16 @@ class MaxClient(Messaging):
             body["attachments"] = attachments
         if message.reply_to is not None:
             body["link"] = {"type": "reply", "mid": message.reply_to}
-        payload = await self._post_message(int(message.chat_id), body)
+        payload = await self._post_message(int(message.address.chat_id), body)
         mid = _get(payload, "message", "body", "mid")
         if not isinstance(mid, str) or not mid:
             raise MaxError("MAX response has no message.body.mid")
         return mid
 
-    async def edit(self, message_id: str, text: str, keyboard: Keyboard = ()) -> None:
+    async def edit(
+        self, address: Address, message_id: str, text: str, keyboard: Keyboard = ()
+    ) -> None:
+        del address
         body: dict[str, Any] = {"text": text}
         attachments = to_attachments(keyboard)
         if attachments:

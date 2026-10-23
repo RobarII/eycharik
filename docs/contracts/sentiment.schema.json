@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moshackathon.local/contracts/sentiment.schema.json",
+  "title": "SentimentSignal",
+  "description": "One classifier verdict for one free-text survey answer. The model returns this object; the worker validates it before anything is stored or escalated.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sentiment", "tags", "risk", "confidence", "reason"],
+  "properties": {
+    "sentiment": {"enum": ["positive", "neutral", "negative", "unknown"]},
+    "tags": {
+      "type": "array",
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/tag"}
+    },
+    "risk": {"enum": ["low", "medium", "high"]},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "One short phrase for the recruiter. No names, no quotes longer than ten words."
+    },
+    "escalate_to": {"enum": ["recruiter", "hr", "none"]}
+  },
+  "$defs": {
+    "tag": {
+      "enum": [
+        "access",
+        "manager",
+        "colleagues",
+        "workload",
+        "clarity",
+        "hr",
+        "it",
+        "integration",
+        "other"
+      ]
+    }
+  }
+}

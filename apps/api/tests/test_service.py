@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import yaml
 
 from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
@@ -224,3 +225,88 @@ async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
 
     stored = next(iter(runs.runs.values()))
     assert stored.state.step_id == "meet_the_team"
+
+
+def _build_survey(tmp_path: Path) -> tuple[OnboardingService, InMemoryRuns, RecordingAudit]:
+    document = {
+        "id": "survey_demo",
+        "version": 1,
+        "title": "Опрос",
+        "start": "check",
+        "steps": [
+            {
+                "id": "check",
+                "kind": "survey",
+                "message": "Пара вопросов",
+                "questions": [
+                    {
+                        "id": "manager_available",
+                        "kind": "scale",
+                        "prompt": "Насколько доступен руководитель?",
+                        "low_threshold": 8,
+                        "reason_prompt": "Что мешает?",
+                    }
+                ],
+                "next": "done",
+                "timeout": {"after_hours": 24, "action": "remind"},
+            },
+            {"id": "done", "kind": "terminal", "outcome": "completed"},
+        ],
+    }
+    (tmp_path / "survey_demo.yaml").write_text(yaml.safe_dump(document), encoding="utf-8")
+    runs = InMemoryRuns()
+    audit = RecordingAudit()
+    executor = ActionExecutor(
+        messaging=RecordingMessaging(),
+        answerer=StubAnswerer(),  # type: ignore[arg-type]
+        copy=COPY,
+        audit=audit,
+    )
+    service = OnboardingService(
+        runs=runs,
+        catalog=ScenarioCatalog.load(tmp_path),
+        executor=executor,
+        clock=FrozenClock(NOW),
+        directory=StaticDirectory({EMPLOYEE: profile()}),
+        audit=audit,
+        scenario_id="survey_demo",
+    )
+    return service, runs, audit
+
+
+async def test_survey_answer_is_scored_without_escalating_on_a_score_alone(
+    tmp_path: Path,
+) -> None:
+    service, _, audit = _build_survey(tmp_path)
+    await service.start(EMPLOYEE, ChatId(1))
+
+    result = await service.handle(
+        EMPLOYEE, ChatId(1), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
+    )
+
+    assert not result.escalated
+    risk = next(fields for name, fields in audit.events if name == "risk_assessed")
+    assert risk["level"] == "medium"
+    assert risk["score"] == 2
+
+
+async def test_angry_reason_escalates_the_survey(tmp_path: Path) -> None:
+    service, _, audit = _build_survey(tmp_path)
+    await service.start(EMPLOYEE, ChatId(1))
+    await service.handle(
+        EMPLOYEE, ChatId(1), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="3")
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ChatId(1),
+        Event(
+            kind=EventKind.MESSAGE_RECEIVED,
+            at=NOW,
+            text="Руководитель не отвечает, конфликт в команде",
+        ),
+    )
+
+    assert result.escalated
+    escalated = next(fields for name, fields in audit.events if name == "risk_escalated")
+    assert escalated["to"] == "recruiter"

@@ -8,9 +8,17 @@ defense when the provider returns low confidence.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
-from .models import RiskAssessment, RiskLevel, RiskSignal, Sentiment, SignalTag
+from .models import (
+    Question,
+    RiskAssessment,
+    RiskLevel,
+    RiskSignal,
+    Sentiment,
+    SignalTag,
+    SurveyAnswer,
+)
 
 HIGH_SCORE = 3
 MEDIUM_SCORE = 1
@@ -111,19 +119,59 @@ _POSITIVE_MARKERS = (
 _TAG_ORDER = tuple(_TAG_KEYWORDS)
 
 
-def assess_text(text: str, *, source: str, confidence: float = 0.5) -> RiskAssessment:
-    """Classify one free-text answer with keywords and assess it. No model, no network."""
+def keyword_signal(text: str, *, source: str, confidence: float = 0.5) -> RiskSignal:
+    """Classify one free-text answer with keywords. No model, no network."""
     normalized = _normalize(text)
     tags = tuple(tag for tag in _TAG_ORDER if _matches(normalized, _TAG_KEYWORDS[tag]))
-    sentiment = _keyword_sentiment(normalized, tags)
-    signal = RiskSignal(
+    return RiskSignal(
         source=source,
-        sentiment=sentiment,
+        sentiment=_keyword_sentiment(normalized, tags),
         tags=tags,
         confidence=confidence,
         text=text,
     )
-    return assess((signal,))
+
+
+def assess_text(text: str, *, source: str, confidence: float = 0.5) -> RiskAssessment:
+    """Classify one free-text answer and assess it on its own."""
+    return assess((keyword_signal(text, source=source, confidence=confidence),))
+
+
+def survey_signals(
+    questions: Sequence[Question],
+    answers: Sequence[SurveyAnswer],
+    *,
+    source_prefix: str = "survey",
+    confidence: float = 0.6,
+) -> tuple[RiskSignal, ...]:
+    """Turn stored survey answers into signals the risk rules understand.
+
+    Text answers go through the keyword classifier. A scale answer carries no words, so it becomes
+    a neutral signal with a score: only the distance to the comfort threshold matters.
+    """
+    by_id = {question.id: question for question in questions}
+    signals: list[RiskSignal] = []
+    for answer in answers:
+        question = by_id.get(answer.question_id)
+        if question is None:
+            continue
+        source = f"{source_prefix}:{answer.question_id}"
+        if answer.score is not None and question.low_threshold is not None:
+            signals.append(
+                RiskSignal(
+                    source=source,
+                    sentiment=Sentiment.NEUTRAL,
+                    tags=(),
+                    confidence=0.9,
+                    score=answer.score,
+                    low_threshold=question.low_threshold,
+                )
+            )
+        if answer.text:
+            signals.append(
+                keyword_signal(answer.text, source=source, confidence=confidence)
+            )
+    return tuple(signals)
 
 
 def assess(signals: Iterable[RiskSignal]) -> RiskAssessment:

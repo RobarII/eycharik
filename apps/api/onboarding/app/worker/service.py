@@ -20,7 +20,11 @@ from onboarding.core.models import (
     EmployeeId,
     Event,
     RunId,
+    Scenario,
+    StepState,
+    Transition,
 )
+from onboarding.core.risk import assess, survey_signals
 from onboarding.core.transitions import advance, start
 from onboarding.ports import (
     AuditLog,
@@ -119,6 +123,9 @@ class OnboardingService:
             step=transition.state.step_id,
             event=event.kind.value,
         )
+        escalated = await self._assess_survey(
+            scenario, stored.state, transition, employee_id
+        )
         await self._act(
             transition.actions,
             stored.chat_id,
@@ -126,7 +133,42 @@ class OnboardingService:
             effective.at.date(),
             question=event.text,
         )
-        return ServiceResult(handled=True, completed=completed)
+        return ServiceResult(handled=True, escalated=escalated, completed=completed)
+
+    async def _assess_survey(
+        self,
+        scenario: Scenario,
+        previous: StepState,
+        transition: Transition,
+        employee_id: EmployeeId,
+    ) -> bool:
+        """Score the answers added by this event and audit the risk they carry."""
+        step = scenario.step(previous.step_id)
+        if not step.questions:
+            return False
+        fresh = transition.state.answers[len(previous.answers) :]
+        if not fresh:
+            return False
+        assessment = assess(survey_signals(step.questions, fresh))
+        await self._audit.record(
+            "risk_assessed",
+            employee_id=str(employee_id),
+            step=step.id,
+            level=assessment.level.value,
+            score=assessment.score,
+            tags=[tag.value for tag in assessment.tags],
+            reasons=list(assessment.reasons),
+        )
+        if assessment.escalate_to is None:
+            return False
+        await self._audit.record(
+            "risk_escalated",
+            employee_id=str(employee_id),
+            step=step.id,
+            to=assessment.escalate_to,
+            level=assessment.level.value,
+        )
+        return True
 
     def _now(self) -> datetime:
         now = self._clock.now()

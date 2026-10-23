@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
-from onboarding.core.models import RiskLevel, RiskSignal, Sentiment, SignalTag
-from onboarding.core.risk import assess, assess_text
+from onboarding.core.models import (
+    Question,
+    QuestionKind,
+    RiskLevel,
+    RiskSignal,
+    Sentiment,
+    SignalTag,
+    SurveyAnswer,
+)
+from onboarding.core.risk import assess, assess_text, survey_signals
 
 
 def test_negative_access_answer_escalates_to_recruiter() -> None:
@@ -128,3 +136,37 @@ def test_empty_input_is_low() -> None:
     assert assessment.level is RiskLevel.LOW
     assert assessment.score == 0
     assert assessment.reasons == ()
+
+
+def test_scale_answer_becomes_a_signal_without_words() -> None:
+    question = Question(
+        id="manager",
+        prompt="Насколько доступен руководитель?",
+        kind=QuestionKind.SCALE,
+        low_threshold=8,
+    )
+
+    signals = survey_signals((question,), (SurveyAnswer(question_id="manager", score=6),))
+
+    assert len(signals) == 1
+    assert signals[0].score == 6
+    assert signals[0].tags == ()
+
+
+def test_survey_signals_combine_text_and_score() -> None:
+    question = Question(
+        id="manager",
+        prompt="Насколько доступен руководитель?",
+        kind=QuestionKind.SCALE,
+        low_threshold=8,
+    )
+    answers = (
+        SurveyAnswer(question_id="manager", score=7),
+        SurveyAnswer(question_id="manager", text="Руководитель не отвечает, конфликт в команде"),
+    )
+
+    assessment = assess(survey_signals((question,), answers))
+
+    assert assessment.level is RiskLevel.HIGH
+    assert assessment.escalate_to == "recruiter"
+    assert SignalTag.MANAGER in assessment.tags

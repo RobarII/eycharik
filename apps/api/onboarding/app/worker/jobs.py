@@ -103,9 +103,11 @@ def _event(raw: object) -> Event:
     at = datetime.fromisoformat(at_value) if isinstance(at_value, str) else at_value
     text = raw.get("text")
     button_id = raw.get("button_id")
+    file_id = raw.get("file_id")
     return Event(
         kind=kind,
         at=at,
         text=text if isinstance(text, str) and text else None,
         button_id=button_id if isinstance(button_id, str) and button_id else None,
+        file_id=file_id if isinstance(file_id, str) and file_id else None,
     )

@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from typing import cast
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import PlainTextResponse
 
 from onboarding.app.db.queue import JobQueue
@@ -24,6 +24,8 @@ from onboarding.ports import Ingress
 router = APIRouter()
 
 MAX_BODY_BYTES = 1_000_000
+# VK wants this word; MAX and Telegram do not mind it, and one acknowledgement is one code path.
+ACK = "ok"
 
 
 def _ingress(request: Request, name: str) -> Ingress:
@@ -51,7 +53,7 @@ async def _body(request: Request) -> bytes:
 
 
 @router.post("/webhook/{channel}", include_in_schema=False)
-async def receive(channel: str, request: Request) -> Response:
+async def receive(channel: str, request: Request) -> PlainTextResponse:
     container = request.app.state.container
     ingress = _ingress(request, channel)
     if not ingress.configured:
@@ -76,7 +78,7 @@ async def receive(channel: str, request: Request) -> Response:
 
     inbound = ingress.parse(body, received_at=container.clock.now())
     if inbound is None:
-        return Response(status_code=status.HTTP_200_OK)
+        return PlainTextResponse(ACK)
 
     employee_id = await container.directory.resolve(inbound.address.channel, inbound.sender)
     if employee_id is None:
@@ -86,7 +88,7 @@ async def receive(channel: str, request: Request) -> Response:
             channel=inbound.address.channel.value,
             chat_id=int(inbound.address.chat_id),
         )
-        return Response(status_code=status.HTTP_200_OK)
+        return PlainTextResponse(ACK)
 
     kind = "start" if inbound.starts_run else "message"
     job: dict[str, object] = {
@@ -98,11 +100,12 @@ async def receive(channel: str, request: Request) -> Response:
             "at": inbound.event.at.isoformat(),
             "text": inbound.event.text,
             "button_id": inbound.event.button_id,
+            "file_id": inbound.event.file_id,
         },
     }
 
     async with container.database.session() as session:
         if not await SqlEventDeduper(session).first_sighting(inbound.dedupe_key):
-            return Response(status_code=status.HTTP_200_OK)
+            return PlainTextResponse(ACK)
         await JobQueue.enqueue(session, kind, job)
-    return Response(status_code=status.HTTP_200_OK)
+    return PlainTextResponse(ACK)

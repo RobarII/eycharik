@@ -16,6 +16,8 @@ from onboarding.app.channels.max.ingress import MaxIngress
 from onboarding.app.channels.profiles import ChannelProfileLibrary
 from onboarding.app.channels.telegram.client import TelegramClient
 from onboarding.app.channels.telegram.ingress import TelegramIngress
+from onboarding.app.channels.vk.client import VkClient
+from onboarding.app.channels.vk.ingress import VkIngress
 from onboarding.app.clock import SystemClock
 from onboarding.app.copy import Copy, load_copy
 from onboarding.app.db.blobs import PostgresBlobStore
@@ -167,6 +169,17 @@ def build_container(settings: Settings) -> Container:
             profile=profiles[Channel.TELEGRAM],
         )
         ingress[Channel.TELEGRAM] = TelegramIngress(settings.telegram_webhook_secret)
+    if Channel.VK in enabled:
+        senders[Channel.VK] = VkClient(
+            base_url=settings.vk_base_url,
+            api_version=settings.vk_api_version,
+            token=settings.vk_access_token,
+            client=http,
+            profile=profiles[Channel.VK],
+        )
+        ingress[Channel.VK] = VkIngress(
+            settings.vk_webhook_secret, settings.vk_confirmation_code
+        )
 
     outbox = OutboxMessaging(database, senders, profiles)
     reranker = build_reranker(settings, http)

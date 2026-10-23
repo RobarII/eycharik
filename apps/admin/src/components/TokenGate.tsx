@@ -1,12 +1,20 @@
 import { useState, type FormEvent } from "react";
 
+import { ApiError, Unauthorized } from "../api";
 import { CheckIcon, LogoMark } from "./Icons";
+import { TENANT } from "../config";
 
 const POINTS = [
   "Прогресс каждого новичка по сценарию, а не по логам чата.",
   "Риски из опросов с цитатой и тегами — до того, как человек уйдёт.",
   "Очередь вопросов, где ассистент честно передал диалог человеку.",
 ];
+
+function failureText(error: Error): string {
+  if (error instanceof Unauthorized) return "Токен не подошёл. Проверьте его у администратора.";
+  if (error instanceof ApiError) return `Сервер отказал: ${error.message}.`;
+  return "Сервер не отвечает. Проверьте, что API запущен, и повторите.";
+}
 
 export function TokenGate({
   onSubmit,
@@ -27,8 +35,8 @@ export function TokenGate({
     setError(null);
     try {
       await onSubmit(value.trim());
-    } catch {
-      setError("Токен не подошёл. Проверьте его у администратора.");
+    } catch (failure) {
+      setError(failureText(failure instanceof Error ? failure : new Error(String(failure))));
     } finally {
       setBusy(false);
     }
@@ -43,8 +51,8 @@ export function TokenGate({
               <LogoMark width={22} height={22} />
             </span>
             <div className="brand-text">
-              <p className="brand-name">ПОЛИПЛАСТИК</p>
-              <p className="brand-sub">Онбординг в MAX</p>
+              <p className="brand-name">{TENANT.name}</p>
+              <p className="brand-sub">{TENANT.subtitle}</p>
             </div>
           </div>
 
@@ -94,8 +102,8 @@ export function TokenGate({
             </button>
           </form>
           <p className="gate-footnote">
-            Токен хранится только в этом браузере и передаётся в заголовке Authorization. Сессии
-            и cookie нет.
+            Токен меняется на защищённую сессию в этом браузере: скрипт страницы его не видит, и он
+            не передаётся в адресе.
           </p>
         </div>
       </section>

@@ -105,3 +105,51 @@ export interface KnowledgeUploaded {
   title: string;
   chunks: number;
 }
+
+export type Capability =
+  | "runs.read"
+  | "questions.read"
+  | "questions.resolve"
+  | "knowledge.read"
+  | "knowledge.write"
+  | "employees.offboard"
+  | "analytics.read";
+
+export interface AdminScope {
+  recruiter_id: string | null;
+  department: string | null;
+}
+
+/** `GET /admin/api/me`: what the cabinet is allowed to render for this session. */
+export interface AdminIdentity {
+  role: "recruiter" | "manager" | "hr_admin";
+  subject: string;
+  scope: AdminScope;
+  capabilities: Capability[];
+  expires_at: string | null;
+}
+
+export interface KnowledgeFileQueued {
+  content_hash: string;
+  status: string;
+}
+
+/** What extraction decided about one uploaded file. `status` is the extraction's, not the file's. */
+export interface KnowledgeExtraction {
+  content_hash: string;
+  status: "queued" | "running" | "indexed" | "refused" | string;
+  reason: string | null;
+  engine: string;
+  route: string;
+  pages: number;
+  min_confidence: number;
+  document_id: string | null;
+}
+
+export interface OffboardedEmployee {
+  employee_id: string;
+  questions_deleted: number;
+  messages_deleted: number;
+  runs_closed: number;
+  audit_redacted: number;
+}

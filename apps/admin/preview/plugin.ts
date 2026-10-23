@@ -28,6 +28,17 @@ function limitOf(url: URL, fallback: number, max: number): number {
   return Math.min(max, Math.max(1, Math.trunc(parsed)));
 }
 
+const SESSION_COOKIE = "onboarding_session";
+
+function cookieToken(request: IncomingMessage): string | null {
+  const header = request.headers.cookie ?? "";
+  for (const part of header.split(";")) {
+    const [name, ...rest] = part.trim().split("=");
+    if (name === SESSION_COOKIE) return decodeURIComponent(rest.join("="));
+  }
+  return null;
+}
+
 async function handle(
   request: IncomingMessage,
   response: ServerResponse,
@@ -45,10 +56,44 @@ async function handle(
     return;
   }
 
-  const token = (request.headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-  const role = demo.TOKENS[token];
+  // The cabinet signs in with a cookie; `Authorization` stays for curl and the existing tests.
+  const presented =
+    (request.headers.authorization ?? "").replace(/^Bearer\s+/i, "") || cookieToken(request) || "";
+
+  if (request.method === "POST" && path === "/admin/api/session") {
+    const body = (await readJson(request)) as { token?: unknown } | null;
+    const candidate = typeof body?.token === "string" ? body.token.trim() : "";
+    if (!demo.TOKENS[candidate]) {
+      send(response, 401, { detail: "unknown token" });
+      return;
+    }
+    response.statusCode = 204;
+    response.setHeader(
+      "Set-Cookie",
+      `${SESSION_COOKIE}=${encodeURIComponent(candidate)}; HttpOnly; SameSite=Strict; Path=/admin/api; Max-Age=43200`,
+    );
+    response.end();
+    return;
+  }
+
+  if (request.method === "DELETE" && path === "/admin/api/session") {
+    response.statusCode = 204;
+    response.setHeader(
+      "Set-Cookie",
+      `${SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/admin/api; Max-Age=0`,
+    );
+    response.end();
+    return;
+  }
+
+  const role = demo.TOKENS[presented];
   if (!role) {
     send(response, 401, { detail: "unauthorized" });
+    return;
+  }
+
+  if (request.method === "GET" && path === "/admin/api/me") {
+    send(response, 200, demo.identity(role));
     return;
   }
 

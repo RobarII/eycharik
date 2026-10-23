@@ -1,9 +1,13 @@
 import type {
+  AdminIdentity,
   AnalyticsOverview,
   DigestResponse,
   KnowledgeDocument,
+  KnowledgeExtraction,
+  KnowledgeFileQueued,
   KnowledgeUploaded,
   ListResponse,
+  OffboardedEmployee,
   Question,
   ResolvedQuestion,
   RunDetail,
@@ -11,8 +15,8 @@ import type {
 } from "./types";
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
-const KEY = "onboarding.admin.token";
 
+/** The server does not know this session any more: the caller must go back to the gate. */
 export class Unauthorized extends Error {
   constructor() {
     super("Нужен доступ");
@@ -20,77 +24,121 @@ export class Unauthorized extends Error {
   }
 }
 
-export function getToken(): string {
-  return localStorage.getItem(KEY) ?? "";
+/** A refused request that is not an expired session. `status` drives the message. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
 }
 
-export function setToken(token: string): void {
-  if (token) localStorage.setItem(KEY, token);
-  else localStorage.removeItem(KEY);
+async function detail(response: Response): Promise<string | null> {
+  const body = (await response.json().catch(() => null)) as { detail?: unknown } | null;
+  return typeof body?.detail === "string" ? body.detail : null;
 }
 
-async function get<T>(path: string): Promise<T> {
-  const token = getToken();
-  const response = await fetch(`${BASE}${path}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, { credentials: "same-origin", ...init });
   if (response.status === 401) throw new Unauthorized();
   if (!response.ok) {
-    const body = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(body?.detail ?? `Ошибка ${response.status}`);
+    throw new ApiError(response.status, (await detail(response)) ?? `Ошибка ${response.status}`);
   }
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 
+function post<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/**
+ * Trade the token for an HttpOnly cookie.
+ *
+ * The token is not stored anywhere in the page: it goes out in one body and comes back as a cookie
+ * the script cannot read. See `docs/decisions/0018`.
+ */
+export function openSession(token: string): Promise<void> {
+  return post<void>("/admin/api/session", { token });
+}
+
+export function closeSession(): Promise<void> {
+  return request<void>("/admin/api/session", { method: "DELETE" });
+}
+
+export function fetchMe(): Promise<AdminIdentity> {
+  return request<AdminIdentity>("/admin/api/me");
+}
+
 export function fetchRuns(limit = 50): Promise<ListResponse<RunSummary>> {
-  return get(`/admin/api/runs?limit=${limit}`);
+  return request(`/admin/api/runs?limit=${limit}`);
 }
 
 export function fetchRun(runId: string): Promise<RunDetail> {
-  return get(`/admin/api/runs/${encodeURIComponent(runId)}`);
+  return request(`/admin/api/runs/${encodeURIComponent(runId)}`);
 }
 
 export function fetchQuestions(
   status: "unanswered" | "answered" | "all",
   limit = 50,
 ): Promise<ListResponse<Question>> {
-  return get(`/admin/api/questions?status=${status}&limit=${limit}`);
+  return request(`/admin/api/questions?status=${status}&limit=${limit}`);
 }
 
 export function fetchOverview(): Promise<AnalyticsOverview> {
-  return get("/admin/api/analytics/overview");
+  return request("/admin/api/analytics/overview");
 }
 
 export function fetchDigest(days = 7): Promise<DigestResponse> {
-  return get(`/admin/api/digest/weekly?days=${days}`);
-}
-
-async function send<T>(path: string, body: unknown): Promise<T> {
-  const token = getToken();
-  const response = await fetch(`${BASE}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-  });
-  if (response.status === 401) throw new Unauthorized();
-  if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { detail?: string } | null;
-    throw new Error(payload?.detail ?? `Ошибка ${response.status}`);
-  }
-  return (await response.json()) as T;
+  return request(`/admin/api/digest/weekly?days=${days}`);
 }
 
 export function fetchKnowledge(): Promise<ListResponse<KnowledgeDocument>> {
-  return get("/admin/api/knowledge");
+  return request("/admin/api/knowledge");
 }
 
 export function uploadKnowledge(text: string): Promise<KnowledgeUploaded> {
-  return send("/admin/api/knowledge", { text });
+  return post<KnowledgeUploaded>("/admin/api/knowledge", { text });
+}
+
+export interface FileMetadata {
+  id: string;
+  title: string;
+  owner: string;
+  audience: string[];
+  valid_from: string;
+}
+
+/** A PDF or a deck: the API stores it by hash and the worker extracts it out of band. */
+export function uploadKnowledgeFile(
+  file: File,
+  metadata: FileMetadata,
+): Promise<KnowledgeFileQueued> {
+  const body = new FormData();
+  body.append("file", file);
+  body.append("metadata", JSON.stringify({ ...metadata, type: "knowledge", status: "active" }));
+  return request<KnowledgeFileQueued>("/admin/api/knowledge/files", {
+    method: "POST",
+    body,
+  });
+}
+
+export function fetchExtraction(contentHash: string): Promise<KnowledgeExtraction> {
+  return request(`/admin/api/knowledge/files/${encodeURIComponent(contentHash)}`);
 }
 
 export function resolveQuestion(id: number, text: string): Promise<ResolvedQuestion> {
-  return send(`/admin/api/questions/${id}/resolve`, { text });
+  return post<ResolvedQuestion>(`/admin/api/questions/${id}/resolve`, { text });
+}
+
+export function offboardEmployee(employeeId: string): Promise<OffboardedEmployee> {
+  return request(`/admin/api/employees/${encodeURIComponent(employeeId)}`, {
+    method: "DELETE",
+  });
 }

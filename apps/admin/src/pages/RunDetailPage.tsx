@@ -17,11 +17,7 @@ import {
   tagLabel,
 } from "../format";
 import { useUnauthorized } from "../useUnauthorized";
-
-const SCENARIO_LABELS: Record<string, string> = {
-  onboarding_default: "Офис",
-  onboarding_plant: "Завод (ГТП)",
-};
+import { SCENARIO_LABELS } from "../config";
 
 export function RunDetailPage({
   runId,

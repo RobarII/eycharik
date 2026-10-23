@@ -12,6 +12,47 @@ export const TOKENS: Record<string, Role> = {
   "dev-hr-token": "hr_admin",
 };
 
+/**
+ * Mirrors `CAPABILITIES` in `apps/api/onboarding/api/auth.py`.
+ *
+ * The copy is deliberate — the preview has no server — and `src/preview.test.ts` fails when the two
+ * lists stop agreeing, so the demo cannot promise a button the API would refuse.
+ */
+export const CAPABILITIES: Record<Role, readonly string[]> = {
+  recruiter: [
+    "runs.read",
+    "questions.read",
+    "questions.resolve",
+    "knowledge.read",
+    "analytics.read",
+  ],
+  hr_admin: [
+    "runs.read",
+    "questions.read",
+    "questions.resolve",
+    "knowledge.read",
+    "knowledge.write",
+    "employees.offboard",
+    "analytics.read",
+  ],
+};
+
+export function identity(role: Role): {
+  role: Role;
+  subject: string;
+  scope: { recruiter_id: string | null; department: string | null };
+  capabilities: readonly string[];
+  expires_at: string | null;
+} {
+  return {
+    role,
+    subject: role === "recruiter" ? "rec-1" : "hr-1",
+    scope: { recruiter_id: role === "recruiter" ? "rec-1" : null, department: null },
+    capabilities: CAPABILITIES[role],
+    expires_at: null,
+  };
+}
+
 const DAY = 86_400_000;
 
 function ago(days: number, hours = 0): string {

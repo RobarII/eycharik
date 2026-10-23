@@ -85,6 +85,10 @@ export function RunDetailPage({
                   <dd>{formatDate(query.data.entered_at)}</dd>
                 </div>
                 <div>
+                  <dt>Обращение</dt>
+                  <dd>{query.data.tone === "informal" ? "На «ты»" : "На «вы»"}</dd>
+                </div>
+                <div>
                   <dt>Сотрудник в MAX</dt>
                   <dd>{query.data.employee_id}</dd>
                 </div>

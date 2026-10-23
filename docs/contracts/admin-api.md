@@ -61,8 +61,10 @@ the cap.
 `step_title` is `null` when the pinned scenario version cannot be loaded or the step id is not in
 it; the cabinet falls back to `step_id`. `step_number` is 1-based and `0` when the step is unknown.
 
-`RunDetail` extends `RunSummary` with `scenario`, `scenario_version`, `step_message`, `events`,
-and `questions`. Its questions are only that employee's, limited to the newest 20.
+`RunDetail` extends `RunSummary` with `scenario`, `scenario_version`, `tone`, `step_message`,
+`events`, and `questions`. `tone` is `formal` or `informal` and comes from the welcome choice,
+pinned on the run like the scenario version. Its questions are only that employee's, limited to the
+newest 20.
 
 `Question`:
 

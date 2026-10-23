@@ -97,6 +97,7 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
         step_message=step_message,
         scenario=record.scenario_id,
         scenario_version=record.scenario_version,
+        tone=record.tone,
         events=[
             AuditEvent(name=event.name, at=event.at, fields=event.fields) for event in events
         ],

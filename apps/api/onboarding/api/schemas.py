@@ -51,6 +51,7 @@ class RunDetail(RunSummary):
     step_message: str | None
     scenario: str
     scenario_version: int
+    tone: str
     events: list[AuditEvent]
     questions: list[Question]
 

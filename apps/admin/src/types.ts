@@ -32,6 +32,7 @@ export interface RunDetail extends RunSummary {
   step_message: string | null;
   scenario: string;
   scenario_version: number;
+  tone: "formal" | "informal";
   events: AuditEvent[];
   questions: Question[];
 }

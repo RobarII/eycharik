@@ -26,6 +26,7 @@ class RunRecord:
     department: str
     scenario_id: str
     scenario_version: int
+    tone: str
     step_id: str
     entered_at: datetime
     active: bool
@@ -350,6 +351,7 @@ def _run_record(
         department=department,
         scenario_id=run.scenario_id,
         scenario_version=run.scenario_version,
+        tone=run.tone,
         step_id=run.step_id,
         entered_at=run.entered_at,
         active=run.status == "active",

@@ -6,8 +6,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   Unauthorized,
   closeSession,
+  fetchDigest,
   fetchMe,
   fetchOverview,
+  fetchQuestions,
+  fetchRuns,
   openSession,
 } from "./api";
 import type { AdminIdentity } from "./types";
@@ -66,6 +69,9 @@ describe("App", () => {
     vi.mocked(closeSession).mockReset();
     vi.mocked(fetchOverview).mockReset();
     vi.mocked(fetchOverview).mockResolvedValue(emptyOverview as never);
+    vi.mocked(fetchRuns).mockResolvedValue({ items: [], next_cursor: null, total: 0 });
+    vi.mocked(fetchQuestions).mockResolvedValue({ items: [], next_cursor: null, total: 0 });
+    vi.mocked(fetchDigest).mockResolvedValue({ items: [], since: "2026-10-17T00:00:00Z" });
     window.location.hash = "#/overview";
   });
 

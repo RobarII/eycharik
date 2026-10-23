@@ -239,3 +239,95 @@ class Verdict:
 class ScoredChunk:
     chunk: Chunk
     score: float
+
+
+class Sentiment(StrEnum):
+    POSITIVE = "positive"
+    NEUTRAL = "neutral"
+    NEGATIVE = "negative"
+    UNKNOWN = "unknown"
+
+
+class RiskLevel(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class SignalTag(StrEnum):
+    ACCESS = "access"
+    MANAGER = "manager"
+    COLLEAGUES = "colleagues"
+    WORKLOAD = "workload"
+    CLARITY = "clarity"
+    HR = "hr"
+    IT = "it"
+    INTEGRATION = "integration"
+    OTHER = "other"
+
+
+class QuestionKind(StrEnum):
+    CHOICE = "choice"
+    SCALE = "scale"
+    OPEN = "open"
+
+
+MAX_SCALE = 10
+MIN_SCALE = 1
+MAX_REASON_CHARS = 1000
+
+
+@dataclass(frozen=True, slots=True)
+class Question:
+    id: str
+    prompt: str
+    kind: QuestionKind
+    options: tuple[Button, ...] = ()
+    low_threshold: int | None = None
+    reason_prompt: str | None = None
+
+    def validate(self) -> None:
+        if self.kind is QuestionKind.CHOICE and not self.options:
+            raise SurveyError(f"question {self.id!r}: a choice question needs options")
+        if self.kind is not QuestionKind.CHOICE and self.options:
+            raise SurveyError(f"question {self.id!r}: only a choice question has options")
+        if self.kind is QuestionKind.SCALE:
+            if self.low_threshold is None:
+                raise SurveyError(f"question {self.id!r}: a scale question needs low_threshold")
+            if not MIN_SCALE < self.low_threshold <= MAX_SCALE:
+                raise SurveyError(
+                    f"question {self.id!r}: low_threshold must be between {MIN_SCALE + 1} "
+                    f"and {MAX_SCALE}"
+                )
+
+
+@dataclass(frozen=True, slots=True)
+class SurveyAnswer:
+    question_id: str
+    text: str | None = None
+    option_id: str | None = None
+    score: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RiskSignal:
+    source: str
+    sentiment: Sentiment
+    tags: tuple[SignalTag, ...]
+    confidence: float
+    text: str | None = None
+    score: int | None = None
+    low_threshold: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RiskAssessment:
+    level: RiskLevel
+    tags: tuple[SignalTag, ...]
+    escalate_to: str | None
+    reasons: tuple[str, ...]
+    score: int
+
+
+class SurveyError(ValueError):
+    """A survey answer or definition violates the contract."""

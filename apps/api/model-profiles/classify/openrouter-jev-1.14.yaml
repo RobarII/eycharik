@@ -9,7 +9,7 @@ note: >
   charged. Box questions and images need 1.14; a 1.13 class handles text only.
 family: typesafe-jev
 model: typesafe/jev-1.14
-rubric: sentiment-jev@1
+rubric: sentiment-jev@2
 timeout_s: 8.0
 max_retries: 2
 price_input_rub_per_1k: 0.0

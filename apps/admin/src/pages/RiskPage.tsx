@@ -44,7 +44,7 @@ export function RiskPage({
 
       {overview.isError ? (
         <ErrorNote
-          message={overview.error.message}
+          error={overview.error}
           onRetry={() => void overview.refetch()}
         />
       ) : null}
@@ -71,7 +71,7 @@ export function RiskPage({
       <h2 className="section-title">Дайджест недели</h2>
       {digest.isLoading ? <SkeletonRows rows={4} /> : null}
       {digest.isError ? (
-        <ErrorNote message={digest.error.message} onRetry={() => void digest.refetch()} />
+        <ErrorNote error={digest.error} onRetry={() => void digest.refetch()} />
       ) : null}
       {digest.isSuccess && digest.data.items.length === 0 ? (
         <EmptyState title="Сигналов нет">

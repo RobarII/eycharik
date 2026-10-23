@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { errorText } from "../errors";
+
 export function EmptyState({
   title,
   children,
@@ -15,16 +17,22 @@ export function EmptyState({
   );
 }
 
+/**
+ * A failure, in Russian.
+ *
+ * Every caller hands over the error itself, so no screen can leak the API's English `detail` and no
+ * screen has to remember to translate. `role="alert"` announces it without stealing focus.
+ */
 export function ErrorNote({
-  message,
+  error,
   onRetry,
 }: {
-  message: string;
+  error: Error;
   onRetry?: () => void;
 }) {
   return (
     <div className="note note-error" role="alert">
-      <span>{message}</span>
+      <span>{errorText(error)}</span>
       {onRetry ? (
         <button type="button" className="link-button" onClick={onRetry}>
           Повторить

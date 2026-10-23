@@ -8,6 +8,7 @@ import { AnswerPill, ReasonPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { countLabel, formatDateTime, initials } from "../format";
 import type { Question, ResolvedQuestion, RunSummary } from "../types";
+import { isConflict } from "../errors";
 import { useUnauthorized } from "../useUnauthorized";
 import { useSession } from "../session";
 import { REFRESH } from "../config";
@@ -54,6 +55,11 @@ export function QuestionsPage({
       await queryClient.invalidateQueries({ queryKey: ["questions"] });
       await queryClient.invalidateQueries({ queryKey: ["overview"] });
       await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
+    // A 409 means another recruiter answered first: the card is stale, so pull the truth instead of
+    // arguing with the server.
+    onError: (error) => {
+      if (isConflict(error)) void queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
   });
   useUnauthorized(query.error, onUnauthorized);
@@ -104,7 +110,7 @@ export function QuestionsPage({
 
       {query.isPending ? <SkeletonRows /> : null}
       {query.isError && query.error.name !== "Unauthorized" ? (
-        <ErrorNote message={query.error.message} onRetry={() => void query.refetch()} />
+        <ErrorNote error={query.error} onRetry={() => void query.refetch()} />
       ) : null}
       {query.isSuccess && items.length === 0 ? (
         <EmptyState title="Очередь пуста">

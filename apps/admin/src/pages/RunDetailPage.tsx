@@ -46,7 +46,7 @@ export function RunDetailPage({
 
       {query.isPending ? <SkeletonRows rows={4} /> : null}
       {query.isError && query.error.name !== "Unauthorized" ? (
-        <ErrorNote message={query.error.message} onRetry={() => void query.refetch()} />
+        <ErrorNote error={query.error} onRetry={() => void query.refetch()} />
       ) : null}
 
       {query.data ? (
@@ -248,7 +248,7 @@ function OffboardButton({
           Отмена
         </button>
       </div>
-      {mutation.isError ? <ErrorNote message={mutation.error.message} /> : null}
+      {mutation.isError ? <ErrorNote error={mutation.error} /> : null}
     </div>
   );
 }

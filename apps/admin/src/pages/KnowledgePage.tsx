@@ -112,7 +112,7 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
                 {upload.isPending ? "Индексируем…" : "Загрузить и проиндексировать"}
               </button>
             </div>
-            {upload.isError ? <ErrorNote message={upload.error.message} /> : null}
+            {upload.isError ? <ErrorNote error={upload.error} /> : null}
             {upload.isSuccess ? (
               <p className="note note-ok" role="status">
                 «{upload.data.title}» проиндексирован: {upload.data.chunks} фрагментов, id{" "}
@@ -134,7 +134,7 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
           </div>
           {query.isPending ? <p className="empty-inline">Загружаем документы…</p> : null}
           {query.isError ? (
-            <ErrorNote message={query.error.message} onRetry={() => void query.refetch()} />
+            <ErrorNote error={query.error} onRetry={() => void query.refetch()} />
           ) : null}
           {query.isSuccess && query.data.items.length === 0 ? (
             <p className="empty-inline">
@@ -295,7 +295,7 @@ function FileUpload({ onUnauthorized }: { onUnauthorized: () => void }) {
           </button>
         </div>
 
-        {upload.isError ? <ErrorNote message={upload.error.message} /> : null}
+        {upload.isError ? <ErrorNote error={upload.error} /> : null}
 
         {hash ? (
           <div className="note" role="status">
@@ -309,7 +309,7 @@ function FileUpload({ onUnauthorized }: { onUnauthorized: () => void }) {
                     : "Распознаём страницы…"}
               </p>
             ) : null}
-            {extraction.isError ? <ErrorNote message={extraction.error.message} /> : null}
+            {extraction.isError ? <ErrorNote error={extraction.error} /> : null}
             {done ? (
               <button type="button" className="button button-quiet" onClick={reset}>
                 Загрузить ещё

@@ -114,7 +114,7 @@ export function RunsPage({
 
       {query.isPending ? <SkeletonRows /> : null}
       {query.isError && query.error.name !== "Unauthorized" ? (
-        <ErrorNote message={query.error.message} onRetry={() => void query.refetch()} />
+        <ErrorNote error={query.error} onRetry={() => void query.refetch()} />
       ) : null}
       {query.isSuccess && items.length === 0 ? (
         filtered ? (

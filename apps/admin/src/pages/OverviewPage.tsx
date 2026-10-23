@@ -98,10 +98,11 @@ export function OverviewPage({
     <section className="page">
       <header className="page-head">
         <div className="page-head-text">
-          <p className="eyebrow">Онбординг · семь дней</p>
+          <p className="eyebrow">Онбординг · срез на сейчас</p>
           <h1>Обзор онбординга</h1>
           <p className="muted">
             Где когорта сейчас, какие темы поднимаются в опросах и что ждёт ответа рекрутёра.
+            Риски и темы считаются за последние семь дней — это подписано у каждой карточки.
           </p>
         </div>
         <div className="page-count" aria-live="polite">
@@ -112,20 +113,20 @@ export function OverviewPage({
       </header>
 
       {failure && failure.name !== "Unauthorized" ? (
-        <ErrorNote message={failure.message} onRetry={retry} />
+        <ErrorNote error={failure} onRetry={retry} />
       ) : null}
 
       <div className="kpi-grid">
         <Kpi
           label="В процессе"
           value={overview.data?.active_runs}
-          foot="Сейчас идут по сценарию"
+          foot="Прямо сейчас, без окна"
           icon={<UsersIcon width={17} height={17} />}
         />
         <Kpi
           label="Завершили"
           value={overview.data?.completed_runs}
-          foot="Дошли до конца адаптации"
+          foot="Прямо сейчас, без окна"
           icon={<CheckIcon width={17} height={17} />}
         />
         <Kpi
@@ -143,7 +144,7 @@ export function OverviewPage({
         <Kpi
           label="Ждут ответа"
           value={overview.data?.unanswered_questions}
-          foot="Очередь к рекрутёру"
+          foot="Прямо сейчас, без окна"
           icon={<ChatIcon width={17} height={17} />}
         />
       </div>
@@ -152,7 +153,7 @@ export function OverviewPage({
         <section className="card card-fill">
           <div className="card-head">
             <h2>Этапы когорты</h2>
-            <span className="card-note">Текущий шаг сотрудника</span>
+            <span className="card-note">Текущий шаг, все активные</span>
           </div>
           <CohortProgress runs={runs.data?.items ?? []} />
           {runs.isPending ? (

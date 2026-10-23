@@ -143,3 +143,37 @@ def test_rejects_too_long_message() -> None:
 def test_rejects_duplicate_route_keys_before_parsing() -> None:
     document: dict[str, Any] = deepcopy(scenario_document())
     assert document["steps"][1]["routes"] == {"done": "documents"}
+
+
+def test_keyboard_routes_are_checked_per_step() -> None:
+    document = {
+        "id": "two_keyboards",
+        "version": 1,
+        "title": "Две клавиатуры",
+        "start": "first",
+        "steps": [
+            {
+                "id": "first",
+                "kind": "wait",
+                "message": "Первый",
+                "expects": "button",
+                "keyboard": [[{"id": "a", "text": "A"}]],
+                "routes": {"a": "second"},
+                "timeout": {"after_hours": 1, "action": "remind"},
+            },
+            {
+                "id": "second",
+                "kind": "wait",
+                "message": "Второй",
+                "expects": "button",
+                "keyboard": [[{"id": "b", "text": "B"}]],
+                "routes": {"b": "done"},
+                "timeout": {"after_hours": 1, "action": "remind"},
+            },
+            {"id": "done", "kind": "terminal", "outcome": "completed"},
+        ],
+    }
+
+    scenario = parse_scenario(document)
+
+    assert scenario.step("second").keyboard[0][0].id == "b"

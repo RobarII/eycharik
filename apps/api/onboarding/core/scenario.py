@@ -137,12 +137,13 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         raise ScenarioError(f"{path}: escalate_to must be 'recruiter' or 'hr'")
 
     if expects is Expects.BUTTON:
-        unknown_buttons = set(routes) - button_ids - {"default"}
+        step_buttons = {button.id for row in keyboard for button in row}
+        unknown_buttons = set(routes) - step_buttons - {"default"}
         if unknown_buttons:
             raise ScenarioError(
                 f"{path}: routes reference unknown buttons {sorted(unknown_buttons)}"
             )
-        unrouted = button_ids - set(routes)
+        unrouted = step_buttons - set(routes)
         if unrouted:
             raise ScenarioError(f"{path}: buttons without a route {sorted(unrouted)}")
 

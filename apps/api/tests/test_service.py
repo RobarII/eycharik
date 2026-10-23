@@ -75,14 +75,11 @@ async def test_start_creates_a_run_and_sends_the_first_messages() -> None:
 
     assert result.handled
     assert len(runs.runs) == 1
-    assert [message.text for message in messaging.sent] == [
-        "Добро пожаловать в «Группу ПОЛИПЛАСТИК»! Я помогу пройти адаптацию: подскажу шаги, "
-        "напомню о документах и отвечу на вопросы о компании.",
-        "Первый день: получите пропуск и ноутбук, познакомьтесь с наставником, проверьте "
-        "доступы. Отметьте, когда всё будет готово.",
-    ]
+    assert len(messaging.sent) == 1
+    assert messaging.sent[0].text.startswith("Здравствуйте! Меня зовут Корсик")
+    assert messaging.sent[0].keyboard[0][0].id == "tone_you"
     stored = next(iter(runs.runs.values()))
-    assert stored.state.step_id == "first_day_checklist"
+    assert stored.state.step_id == "welcome"
     assert isinstance(stored.reminder, ScheduleReminder)
     assert "run_started" in audit.names()
 
@@ -106,13 +103,13 @@ async def test_button_advances_the_run() -> None:
     result = await service.handle(
         EMPLOYEE,
         ChatId(1),
-        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="checklist_done"),
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
     )
 
     stored = next(iter(runs.runs.values()))
     assert result.handled
-    assert stored.state.step_id == "meet_the_team"
-    assert messaging.sent[-1].text.startswith("Наставник и руководитель")
+    assert stored.state.step_id == "documents_checklist"
+    assert messaging.sent[-1].text.startswith("До первого рабочего дня")
 
 
 async def test_completion_message_is_sent_at_the_terminal_step() -> None:
@@ -156,7 +153,7 @@ async def test_free_text_at_a_button_step_goes_to_the_assistant() -> None:
     assert answerer.calls == [("Сколько дней отпуска?", NOW.date())]
     assert messaging.sent[-1].text == "Ответ ассистента"
     stored = next(iter(runs.runs.values()))
-    assert stored.state.step_id == "first_day_checklist"
+    assert stored.state.step_id == "welcome"
 
 
 async def start_at(service: OnboardingService, runs: InMemoryRuns, step_id: str) -> None:
@@ -183,7 +180,7 @@ def test_catalog_lists_ids() -> None:
     catalog = ScenarioCatalog.load(SCENARIOS)
 
     assert catalog.ids() == ("onboarding_default",)
-    assert catalog.active("onboarding_default").version == 1
+    assert catalog.active("onboarding_default").version == 2
 
 
 def test_stored_run_helper_matches_the_scenario() -> None:
@@ -203,13 +200,13 @@ async def test_a_stale_delivery_schedules_reminders_from_processing_time() -> No
         Event(
             kind=EventKind.BUTTON_PRESSED,
             at=NOW - timedelta(days=2),
-            button_id="checklist_done",
+            button_id="tone_formal",
         ),
     )
 
     stored = next(iter(runs.runs.values()))
     assert isinstance(stored.reminder, ScheduleReminder)
-    assert stored.reminder.due_at == NOW + timedelta(hours=72)
+    assert stored.reminder.due_at == NOW + timedelta(hours=48)
 
 
 async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
@@ -222,12 +219,12 @@ async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
         Event(
             kind=EventKind.BUTTON_PRESSED,
             at=datetime(2026, 10, 20, 9, 0),  # noqa: DTZ001 - exercising a naive payload
-            button_id="checklist_done",
+            button_id="tone_formal",
         ),
     )
 
     stored = next(iter(runs.runs.values()))
-    assert stored.state.step_id == "meet_the_team"
+    assert stored.state.step_id == "documents_checklist"
 
 
 class RecordingClassifier:

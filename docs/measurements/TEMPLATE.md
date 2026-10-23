@@ -1,0 +1,18 @@
+# <What was measured>
+
+- **Command**: `<exact command>`
+- **Commit**: `<sha>`
+- **Date**: `<YYYY-MM-DD>`
+- **Environment**: `<local | staging | production>`, `<cpu/memory>`, `<model and version>`
+- **Dataset**: `<name and size>`
+
+## Result
+
+| Metric | Value | Gate | Pass |
+|---|---|---|---|
+| `recall@5` | 0.00 | ≥ 0.90 | no |
+| `p95_latency_ms` | 0 | ≤ 3000 | no |
+
+## Notes
+
+What changed since the previous measurement. What this number must not be compared with.

@@ -24,4 +24,5 @@ class SqlDirectory:
             started_at=row.started_at,
             audience=tuple(row.audience),
             recruiter_id=row.recruiter_id,
+            scenario_id=row.scenario_id,
         )

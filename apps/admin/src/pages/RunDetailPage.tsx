@@ -7,6 +7,11 @@ import { ErrorNote, SkeletonRows } from "../components/States";
 import { eventLabel, fieldText, formatDate, formatDateTime, reasonLabel } from "../format";
 import { useUnauthorized } from "../useUnauthorized";
 
+const SCENARIO_LABELS: Record<string, string> = {
+  onboarding_default: "Офис",
+  onboarding_plant: "Завод (ГТП)",
+};
+
 export function RunDetailPage({
   runId,
   onBack,
@@ -71,7 +76,8 @@ export function RunDetailPage({
                 <div>
                   <dt>Сценарий</dt>
                   <dd>
-                    {query.data.scenario} · v{query.data.scenario_version}
+                    {SCENARIO_LABELS[query.data.scenario] ?? query.data.scenario} · v
+                    {query.data.scenario_version}
                   </dd>
                 </div>
                 <div>

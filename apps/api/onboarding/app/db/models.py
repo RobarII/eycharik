@@ -50,6 +50,9 @@ class EmployeeRow(Base):
     recruiter_id: Mapped[str | None] = mapped_column(String(64))
     started_at: Mapped[date] = mapped_column(Date)
     audience: Mapped[list[str]] = mapped_column(JSONB, server_default=sql_text("'[]'::jsonb"))
+    scenario_id: Mapped[str] = mapped_column(
+        String(64), server_default=sql_text("'onboarding_default'")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

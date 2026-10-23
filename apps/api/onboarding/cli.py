@@ -419,6 +419,7 @@ async def _seed(settings: Settings, path: Path) -> int:
                         "recruiter_id": statement.excluded.recruiter_id,
                         "started_at": statement.excluded.started_at,
                         "audience": statement.excluded.audience,
+                        "scenario_id": statement.excluded.scenario_id,
                     },
                 )
             )
@@ -439,6 +440,7 @@ def _employee_row(item: object) -> dict[str, object]:
         "recruiter_id": str(item["recruiter_id"]),
         "started_at": date.fromisoformat(str(item["started_at"])),
         "audience": [str(value) for value in item["audience"]],
+        "scenario_id": str(item.get("scenario_id", "onboarding_default")),
     }
 
 

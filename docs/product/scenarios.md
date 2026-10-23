@@ -32,6 +32,11 @@ never sends files still gets to the week-one check and a human sees the stall.
 | `onboarding_default` | 2 | the client timeline: day before, day one, day three, two weeks, month two, end of probation |
 | `onboarding_plant` | 1 | the plant variant: same timeline, own transport copy, no remote-work question |
 
+The employee row names the scenario (`employees.scenario_id`), so the plant is not a dead file: a
+new run starts the variant its site needs. A missing value means `onboarding_default`. The demo
+seeds Анна Смирнова on the plant branch to make the difference visible; the cabinet shows
+«Завод (ГТП)» in her card.
+
 Version 1 stays deployed after version 2 ships: a run is pinned to the version it started with, so
 editing content never rewrites someone's script mid-onboarding.
 

@@ -117,6 +117,7 @@ def profile(
     *,
     department: str = "ИТ",
     audience: tuple[str, ...] = ("all", "dept:it"),
+    scenario_id: str = "onboarding_default",
 ) -> EmployeeProfile:
     return EmployeeProfile(
         employee_id=employee_id,
@@ -125,6 +126,7 @@ def profile(
         department=department,
         started_at=date(2026, 10, 20),
         audience=audience,
+        scenario_id=scenario_id,
     )
 
 

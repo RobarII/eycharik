@@ -6,7 +6,11 @@
     "department": "Производство",
     "recruiter_id": "rec-1",
     "started_at": "2026-10-20",
-    "audience": ["all", "dept:production"]
+    "audience": [
+      "all",
+      "dept:production"
+    ],
+    "scenario_id": "onboarding_plant"
   },
   {
     "id": "1002",
@@ -15,7 +19,10 @@
     "department": "Коммерческий блок",
     "recruiter_id": "rec-1",
     "started_at": "2026-10-22",
-    "audience": ["all", "dept:sales"]
+    "audience": [
+      "all",
+      "dept:sales"
+    ]
   },
   {
     "id": "1003",
@@ -24,6 +31,9 @@
     "department": "HR",
     "recruiter_id": "hr-1",
     "started_at": "2026-10-23",
-    "audience": ["all", "hr_only"]
+    "audience": [
+      "all",
+      "hr_only"
+    ]
   }
 ]

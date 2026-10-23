@@ -40,7 +40,7 @@ SCENARIOS = ROOT / "apps" / "api" / "onboarding" / "scenarios"
 COPY = load_copy(ROOT / "docs" / "product" / "copy.yaml")
 
 
-def build() -> tuple[
+def build(*, scenario_id: str = "onboarding_default") -> tuple[
     OnboardingService,
     InMemoryRuns,
     RecordingMessaging,
@@ -62,7 +62,7 @@ def build() -> tuple[
         catalog=ScenarioCatalog.load(SCENARIOS),
         executor=executor,
         clock=FrozenClock(NOW),
-        directory=StaticDirectory({EMPLOYEE: profile()}),
+        directory=StaticDirectory({EMPLOYEE: profile(scenario_id=scenario_id)}),
         audit=audit,
     )
     return service, runs, messaging, audit, answerer
@@ -82,6 +82,18 @@ async def test_start_creates_a_run_and_sends_the_first_messages() -> None:
     assert stored.state.step_id == "welcome"
     assert isinstance(stored.reminder, ScheduleReminder)
     assert "run_started" in audit.names()
+
+
+async def test_start_uses_the_scenario_named_by_the_directory() -> None:
+    service, runs, _, audit, _ = build(scenario_id="onboarding_plant")
+
+    result = await service.start(EMPLOYEE, ChatId(1))
+
+    assert result.handled
+    stored = next(iter(runs.runs.values()))
+    assert stored.state.scenario_id == "onboarding_plant"
+    assert stored.state.scenario_version == 1
+    assert audit.events[0][1]["scenario"] == "onboarding_plant"
 
 
 async def test_start_is_idempotent() -> None:
@@ -283,7 +295,7 @@ def _build_survey(
         catalog=ScenarioCatalog.load(tmp_path),
         executor=executor,
         clock=FrozenClock(NOW),
-        directory=StaticDirectory({EMPLOYEE: profile()}),
+        directory=StaticDirectory({EMPLOYEE: profile(scenario_id="survey_demo")}),
         audit=audit,
         classifier=classifier,  # type: ignore[arg-type]
         scenario_id="survey_demo",

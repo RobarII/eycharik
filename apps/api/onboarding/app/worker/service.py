@@ -71,17 +71,19 @@ class OnboardingService:
         self._scenario_id = scenario_id
         self._scenario_version = scenario_version
 
-    def _scenario(self) -> Scenario:
+    def _scenario(self, scenario_id: str | None = None) -> Scenario:
+        chosen = scenario_id or self._scenario_id
         if self._scenario_version is not None:
-            return self._catalog.get(self._scenario_id, self._scenario_version)
-        return self._catalog.active(self._scenario_id)
+            return self._catalog.get(chosen, self._scenario_version)
+        return self._catalog.active(chosen)
 
     async def start(self, employee_id: EmployeeId, chat_id: ChatId) -> ServiceResult:
         if await self._runs.find_active_by_employee(employee_id) is not None:
             await self._audit.record("run_already_active", employee_id=str(employee_id))
             return ServiceResult(handled=False)
 
-        scenario = self._scenario()
+        profile = await self._directory.profile(employee_id)
+        scenario = self._scenario(profile.scenario_id if profile else None)
         now = self._now()
         transition = start(scenario, RunId(str(uuid4())), employee_id, now)
         try:

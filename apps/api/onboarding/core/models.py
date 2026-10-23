@@ -139,6 +139,7 @@ class EmployeeProfile:
     started_at: date
     audience: tuple[str, ...]
     recruiter_id: str | None = None
+    scenario_id: str = "onboarding_default"
 
     def onboarding_day(self, on_date: date) -> int:
         return max(1, (on_date - self.started_at).days + 1)

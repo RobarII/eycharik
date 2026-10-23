@@ -1,11 +1,12 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UseMutationResult } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { fetchQuestions, fetchRuns } from "../api";
+import { fetchQuestions, fetchRuns, resolveQuestion } from "../api";
 import { AnswerPill, ReasonPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
 import { formatDateTime } from "../format";
-import type { Question, RunSummary } from "../types";
+import type { Question, ResolvedQuestion, RunSummary } from "../types";
 import { useUnauthorized } from "../useUnauthorized";
 
 type Status = "unanswered" | "answered" | "all";
@@ -30,7 +31,17 @@ export function QuestionsPage({
     refetchInterval: 15_000,
   });
   const runs = useQuery({ queryKey: ["runs"], queryFn: () => fetchRuns() });
+  const queryClient = useQueryClient();
+  const resolve = useMutation({
+    mutationFn: ({ id, text }: { id: number; text: string }) => resolveQuestion(id, text),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["questions"] });
+      await queryClient.invalidateQueries({ queryKey: ["overview"] });
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
+  });
   useUnauthorized(query.error, onUnauthorized);
+  useUnauthorized(resolve.error, onUnauthorized);
 
   const byEmployee = new Map<string, RunSummary>(
     (runs.data?.items ?? []).map((run) => [run.employee_id, run]),
@@ -42,7 +53,8 @@ export function QuestionsPage({
         <div>
           <h1>Вопросы сотрудников</h1>
           <p className="muted">
-            Всё, что бот не смог закрыть сам. Разберите вопрос и вернитесь к сотруднику в MAX.
+            Всё, что бот не смог закрыть сам. Ответьте здесь — сообщение уйдёт сотруднику в MAX, а
+            вопрос закроется.
           </p>
         </div>
         <div className="page-count" aria-live="polite">
@@ -81,10 +93,11 @@ export function QuestionsPage({
         <ul className="question-cards">
           {query.data.items.map((question) => (
             <QuestionCard
-              key={`${question.asked_at}-${question.employee_id}-${question.text}`}
+              key={question.id}
               question={question}
               run={byEmployee.get(question.employee_id)}
               onOpenRun={onOpenRun}
+              resolve={resolve}
             />
           ))}
         </ul>
@@ -93,14 +106,22 @@ export function QuestionsPage({
   );
 }
 
+type ResolveMutation = UseMutationResult<
+  ResolvedQuestion,
+  Error,
+  { id: number; text: string }
+>;
+
 function QuestionCard({
   question,
   run,
   onOpenRun,
+  resolve,
 }: {
   question: Question;
   run: RunSummary | undefined;
   onOpenRun: (runId: string) => void;
+  resolve: ResolveMutation;
 }) {
   return (
     <li className="card question-card">
@@ -130,6 +151,86 @@ function QuestionCard({
           ))}
         </p>
       ) : null}
+      {question.answered && question.resolved_at ? (
+        <p className="muted small">
+          Закрыт {formatDateTime(question.resolved_at)}
+          {question.resolved_by ? ` · ${question.resolved_by}` : ""}
+        </p>
+      ) : null}
+      {!question.answered ? <ReplyForm question={question} resolve={resolve} /> : null}
     </li>
+  );
+}
+
+function ReplyForm({
+  question,
+  resolve,
+}: {
+  question: Question;
+  resolve: ResolveMutation;
+}) {
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const submitting = resolve.isPending && resolve.variables?.id === question.id;
+
+  if (!open) {
+    return (
+      <div className="resolve">
+        <button type="button" className="button button-primary" onClick={() => setOpen(true)}>
+          Ответить в MAX
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="resolve"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!text.trim()) return;
+        resolve.mutate(
+          { id: question.id, text },
+          {
+            onSuccess: () => {
+              setText("");
+              setOpen(false);
+            },
+          },
+        );
+      }}
+    >
+      <label htmlFor={`reply-${question.id}`} className="muted small">
+        Ответ сотруднику. Он увидит его в MAX, вопрос закроется.
+      </label>
+      <textarea
+        id={`reply-${question.id}`}
+        value={text}
+        rows={3}
+        maxLength={2000}
+        placeholder="Например: «ДМС начинает действовать с первого рабочего дня. Подробности пришлю в чат»."
+        onChange={(event) => setText(event.target.value)}
+      />
+      <div className="resolve-actions">
+        <button type="submit" className="button button-primary" disabled={submitting || !text.trim()}>
+          {submitting ? "Отправляю…" : "Отправить"}
+        </button>
+        <button
+          type="button"
+          className="link-button"
+          onClick={() => {
+            setOpen(false);
+            setText("");
+          }}
+        >
+          Отмена
+        </button>
+        {resolve.error && resolve.variables?.id === question.id && resolve.error.name !== "Unauthorized" ? (
+          <span className="error-text" role="alert">
+            {resolve.error.message}
+          </span>
+        ) : null}
+      </div>
+    </form>
   );
 }

@@ -41,7 +41,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -867,6 +868,40 @@ h2 {
   margin-top: 0;
   padding-top: 10px;
   border-top: 1px solid var(--line);
+}
+
+.resolve {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.resolve textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 84px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.resolve textarea:focus {
+  border-color: var(--blue);
+}
+
+.resolve-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.error-text {
+  color: var(--red);
+  font-size: 0.88rem;
 }
 
 /* ---------- states ---------- */

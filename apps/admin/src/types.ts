@@ -19,6 +19,7 @@ export interface AuditEvent {
 }
 
 export interface Question {
+  id: number;
   employee_id: string;
   employee_name: string;
   text: string;
@@ -26,6 +27,16 @@ export interface Question {
   reason: string;
   citations: string[];
   asked_at: string;
+  resolved_at: string | null;
+  resolved_by: string | null;
+}
+
+export interface ResolvedQuestion {
+  id: number;
+  employee_id: string;
+  answered: true;
+  resolved_at: string;
+  resolved_by: string;
 }
 
 export interface RunDetail extends RunSummary {
@@ -53,6 +64,7 @@ export interface AnalyticsOverview {
   high_risk: number;
   medium_risk: number;
   unanswered_questions: number;
+  resolved_questions: number;
   top_tags: TagCount[];
   since: string;
 }

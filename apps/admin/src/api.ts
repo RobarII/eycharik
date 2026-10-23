@@ -5,6 +5,7 @@ import type {
   KnowledgeUploaded,
   ListResponse,
   Question,
+  ResolvedQuestion,
   RunDetail,
   RunSummary,
 } from "./types";
@@ -88,4 +89,8 @@ export function fetchKnowledge(): Promise<ListResponse<KnowledgeDocument>> {
 
 export function uploadKnowledge(text: string): Promise<KnowledgeUploaded> {
   return send("/admin/api/knowledge", { text });
+}
+
+export function resolveQuestion(id: number, text: string): Promise<ResolvedQuestion> {
+  return send(`/admin/api/questions/${id}/resolve`, { text });
 }

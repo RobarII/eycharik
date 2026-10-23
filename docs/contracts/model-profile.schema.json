@@ -32,7 +32,12 @@
           "description": "Retry a 200 with empty content instead of escalating it."
         },
         "price_input_rub_per_1k": {"type": "number", "minimum": 0},
-        "price_output_rub_per_1k": {"type": "number", "minimum": 0}
+        "price_output_rub_per_1k": {"type": "number", "minimum": 0},
+        "price_cache_read_rub_per_1k": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cached prompt tokens, billed by some providers at a lower rate."
+        }
       }
     },
     {

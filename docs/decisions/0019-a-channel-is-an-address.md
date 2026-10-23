@@ -65,7 +65,9 @@ A `switch channel` inside one client would make every one of those a branch in t
   `Button(id, text)`. Rendering happens in the adapter, so a message that is already in the table
   can be re-rendered after a channel bug fix.
 - One active run per employee becomes cross-channel, which is the correct rule: a person is
-  onboarded once, not once per app.
+  onboarded once, not once per app. The run follows the person: an answer from another linked
+  messenger is answered there, the run's address moves, and the move is audited as
+  `channel_changed`.
 - The dispatcher must not let a slow channel block a fast one. Pending rows are grouped by channel
   and delivered concurrently; pacing stays per adapter.
 - `MAX_MESSAGE_CHARS` remains as the domain cap for a scenario message, and a channel profile may

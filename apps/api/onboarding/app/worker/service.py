@@ -124,14 +124,26 @@ class OnboardingService:
         effective = event if event_at >= now else replace(event, at=now)
         transition = advance(scenario, stored.state, effective)
         completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
+        # The person may answer from any linked messenger. The run follows them: replies and the
+        # next reminder go to the address they just used (ADR 0019).
+        moved = stored.address != address
         await self._runs.save(
             StoredRun(
                 state=transition.state,
                 reminder=transition.reminder,
-                address=stored.address,
+                address=address,
                 active=not completed,
             )
         )
+        if moved:
+            await self._audit.record(
+                "channel_changed",
+                employee_id=str(employee_id),
+                previous_channel=stored.address.channel.value,
+                previous_chat_id=int(stored.address.chat_id),
+                channel=address.channel.value,
+                chat_id=int(address.chat_id),
+            )
         await self._audit.record(
             "step_transition",
             employee_id=str(employee_id),
@@ -146,7 +158,7 @@ class OnboardingService:
         )
         await self._act(
             transition.actions,
-            stored.address,
+            address,
             employee_id,
             effective.at.date(),
             question=event.text,

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -10,6 +12,8 @@ from onboarding.core.models import (
     DocId,
     EmployeeId,
     EmployeeProfile,
+    ExtractedDocument,
+    ExtractedPage,
     KeepReminder,
     Keyboard,
     ReminderPlan,
@@ -20,6 +24,10 @@ from onboarding.core.models import (
 from onboarding.ports import (
     Completion,
     CompletionRequest,
+    DocumentRef,
+    ExtractionProfile,
+    ExtractionRecord,
+    KnowledgeDocumentRecord,
     OutboundMessage,
     SearchQuery,
     StoredRun,
@@ -158,3 +166,75 @@ def stored_run(
         entered_at=NOW,
     )
     return StoredRun(state=state, reminder=reminder or KeepReminder(), chat_id=ChatId(1))
+
+
+@dataclass
+class FakeOcr:
+    """A recognizer with a scripted result. The router is what is under test, not the engine."""
+
+    pages: tuple[ExtractedPage, ...] = ()
+    engine: str = "fake-ocr"
+    calls: list[tuple[int, str, str]] = field(default_factory=list)
+
+    def recognize(
+        self, images: Sequence[bytes], *, lang: str, model: str
+    ) -> tuple[ExtractedPage, ...]:
+        self.calls.append((len(images), lang, model))
+        return self.pages
+
+
+@dataclass
+class FixedExtraction:
+    """An extraction port implementation that returns one prepared document."""
+
+    document: ExtractedDocument
+    calls: int = 0
+
+    async def extract(
+        self, content: bytes, ref: DocumentRef, profile: ExtractionProfile
+    ) -> ExtractedDocument:
+        del content, ref, profile
+        self.calls += 1
+        return self.document
+
+
+@dataclass
+class InMemoryBlobs:
+    store: dict[str, bytes] = field(default_factory=dict)
+
+    async def put(self, content: bytes, *, filename: str, media_type: str) -> str:
+        del filename, media_type
+        digest = hashlib.sha256(content).hexdigest()
+        self.store[digest] = content
+        return digest
+
+    async def read(self, blob_id: str) -> bytes | None:
+        return self.store.get(blob_id)
+
+
+@dataclass
+class InMemoryExtractionCache:
+    records: dict[tuple[str, str], ExtractionRecord] = field(default_factory=dict)
+
+    async def load(self, content_hash: str, profile_hash: str) -> ExtractionRecord | None:
+        return self.records.get((content_hash, profile_hash))
+
+    async def save(self, record: ExtractionRecord) -> None:
+        self.records[(record.content_hash, record.profile_hash)] = record
+
+
+@dataclass
+class RecordingKnowledgeWriter:
+    documents: list[tuple[KnowledgeDocumentRecord, tuple[Chunk, ...]]] = field(
+        default_factory=list
+    )
+    embeddings: list[tuple[tuple[float, ...], ...]] = field(default_factory=list)
+
+    async def replace_document(
+        self,
+        record: KnowledgeDocumentRecord,
+        chunks: tuple[Chunk, ...],
+        embeddings: tuple[tuple[float, ...], ...],
+    ) -> None:
+        self.documents.append((record, chunks))
+        self.embeddings.append(embeddings)

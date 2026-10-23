@@ -58,6 +58,28 @@ Metrics: `sentiment_accuracy`, `tag_precision`, `tag_recall`, `fallback_rate`, `
 There is no gate yet: the set is the pilot's yardstick, and a gate needs a stable baseline across
 models. A missed crisis becomes a case here before it becomes a prompt edit.
 
+## OCR set
+
+`docs/evals/ocr.yaml` measures the other half of ingestion: can the pipeline read a page, and does it
+refuse a page it cannot read? The cases are rendered from known text with a system font on every run,
+so the reference is exact and no binary is committed.
+
+```bash
+make eval-ocr                            # doc-scan profile, needs the ocr extra
+make eval-ocr ARGS="--write --label v1"  # also write a measurement file
+```
+
+Metrics: `character_error_rate` (character edits over reference length, on accepted cases),
+`verdict_correctness` (share of cases whose accept/refuse decision and reason match), and
+`mean_confidence`. Gates: `character_error_rate ≤ 0.05`, `verdict_correctness = 1.00`.
+
+This is a floor, not a field measurement. A clean render has no perspective, no shadow, no stamp, and
+no handwriting: it proves the language route, normalization, and acceptance work, and it will not
+notice that the recognizer struggles with a photographed page. The quality gate is not exercised
+either — its thresholds ship unset, and turning one on is a measurement of its own. Report a real
+accuracy claim only from a set of real scans under `docs/evals/`, with the same command-commit
+discipline as the golden set.
+
 ## Reporting
 
 A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the answer

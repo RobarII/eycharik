@@ -7,10 +7,22 @@ business.
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
-from typing import Annotated, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 
 from onboarding.api.auth import AdminPrincipal, current_admin
 from onboarding.api.schemas import (
@@ -19,6 +31,8 @@ from onboarding.api.schemas import (
     DigestItem,
     DigestList,
     KnowledgeDocument,
+    KnowledgeExtraction,
+    KnowledgeFileQueued,
     KnowledgeList,
     KnowledgeUpload,
     KnowledgeUploaded,
@@ -41,9 +55,16 @@ from onboarding.app.admin.actions import (
 )
 from onboarding.app.admin.queries import AdminQueries, QuestionRecord, RunRecord
 from onboarding.app.db.kb import PostgresKnowledgeWriter
-from onboarding.app.knowledge.ingest import CorpusError
+from onboarding.app.db.queue import JobQueue
+from onboarding.app.knowledge.extract.media import SUPPORTED, media_type_for
+from onboarding.app.knowledge.ingest import (
+    CorpusError,
+    load_schema,
+    validate_frontmatter,
+)
 from onboarding.app.knowledge.pipeline import ingest_document
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
+from onboarding.app.worker.jobs import EXTRACT_DOCUMENT
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 
@@ -348,3 +369,109 @@ async def upload_knowledge(
     return KnowledgeUploaded(
         id=indexed.id, title=indexed.title, chunks=indexed.chunks
     )
+
+
+@router.post(
+    "/knowledge/files",
+    response_model=KnowledgeFileQueued,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def upload_knowledge_file(
+    request: Request,
+    principal: Admin,
+    file: Annotated[UploadFile, File()],
+    metadata: Annotated[str, Form()],
+) -> KnowledgeFileQueued:
+    """Accept a PDF or a deck, store it by hash, and queue extraction.
+
+    The request does no heavy work: recognition takes seconds per page, so it happens in the worker
+    and the cabinet polls ``/knowledge/files/{content_hash}``. The metadata is validated here,
+    against the same contract a committed document obeys, so a bad upload fails fast.
+    """
+    if not principal.is_hr:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="only hr_admin may change the knowledge base",
+        )
+    container = request.app.state.container
+    limit = container.settings.extraction_max_upload_bytes
+    content = await file.read(limit + 1)
+    if len(content) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"upload exceeds {limit} bytes",
+        )
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty upload"
+        )
+
+    media_type = media_type_for(file.filename or "", file.content_type)
+    if media_type not in SUPPORTED:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="supported formats: PDF, PPTX",
+        )
+
+    frontmatter = _file_metadata(metadata, container.settings.contracts_dir)
+    blob_id = await container.blobs.put(
+        content, filename=file.filename or "upload", media_type=media_type
+    )
+    async with container.database.session() as session:
+        await JobQueue.enqueue(
+            session,
+            EXTRACT_DOCUMENT,
+            {
+                "blob_id": blob_id,
+                "filename": file.filename or "upload",
+                "media_type": media_type,
+                "metadata": frontmatter,
+            },
+        )
+    await container.audit.record(
+        "knowledge_file_queued",
+        blob=blob_id,
+        media_type=media_type,
+        by=principal.subject,
+    )
+    return KnowledgeFileQueued(content_hash=blob_id, status="queued")
+
+
+@router.get("/knowledge/files/{content_hash}", response_model=KnowledgeExtraction)
+async def extraction_status(
+    request: Request, principal: Admin, content_hash: str
+) -> KnowledgeExtraction:
+    record = await request.app.state.container.extraction_cache.load_latest(content_hash)
+    if record is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="no extraction for this file"
+        )
+    return KnowledgeExtraction(
+        content_hash=record.content_hash,
+        status=record.status,
+        reason=record.reason,
+        engine=record.engine,
+        route=record.route,
+        pages=record.pages,
+        min_confidence=record.min_confidence,
+        document_id=record.document_id,
+    )
+
+
+def _file_metadata(raw: str, contracts_dir: Path) -> dict[str, Any]:
+    """Parse the form's JSON metadata and validate it against ``doc.schema.json``."""
+    try:
+        parsed: Any = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"metadata is not valid JSON: {error}",
+        ) from None
+    try:
+        return validate_frontmatter(
+            parsed, load_schema(contracts_dir / "doc.schema.json"), source="upload"
+        )
+    except CorpusError as error:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
+        ) from None

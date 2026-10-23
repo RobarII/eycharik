@@ -39,6 +39,8 @@ recruiter's employee is not disclosed.
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
 | `GET` | `/admin/api/knowledge` | active knowledge documents, newest first |
 | `POST` | `/admin/api/knowledge` | HR uploads one markdown document with frontmatter; indexed in the request |
+| `POST` | `/admin/api/knowledge/files` | HR uploads a PDF or a deck; stored by content hash and queued for extraction |
+| `GET` | `/admin/api/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |
 | `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
 
 `limit` is bounded to `1..200`. There is no cursor pagination yet: the cabinet asks for the newest
@@ -195,6 +197,52 @@ An invalid document answers `422` with the exact field, for example
 or manager answers `403`. A successful upload is audited as `knowledge_ingested` with the document
 id, the chunk count, and the subject that made the change.
 
+### Files
+
+`POST /admin/api/knowledge/files` is `multipart/form-data` with two parts:
+
+- `file`: a PDF or a PPTX, at most `EXTRACTION_MAX_UPLOAD_BYTES` (default 25 MiB);
+- `metadata`: a JSON object with the document frontmatter (`id`, `title`, `type`, `status`,
+  `owner`, `audience`, `valid_from`, optional `valid_to`), validated against
+  [`doc.schema.json`](doc.schema.json) before anything is stored.
+
+The response is `202 Accepted`, because recognition takes seconds per page and the request path
+does not wait for it:
+
+```json
+{"content_hash": "5f2c...e1", "status": "queued"}
+```
+
+`content_hash` is the SHA-256 of the bytes. It is the identity of the file: uploading the same bytes
+twice returns the same hash and queues no second job, so a recruiter can retry a flaky upload
+without paying for recognition twice. The file itself is a `kb_files` row; nothing is written to
+`knowledge/`, and nothing enters the corpus until extraction accepts it.
+
+`GET /admin/api/knowledge/files/{content_hash}` answers the newest extraction record for that file,
+whichever profile produced it:
+
+```json
+{
+  "content_hash": "5f2c...e1",
+  "status": "indexed",
+  "reason": null,
+  "engine": "pdfium",
+  "route": "native_text",
+  "pages": 6,
+  "min_confidence": 1.0,
+  "document_id": "hr/uploaded-regulation"
+}
+```
+
+`status` is `indexed` or `rejected`. `route` is `native_text`, `ocr`, or `rejected`. A rejected file
+carries `reason` — `low_confidence`, `low_dpi`, `blurry`, `encrypted`, `no_pages`,
+`unsupported`, `unreadable`, `too_many_pages`, `too_short`, or `empty` — and `document_id` stays
+null. Before the worker has run, this endpoint answers `404`: the cabinet shows "queued", never a
+guess.
+
+The status is the extraction's, not the file's: after a profile change the same file can hold one
+record per profile, and this endpoint reports the latest one.
+
 ## Errors
 
 FastAPI's default shape: `{"detail": "..."}` with `401`, `403`, `404`, or `422` for a bad query.
@@ -202,8 +250,10 @@ The cabinet shows the detail text and never guesses from the status code alone.
 
 ## Rules
 
-- Mutations are limited to the knowledge upload and the question resolution above. The cabinet
+- Mutations are limited to the two knowledge uploads and the question resolution above. The cabinet
   never talks to MAX directly: every outbound message is an outbox row.
+- Only `hr_admin` may upload a file; a recruiter or manager answers `403`. A format other than PDF
+  or PPTX answers `415`, an oversized file `413`, invalid metadata `422` with the exact field.
 - Every answer attempt already writes an audit row and a question row; the cabinet does not
   assemble them from logs.
 - Timestamps are UTC ISO 8601.

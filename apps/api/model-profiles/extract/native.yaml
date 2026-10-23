@@ -1,0 +1,14 @@
+name: native
+description: Digital PDF and PPTX only. A scan is refused with a reason, never guessed at.
+note: The default. Costs nothing, needs no recognizer, and is the right choice for a born-digital corpus.
+family: none
+model: ""
+lang: ru
+dpi: 300
+min_text_chars: 40
+quality:
+  min_dpi: null
+  min_edge_energy: null
+acceptance:
+  min_confidence: 0.0
+  min_chars: 40

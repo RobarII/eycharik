@@ -1,0 +1,49 @@
+# OCR cases for `make eval-ocr`.
+#
+# Each case is rendered into a page with a known font, so the reference text is exact and the
+# measurement needs no committed images. A clean render is a floor for the engine: it says whether
+# recognition and the gate work, not how a photograph of a printed regulation behaves.
+#
+# kind:   clean (the only kind today; a case records how it is rendered)
+# expect: accepted | rejected (+ reason, one of core.models.RejectionReason)
+# lang:   the profile language; the case is skipped when the active profile reads another one.
+
+- id: clean-regulation
+  kind: clean
+  lang: ru
+  expect: accepted
+  text: |
+    Правила внутреннего распорядка
+    Рабочий день начинается в 9:00 и заканчивается в 18:00.
+    Перерыв на обед — с 13:00 до 14:00.
+    Отпуск составляет 28 календарных дней в год.
+
+- id: clean-table
+  kind: clean
+  lang: ru
+  expect: accepted
+  text: |
+    Категория | Дней отпуска
+    Основной | 28
+    Дополнительный северный | 24
+    За ненормированный день | 3
+
+- id: clean-contacts
+  kind: clean
+  lang: ru
+  expect: accepted
+  text: |
+    Контакты отдела кадров
+    Телефон: +7 495 123-45-67
+    Почта: hr@example.ru
+    Кабинет: 314, третий этаж
+
+# A lone word: the detector finds no text region at all, so the page is refused as empty. Either
+# reason is a refusal, and the point of the case is that nothing reaches the corpus.
+- id: single-word
+  kind: clean
+  lang: ru
+  expect: rejected
+  reason: empty
+  text: |
+    Отпуск

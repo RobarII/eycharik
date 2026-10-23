@@ -1,0 +1,14 @@
+name: doc-scan
+description: Scanned documents and photographs, recognised with PP-OCRv5 Cyrillic weights over ONNX Runtime.
+note: Requires the ocr extra (uv sync --extra ocr). Thresholds are provisional until docs/evals/ocr.yaml exists.
+family: rapid
+model: pp-ocrv5-cyrillic
+lang: ru
+dpi: 300
+min_text_chars: 40
+quality:
+  min_dpi: 200
+  min_edge_energy: null
+acceptance:
+  min_confidence: 0.72
+  min_chars: 40

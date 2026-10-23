@@ -346,3 +346,131 @@ class RiskAssessment:
 
 class SurveyError(ValueError):
     """A survey answer or definition violates the contract."""
+
+
+# --- Document extraction ---------------------------------------------------
+#
+# Everything below describes what came out of a file, never how it was read. An engine name is a
+# string carried for the audit trail; no code branches on it.
+
+
+class ExtractionRoute(StrEnum):
+    """How a document reached the corpus. ``REJECTED`` means the file never became text."""
+
+    NATIVE_TEXT = "native_text"
+    OCR = "ocr"
+    REJECTED = "rejected"
+
+
+class RejectionReason(StrEnum):
+    """Why a file produced no usable text. One enum for the reader, the gate, and acceptance."""
+
+    UNSUPPORTED = "unsupported"
+    ENCRYPTED = "encrypted"
+    NO_PAGES = "no_pages"
+    TOO_MANY_PAGES = "too_many_pages"
+    UNREADABLE = "unreadable"
+    LOW_DPI = "low_dpi"
+    BLURRY = "blurry"
+    EMPTY = "empty"
+    LOW_CONFIDENCE = "low_confidence"
+    TOO_SHORT = "too_short"
+
+
+@dataclass(frozen=True, slots=True)
+class ImageMetrics:
+    """What the quality gate can measure about one raster.
+
+    A metric the reader cannot produce is ``None`` and its check is skipped. Nothing is invented to
+    fill the field: an unmeasured page is not a sharp one.
+    """
+
+    dpi: int | None = None
+    edge_energy: float | None = None
+    width: int = 0
+    height: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class QualityPolicy:
+    """Thresholds for the pre-recognition gate. ``None`` disables one check.
+
+    The defaults are provisional and live in the extraction profile; calibrate them on the golden
+    set before claiming a quality number.
+    """
+
+    min_dpi: int | None = 200
+    min_edge_energy: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class QualityVerdict:
+    ok: bool
+    reasons: tuple[RejectionReason, ...] = ()
+
+    @property
+    def reason(self) -> RejectionReason | None:
+        return self.reasons[0] if self.reasons else None
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentSniff:
+    """Cheap facts about a file, before any expensive step."""
+
+    page_count: int
+    pages: tuple[str, ...] = ()
+    metrics: ImageMetrics = field(default_factory=ImageMetrics)
+    encrypted: bool = False
+
+    @property
+    def text_chars(self) -> int:
+        return sum(len(page.strip()) for page in self.pages)
+
+    @property
+    def text(self) -> str:
+        return "\n\n".join(page for page in self.pages if page.strip())
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedPage:
+    index: int
+    text: str
+    confidence: float = 1.0
+    engine: str = ""
+    route: ExtractionRoute = ExtractionRoute.NATIVE_TEXT
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractedDocument:
+    """The whole outcome of reading one file, including a refusal."""
+
+    pages: tuple[ExtractedPage, ...]
+    engine: str
+    content_hash: str
+    route: ExtractionRoute
+    profile: str = ""
+    profile_hash: str = ""
+    refusal: RejectionReason | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptancePolicy:
+    min_confidence: float = 0.72
+    min_chars: int = 40
+
+
+@dataclass(frozen=True, slots=True)
+class Accepted:
+    text: str
+    pages: int
+    min_confidence: float
+
+
+@dataclass(frozen=True, slots=True)
+class Rejected:
+    reason: RejectionReason
+    page: int | None = None
+    detail: str = ""
+
+
+Acceptance = Accepted | Rejected

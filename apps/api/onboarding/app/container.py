@@ -13,8 +13,14 @@ import httpx
 
 from onboarding.app.clock import SystemClock
 from onboarding.app.copy import Copy, load_copy
+from onboarding.app.db.blobs import PostgresBlobStore
 from onboarding.app.db.directory import SqlDirectory
-from onboarding.app.db.kb import PostgresKnowledgeBase, assert_embedding_width
+from onboarding.app.db.extractions import PostgresExtractionCache
+from onboarding.app.db.kb import (
+    PostgresKnowledgeBase,
+    PostgresKnowledgeWriter,
+    assert_embedding_width,
+)
 from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import (
@@ -24,6 +30,11 @@ from onboarding.app.db.repos import (
 )
 from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.db.session import Database
+from onboarding.app.knowledge.extract.ocr import build_ocr
+from onboarding.app.knowledge.extract.pdf import PdfReader
+from onboarding.app.knowledge.extract.pptx import PptxReader
+from onboarding.app.knowledge.extract.profiles import ExtractionProfileLibrary
+from onboarding.app.knowledge.extract.router import RoutingExtraction
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
 from onboarding.app.llm.jev import build_jev_classifier
@@ -35,6 +46,7 @@ from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
+from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.service import OnboardingService
 from onboarding.ports import (
     LLM,
@@ -71,6 +83,9 @@ class Container:
     dispatcher: MessageDispatcher
     scheduler: ReminderScheduler
     audit: DatabaseAuditLog
+    blobs: PostgresBlobStore
+    extraction_cache: PostgresExtractionCache
+    extractor: DocumentExtractor
 
     async def aclose(self) -> None:
         await self.http.aclose()
@@ -153,6 +168,27 @@ def build_container(settings: Settings) -> Container:
         audit=audit,
         classifier=classifier,
     )
+    profiles = ExtractionProfileLibrary(
+        settings.extraction_profiles_dir,
+        settings.contracts_dir / "extraction-profile.schema.json",
+    )
+    extraction_profile = profiles.load(settings.extraction_profile)
+    blobs = PostgresBlobStore(database, max_bytes=settings.extraction_max_upload_bytes)
+    extraction_cache = PostgresExtractionCache(database)
+    extractor = DocumentExtractor(
+        blobs=blobs,
+        extraction=RoutingExtraction(
+            readers=(PdfReader(), PptxReader()),
+            ocr=build_ocr(extraction_profile.family),
+            max_pages=settings.extraction_max_pages,
+        ),
+        cache=extraction_cache,
+        writer=PostgresKnowledgeWriter(database),
+        embedder=embedder,
+        schema_path=settings.contracts_dir / "doc.schema.json",
+        profile=extraction_profile,
+        audit=audit,
+    )
     return Container(
         settings=settings,
         clock=clock,
@@ -174,4 +210,7 @@ def build_container(settings: Settings) -> Container:
         dispatcher=MessageDispatcher(database, sender),
         scheduler=ReminderScheduler(database),
         audit=audit,
+        blobs=blobs,
+        extraction_cache=extraction_cache,
+        extractor=extractor,
     )

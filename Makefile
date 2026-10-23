@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval eval-retrieval eval-sentiment run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check
+.PHONY: install check lint types test eval eval-retrieval eval-ocr eval-sentiment run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check
 
 install:
 	uv sync
@@ -24,11 +24,18 @@ types:
 test:
 	$(PY) pytest
 
+# Live tier: real Postgres and real providers. Costs money and needs keys, so it never runs in check.
+test-live:
+	$(PY) pytest -m "integration or eval"
+
 eval:
 	$(PY) python -m onboarding.evals --write
 
 eval-retrieval:
 	$(PY) python -m onboarding.evals --retrieval-only --write
+
+eval-ocr:                          # extraction quality; needs no database and no provider key
+	$(PY) python -m onboarding.evals.ocr $(ARGS)
 
 eval-sentiment:
 	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --write

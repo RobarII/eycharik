@@ -22,13 +22,21 @@ from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.kb import PostgresKnowledgeWriter
 from onboarding.app.db.models import EmployeeRow
 from onboarding.app.db.repos import DatabaseQuestionLog, DatabaseRunRepository
+from onboarding.app.knowledge.extract.media import media_type_for
+from onboarding.app.knowledge.extract.ocr import build_ocr
+from onboarding.app.knowledge.extract.pdf import PdfReader
+from onboarding.app.knowledge.extract.pptx import PptxReader
+from onboarding.app.knowledge.extract.profiles import ExtractionProfileLibrary
+from onboarding.app.knowledge.extract.router import RoutingExtraction
 from onboarding.app.knowledge.pipeline import ingest
 from onboarding.app.max.client import MaxClient, Subscription
 from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import AnswerOutcome
 from onboarding.app.worker.service import OnboardingService
+from onboarding.core.extraction import accept
 from onboarding.core.models import (
+    Accepted,
     ChatId,
     EmployeeId,
     EmployeeProfile,
@@ -39,7 +47,12 @@ from onboarding.core.models import (
     QuestionKind,
     StepKind,
 )
-from onboarding.ports import Messaging, OutboundMessage
+from onboarding.ports import (
+    DocumentRef,
+    ExtractionUnavailableError,
+    Messaging,
+    OutboundMessage,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -76,7 +89,15 @@ def main(argv: list[str] | None = None) -> int:
         help="comma-separated MAX update types",
     )
 
-    sub.add_parser("check", help="validate settings and scenario files")
+    extract_parser = sub.add_parser(
+        "extract", help="read one file and report what the pipeline would do with it"
+    )
+    extract_parser.add_argument("--file", type=Path, required=True)
+    extract_parser.add_argument(
+        "--profile", default=None, help="extraction profile name; defaults to EXTRACTION_PROFILE"
+    )
+
+    sub.add_parser("check", help="validate settings, scenarios, and the extraction profile")
 
     args = parser.parse_args(argv)
     settings = Settings()
@@ -88,6 +109,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_subscribe(settings, args))
     if args.command == "demo":
         return asyncio.run(_demo(settings, reset=args.reset, assume_yes=args.yes))
+    if args.command == "extract":
+        return asyncio.run(_extract(settings, args))
     return _check(settings)
 
 
@@ -444,6 +467,51 @@ def _employee_row(item: object) -> dict[str, object]:
     }
 
 
+async def _extract(settings: Settings, args: argparse.Namespace) -> int:
+    """Dry run: no database, no upload. Useful before HR commits a scanned regulation."""
+    library = ExtractionProfileLibrary(
+        settings.extraction_profiles_dir,
+        settings.contracts_dir / "extraction-profile.schema.json",
+    )
+    profile = library.load(args.profile or settings.extraction_profile)
+    path: Path = args.file
+    content = path.read_bytes()
+    extraction = RoutingExtraction(
+        readers=(PdfReader(), PptxReader()),
+        ocr=build_ocr(profile.family),
+        max_pages=settings.extraction_max_pages,
+    )
+    try:
+        document = await extraction.extract(
+            content,
+            DocumentRef(
+                blob_id="local",
+                filename=path.name,
+                media_type=media_type_for(path.name),
+            ),
+            profile,
+        )
+    except ExtractionUnavailableError as error:
+        print(f"extraction profile {profile.name!r} cannot read this file: {error}")
+        return 2
+    outcome = accept(document, profile.acceptance)
+    summary = {
+        "file": str(path),
+        "profile": profile.name,
+        "route": document.route.value,
+        "engine": document.engine,
+        "pages": len(document.pages),
+        "accepted": isinstance(outcome, Accepted),
+        "reason": None if isinstance(outcome, Accepted) else outcome.reason.value,
+        "characters": len(outcome.text) if isinstance(outcome, Accepted) else 0,
+        "min_confidence": round(outcome.min_confidence, 4)
+        if isinstance(outcome, Accepted)
+        else 0.0,
+    }
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0 if isinstance(outcome, Accepted) else 1
+
+
 def _check(settings: Settings) -> int:
 
     container = build_container(settings)
@@ -451,6 +519,11 @@ def _check(settings: Settings) -> int:
         print(f"scenarios: {', '.join(container.catalog.ids())}")
         print(f"prompts: {settings.prompts_dir}")
         print(f"knowledge: {settings.knowledge_dir}")
+        print(
+            "extraction: "
+            f"{container.extractor.profile.name} "
+            f"(family {container.extractor.profile.family})"
+        )
     finally:
         asyncio.run(container.aclose())
     return 0

@@ -29,6 +29,7 @@ async def run_forever(settings: Settings, stop: asyncio.Event) -> None:
         service=container.service,
         clock=SystemClock(),
         audit=container.audit,
+        extractor=container.extractor,
     )
     purger = RetentionPurger(
         container.database,

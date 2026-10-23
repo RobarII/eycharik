@@ -9,13 +9,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 
+from onboarding.app.worker.extract import DocumentExtractor
+from onboarding.app.worker.payload import JobPayloadError
 from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import ChatId, EmployeeId, Event, EventKind
 from onboarding.ports import AuditLog, Clock, JobSink
 
-
-class JobPayloadError(ValueError):
-    """The stored payload does not match the job kind."""
+EXTRACT_DOCUMENT = "extract_document"
 
 
 class JobRunner:
@@ -26,11 +26,13 @@ class JobRunner:
         service: OnboardingService,
         clock: Clock,
         audit: AuditLog,
+        extractor: DocumentExtractor,
     ) -> None:
         self._queue = queue
         self._service = service
         self._clock = clock
         self._audit = audit
+        self._extractor = extractor
 
     async def run_once(self) -> int:
         jobs = await self._queue.claim()
@@ -51,6 +53,9 @@ class JobRunner:
         return len(jobs)
 
     async def _dispatch(self, kind: str, payload: Mapping[str, object]) -> None:
+        if kind == EXTRACT_DOCUMENT:
+            await self._extractor.run(payload)
+            return
         employee_id = EmployeeId(_text(payload, "employee_id"))
         chat_id = ChatId(_integer(payload, "chat_id"))
         if kind == "start":

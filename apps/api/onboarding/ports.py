@@ -6,18 +6,25 @@ here performs I/O.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Literal, Protocol, runtime_checkable
 
 from onboarding.core.models import (
+    AcceptancePolicy,
     ChatId,
     Chunk,
     DocId,
+    DocumentSniff,
     EmployeeId,
     EmployeeProfile,
+    ExtractedDocument,
+    ExtractedPage,
     Keyboard,
+    QualityPolicy,
     ReminderPlan,
     RiskSignal,
     RunId,
@@ -286,4 +293,157 @@ class JobSink(Protocol):
 class AuditLog(Protocol):
     async def record(self, name: str, **fields: object) -> None:
         """Append-only record. Fields must not contain secrets or raw personal data."""
+        ...
+
+
+# --- Document extraction ---------------------------------------------------
+#
+# A file becomes text in two steps that fail for different reasons, so they are two ports:
+# a reader knows container formats, an engine knows pixels. The composite that joins them is one
+# adapter; the decisions it makes are pure and live in ``core/extraction.py``.
+#
+# Recognizers are the only part of this system that may be a large optional dependency, so they sit
+# behind a profile and a lazy import. A profile with ``family="none"`` reads digital documents and
+# refuses scans instead of pretending.
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentRef:
+    """Where a file came from. The transport is not part of the contract."""
+
+    blob_id: str
+    filename: str
+    media_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionProfile:
+    """How to read a file: thresholds, language, engine family.
+
+    Profiles are data (``apps/api/model-profiles/extract/<name>.yaml``), validated against
+    ``docs/contracts/extraction-profile.schema.json``. No code branches on ``family``: the
+    composition root picks the adapter once, exactly like a model profile picks a gateway.
+    """
+
+    name: str
+    family: Literal["none", "paddle", "rapid", "tesseract"] = "none"
+    model: str = ""
+    lang: str = "ru"
+    dpi: int = 300
+    min_text_chars: int = 40
+    quality: QualityPolicy = field(default_factory=QualityPolicy)
+    acceptance: AcceptancePolicy = field(default_factory=AcceptancePolicy)
+
+    def fingerprint(self) -> str:
+        """Identity of this reader configuration. Changes invalidate the extraction cache."""
+        payload = {
+            "family": self.family,
+            "model": self.model,
+            "lang": self.lang,
+            "dpi": self.dpi,
+            "min_text_chars": self.min_text_chars,
+            "quality": {
+                "min_dpi": self.quality.min_dpi,
+                "min_edge_energy": self.quality.min_edge_energy,
+            },
+            "acceptance": {
+                "min_confidence": self.acceptance.min_confidence,
+                "min_chars": self.acceptance.min_chars,
+            },
+        }
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+
+
+class ExtractionUnavailableError(RuntimeError):
+    """No recognizer is configured, or its dependency is missing.
+
+    The job is retried, then parked with the reason; the corpus is untouched.
+    """
+
+
+@runtime_checkable
+class DocumentReader(Protocol):
+    """One container format: PDF, PPTX, and whatever comes next.
+
+    ``inspect`` is cheap and decides the route; ``rasterize`` is only called when recognition is
+    actually needed, so a digital document never pays for page rendering.
+    """
+
+    engine: str
+
+    def supports(self, media_type: str) -> bool:
+        """True when this reader owns the media type."""
+        ...
+
+    def inspect(self, content: bytes) -> DocumentSniff:
+        """Pages, any existing text layer, and cheap quality metrics."""
+        ...
+
+    def rasterize(self, content: bytes, *, dpi: int) -> tuple[bytes, ...]:
+        """One encoded image per page, in reading order. Empty when the format has no raster."""
+        ...
+
+
+@runtime_checkable
+class Ocr(Protocol):
+    """Pixels to text. Never decides whether the result is good enough to keep."""
+
+    engine: str
+
+    def recognize(
+        self, images: Sequence[bytes], *, lang: str, model: str
+    ) -> tuple[ExtractedPage, ...]:
+        """One page per image, in the same order. Confidence is calibrated 0..1."""
+        ...
+
+
+@runtime_checkable
+class Extraction(Protocol):
+    """Bytes to pages, with the routing and the quality gate applied."""
+
+    async def extract(
+        self, content: bytes, ref: DocumentRef, profile: ExtractionProfile
+    ) -> ExtractedDocument:
+        """Never writes and never indexes. A refusal is a result, not an exception."""
+        ...
+
+
+@runtime_checkable
+class BlobStore(Protocol):
+    """Uploaded bytes, addressable by content hash so a repeat upload is free."""
+
+    async def put(self, content: bytes, *, filename: str, media_type: str) -> str:
+        """Store and return the content hash. Storing the same bytes twice is a no-op."""
+        ...
+
+    async def read(self, blob_id: str) -> bytes | None:
+        """Exact bytes back, or ``None`` when the blob is gone."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionRecord:
+    """The cached outcome of one (file, profile) pair, refusals included."""
+
+    content_hash: str
+    profile_hash: str
+    status: str
+    reason: str | None
+    engine: str
+    route: str
+    pages: int
+    min_confidence: float
+    markdown: str | None = None
+    document_id: str | None = None
+
+
+@runtime_checkable
+class ExtractionCache(Protocol):
+    """Extraction is expensive and deterministic per profile, so it is cached by hash pair."""
+
+    async def load(self, content_hash: str, profile_hash: str) -> ExtractionRecord | None: ...
+
+    async def save(self, record: ExtractionRecord) -> None:
+        """Insert or replace one record."""
         ...

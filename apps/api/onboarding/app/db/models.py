@@ -16,9 +16,11 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -226,4 +228,48 @@ class ChunkRow(Base):
             postgresql_using="hnsw",
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
+    )
+
+
+class FileRow(Base):
+    """An uploaded file, addressed by the hash of its bytes.
+
+    Content addressing is the idempotency rule of the whole ingestion path: the same bytes uploaded
+    twice occupy one row, produce one job, and cost one recognition.
+    """
+
+    __tablename__ = "kb_files"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(300))
+    media_type: Mapped[str] = mapped_column(String(120))
+    size: Mapped[int] = mapped_column(Integer)
+    content: Mapped[bytes] = mapped_column(LargeBinary)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ExtractionRow(Base):
+    """The cached outcome of one (file, extraction profile) pair.
+
+    Recognising a scan is seconds of CPU, and the result is deterministic for a given profile, so it
+    is cached by the pair of hashes. A new profile re-reads the file instead of trusting a result
+    produced by a different one. Refusals are cached too: a recruiter must be able to read why.
+    """
+
+    __tablename__ = "kb_extractions"
+
+    content_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    profile_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16))
+    reason: Mapped[str | None] = mapped_column(String(32))
+    engine: Mapped[str] = mapped_column(String(32))
+    route: Mapped[str] = mapped_column(String(16))
+    pages: Mapped[int] = mapped_column(Integer)
+    min_confidence: Mapped[float] = mapped_column(Float)
+    markdown: Mapped[str | None] = mapped_column(Text)
+    document_id: Mapped[str | None] = mapped_column(String(200))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

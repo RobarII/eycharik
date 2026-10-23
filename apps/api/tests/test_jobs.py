@@ -24,6 +24,14 @@ class StubService:
         self.handled.append((str(employee_id), int(chat_id), event.kind.value))  # type: ignore[attr-defined,arg-type]
 
 
+class StubExtractor:
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, object]] = []
+
+    async def run(self, payload: object) -> None:
+        self.payloads.append(dict(payload))  # type: ignore[arg-type]
+
+
 class RecordingQueue:
     def __init__(self) -> None:
         self.completed: list[int] = []
@@ -40,15 +48,22 @@ class RecordingQueue:
 
 
 def build() -> tuple[JobRunner, StubService, RecordingQueue]:
+    runner, service, queue, _ = build_with_extractor()
+    return runner, service, queue
+
+
+def build_with_extractor() -> tuple[JobRunner, StubService, RecordingQueue, StubExtractor]:
     service = StubService()
     queue = RecordingQueue()
+    extractor = StubExtractor()
     runner = JobRunner(
         queue=queue,  # type: ignore[arg-type]
         service=service,  # type: ignore[arg-type]
         clock=FrozenClock(NOW),
         audit=NullAudit(),
+        extractor=extractor,  # type: ignore[arg-type]
     )
-    return runner, service, queue
+    return runner, service, queue, extractor
 
 
 async def test_start_job_starts_a_run() -> None:
@@ -112,3 +127,14 @@ async def test_invalid_timestamp_is_rejected() -> None:
                 "event": {"kind": "message_received", "at": "yesterday"},
             },
         )
+
+
+async def test_extract_job_goes_to_the_extractor_not_the_scenario() -> None:
+    runner, service, _, extractor = build_with_extractor()
+    payload = {"blob_id": "abc", "filename": "a.pdf", "media_type": "application/pdf"}
+
+    await runner._dispatch("extract_document", payload)
+
+    assert extractor.payloads == [payload]
+    assert service.handled == []
+    assert service.started == []

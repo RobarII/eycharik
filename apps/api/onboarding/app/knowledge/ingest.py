@@ -79,6 +79,27 @@ def read_document(path: Path, schema: dict[str, Any]) -> LoadedDocument:
     return parse_document(path.read_text(encoding="utf-8"), schema, source=str(path))
 
 
+def validate_frontmatter(
+    meta: Any, schema: dict[str, Any], *, source: str
+) -> dict[str, Any]:
+    """Check one metadata mapping against ``doc.schema.json``.
+
+    Shared by the corpus directory, an uploaded markdown document, and the metadata of an uploaded
+    file: an upload is validated exactly like a file that was committed.
+    """
+    if not isinstance(meta, dict):
+        raise CorpusError(f"{source}: frontmatter must be a mapping")
+    errors = sorted(
+        Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(meta),
+        key=lambda error: list(error.absolute_path),
+    )
+    if errors:
+        first = errors[0]
+        location = ".".join(str(part) for part in first.absolute_path) or "<root>"
+        raise CorpusError(f"{source}: {location}: {first.message}")
+    return meta
+
+
 def parse_document(text: str, schema: dict[str, Any], *, source: str) -> LoadedDocument:
     """Validate one document, whether it came from the corpus directory or an upload."""
     match = _FRONTMATTER.match(text)
@@ -89,17 +110,7 @@ def parse_document(text: str, schema: dict[str, Any], *, source: str) -> LoadedD
         meta = yaml.load(match.group("meta"), Loader=_TextDatesLoader)  # noqa: S506
     except yaml.YAMLError as error:
         raise CorpusError(f"{source}: invalid frontmatter: {error}") from None
-    if not isinstance(meta, dict):
-        raise CorpusError(f"{source}: frontmatter must be a mapping")
-
-    errors = sorted(
-        Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(meta),
-        key=lambda error: list(error.absolute_path),
-    )
-    if errors:
-        first = errors[0]
-        location = ".".join(str(part) for part in first.absolute_path) or "<root>"
-        raise CorpusError(f"{source}: {location}: {first.message}")
+    meta = validate_frontmatter(meta, schema, source=source)
 
     body = match.group("body").strip()
     if not body:

@@ -37,6 +37,10 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why not BM25 / ParadeDB? | [decisions/0012-no-bm25-in-request-path.md](decisions/0012-no-bm25-in-request-path.md) |
 | Why is a model a profile file? | [decisions/0013-model-profiles.md](decisions/0013-model-profiles.md) |
 | Why does the cabinet write through the outbox, and what does leaving delete? | [decisions/0014-cabinet-writes-through-the-outbox.md](decisions/0014-cabinet-writes-through-the-outbox.md) |
+| Why is extraction an adapter, and how does an uploaded PDF become a document? | [decisions/0015-extraction-is-an-adapter.md](decisions/0015-extraction-is-an-adapter.md) |
+| How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
+| An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |
+| How is OCR quality measured? | [evals/ocr.yaml](evals/ocr.yaml), `make eval-ocr` |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |

@@ -12,9 +12,18 @@ dependencies = [
   "pgvector>=0.3",
   "pydantic>=2.9",
   "pydantic-settings>=2.5",
+  "pypdfium2>=5.14.0",
+  "python-multipart>=0.0.32",
+  "python-pptx>=1.0.2",
   "pyyaml>=6.0",
   "sqlalchemy[asyncio]>=2.0.35",
   "uvicorn[standard]>=0.31",
+]
+
+[project.optional-dependencies]
+ocr = [
+    "onnxruntime>=1.20",
+    "rapidocr>=3.10",
 ]
 
 [dependency-groups]
@@ -69,5 +78,5 @@ disallow_any_explicit = false
 plugins = []
 
 [[tool.mypy.overrides]]
-module = ["pgvector.*"]
+module = ["pgvector.*", "pypdfium2.*", "rapidocr.*"]
 ignore_missing_imports = true

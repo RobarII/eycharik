@@ -24,6 +24,18 @@ FORBIDDEN_IMPORTS = {
     "os",
     "socket",
     "requests",
+    # Readers and recognizers are adapters (ADR 0015); importing one would put a model or a
+    # decoder between the pure rules and their tests. ``onboarding.*`` is checked below, because
+    # the core legitimately imports its own package.
+    "pypdfium2",
+    "pptx",
+    "PIL",
+    "cv2",
+    "numpy",
+    "paddleocr",
+    "paddle",
+    "rapidocr",
+    "onnxruntime",
 }
 FORBIDDEN_CALLS = {
     ("datetime", "now"),
@@ -56,6 +68,24 @@ def test_core_imports_no_effectful_modules() -> None:
             )
 
     assert violations == []
+
+
+def test_core_never_reaches_into_its_own_adapter_layer() -> None:
+    """``onboarding.*`` would let a value object call a repository; the import list above only
+    catches the top-level name, so the package prefix is checked separately."""
+    violations: list[str] = []
+    for path in _modules():
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            module = node.module if isinstance(node, ast.ImportFrom) else None
+            if module and module.startswith("onboarding.") and not _is_core(module):
+                violations.append(f"{path.name}: imports from {module}")
+
+    assert violations == []
+
+
+def _is_core(module: str) -> bool:
+    return module == "onboarding.core" or module.startswith("onboarding.core.")
 
 
 def test_core_reads_no_ambient_time_or_randomness() -> None:

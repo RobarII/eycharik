@@ -1,8 +1,10 @@
-"""Apply the retention window to questions and audit rows.
+"""Apply the retention window to questions, uploaded files, and audit rows.
 
 Questions disappear: their text is the employee's own words and has no value after the window.
-Audit rows stay as a skeleton, because counts and incident timelines must remain traceable; only
-the personal fragments are removed and the row is marked ``redacted``.
+Uploaded bytes disappear for the same reason: the accepted markdown became a document, and keeping
+a photograph of a passport scan forever is a liability, not an archive. Audit rows stay as a
+skeleton, because counts and incident timelines must remain traceable; only the personal fragments
+are removed and the row is marked ``redacted``.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from typing import Any, cast
 from sqlalchemy import delete, select
 from sqlalchemy.engine import CursorResult
 
-from onboarding.app.db.models import AuditRow, QuestionRow
+from onboarding.app.db.models import AuditRow, FileRow, QuestionRow
 from onboarding.app.db.session import Database
 from onboarding.core.retention import cutoff, redact_fields
 from onboarding.ports import Clock
@@ -22,6 +24,7 @@ from onboarding.ports import Clock
 @dataclass(frozen=True, slots=True)
 class PurgeResult:
     questions_deleted: int
+    files_deleted: int
     audit_redacted: int
 
 
@@ -40,6 +43,9 @@ class RetentionPurger:
             deleted = await session.execute(
                 delete(QuestionRow).where(QuestionRow.asked_at < oldest)
             )
+            files = await session.execute(
+                delete(FileRow).where(FileRow.created_at < oldest)
+            )
             audits = (
                 await session.scalars(
                     select(AuditRow)
@@ -56,12 +62,14 @@ class RetentionPurger:
                     redacted += 1
 
             questions_deleted = int(cast(CursorResult[Any], deleted).rowcount or 0)
-            if questions_deleted or redacted:
+            files_deleted = int(cast(CursorResult[Any], files).rowcount or 0)
+            if questions_deleted or files_deleted or redacted:
                 session.add(
                     AuditRow(
                         name="retention_purged",
                         fields={
                             "questions_deleted": questions_deleted,
+                            "files_deleted": files_deleted,
                             "audit_redacted": redacted,
                             "cutoff": oldest.isoformat(),
                         },
@@ -69,5 +77,6 @@ class RetentionPurger:
                 )
             return PurgeResult(
                 questions_deleted=questions_deleted,
+                files_deleted=files_deleted,
                 audit_redacted=redacted,
             )

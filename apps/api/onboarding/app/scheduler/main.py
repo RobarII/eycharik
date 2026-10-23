@@ -62,6 +62,7 @@ async def run(settings: Settings, *, max_jobs: int) -> tuple[int, int, int]:
         service=container.service,
         clock=SystemClock(),
         audit=container.audit,
+        extractor=container.extractor,
     )
     try:
         return await tick_once(

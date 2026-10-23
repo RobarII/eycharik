@@ -24,9 +24,19 @@ from onboarding.app.admin.actions import QuestionResolver
 from onboarding.app.admin.queries import AdminQueries
 from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
+from onboarding.app.db.blobs import PostgresBlobStore
 from onboarding.app.db.directory import SqlDirectory
+from onboarding.app.db.extractions import PostgresExtractionCache
 from onboarding.app.db.kb import PostgresKnowledgeBase, PostgresKnowledgeWriter
-from onboarding.app.db.models import AuditRow, EmployeeRow, MessageRow, QuestionRow, RunRow
+from onboarding.app.db.models import (
+    AuditRow,
+    EmployeeRow,
+    FileRow,
+    JobRow,
+    MessageRow,
+    QuestionRow,
+    RunRow,
+)
 from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import (
@@ -64,7 +74,8 @@ from onboarding.core.models import (
     TimeoutAction,
 )
 from onboarding.core.transitions import start as start_run
-from onboarding.ports import OutboundMessage, SearchQuery, StoredRun
+from onboarding.ports import ExtractionRecord, OutboundMessage, SearchQuery, StoredRun
+from tests.files import digital_pdf
 
 from .fakes import (
     EMPLOYEE,
@@ -105,7 +116,7 @@ async def database() -> AsyncIterator[Database]:
         await session.execute(
             text(
                 "TRUNCATE messages, jobs, events, questions, audit_log, runs, employees, "
-                "kb_chunks, kb_documents RESTART IDENTITY CASCADE"
+                "kb_chunks, kb_documents, kb_files, kb_extractions RESTART IDENTITY CASCADE"
             )
         )
         session.add(
@@ -767,13 +778,36 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
                 },
             )
         )
+        session.add(
+            FileRow(
+                id="0" * 64,
+                filename="old-scan.pdf",
+                media_type="application/pdf",
+                size=4,
+                content=b"old!",
+                created_at=old,
+            )
+        )
+        session.add(
+            FileRow(
+                id="1" * 64,
+                filename="fresh-scan.pdf",
+                media_type="application/pdf",
+                size=5,
+                content=b"fresh",
+            )
+        )
 
     result = await RetentionPurger(
         database, FrozenClock(NOW), days=365
     ).run_once()
 
     assert result.questions_deleted == 1
+    assert result.files_deleted == 1
     assert result.audit_redacted == 1
+    async with database.session() as session:
+        names = list(await session.scalars(select(FileRow.filename)))
+    assert names == ["fresh-scan.pdf"]
     async with database.session() as session:
         texts = list(await session.scalars(select(QuestionRow.text)))
         assert texts == ["свежий вопрос"]
@@ -814,3 +848,152 @@ async def test_question_resolver_uses_the_scope_and_the_outbox(database: Databas
     assert resolution.question_id == question_id
     async with database.session() as session:
         assert await session.scalar(select(func.count()).select_from(MessageRow)) == 1
+
+
+async def test_an_uploaded_file_is_addressed_by_its_content(database: Database) -> None:
+    blobs = PostgresBlobStore(database)
+    content = b"%PDF-1.4 the same bytes twice"
+
+    first = await blobs.put(content, filename="Регламент.pdf", media_type="application/pdf")
+    second = await blobs.put(content, filename="reglament.pdf", media_type="application/pdf")
+
+    assert first == second
+    assert await blobs.read(first) == content
+    assert await blobs.read("0" * 64) is None
+
+
+async def test_a_filename_cannot_escape_the_storage(database: Database) -> None:
+    blobs = PostgresBlobStore(database)
+
+    blob_id = await blobs.put(
+        b"%PDF-1.4 traversal", filename="../../etc/passwd", media_type="application/pdf"
+    )
+
+    assert await blobs.read(blob_id) is not None
+
+
+async def test_the_extraction_cache_is_keyed_by_file_and_profile(database: Database) -> None:
+    cache = PostgresExtractionCache(database)
+    record = ExtractionRecord(
+        content_hash="a" * 64,
+        profile_hash="p1",
+        status="indexed",
+        reason=None,
+        engine="pdfium",
+        route="native_text",
+        pages=2,
+        min_confidence=1.0,
+        markdown="---\nid: hr/x\n---\n\nbody\n",
+        document_id="hr/x",
+    )
+
+    await cache.save(record)
+    assert await cache.load("a" * 64, "p1") == record
+    assert await cache.load("a" * 64, "p2") is None
+
+    await cache.save(
+        ExtractionRecord(
+            content_hash="a" * 64,
+            profile_hash="p2",
+            status="rejected",
+            reason="low_confidence",
+            engine="rapidocr",
+            route="ocr",
+            pages=0,
+            min_confidence=0.0,
+        )
+    )
+    latest = await cache.load_latest("a" * 64)
+    assert latest is not None
+    assert latest.profile_hash == "p2"
+    assert latest.reason == "low_confidence"
+
+
+async def test_hr_uploads_a_pdf_and_the_extraction_job_is_queued(database: Database) -> None:
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        response = await http.post(
+            "/admin/api/knowledge/files",
+            files={
+                "file": (
+                    "reglament.pdf",
+                    digital_pdf(
+                        ["Internal regulations, page one, a long enough text layer to trust"]
+                    ),
+                    "application/pdf",
+                )
+            },
+            data={
+                "metadata": json.dumps(
+                    {
+                        "id": "hr/uploaded",
+                        "title": "Регламент",
+                        "type": "knowledge",
+                        "status": "active",
+                        "owner": "hr-team",
+                        "audience": ["all"],
+                        "valid_from": "2026-01-01",
+                    }
+                )
+            },
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert response.status_code == 202, response.text
+        blob_id = response.json()["content_hash"]
+
+        async with database.session() as session:
+            queued = await session.scalar(
+                select(JobRow).where(JobRow.kind == "extract_document")
+            )
+        assert queued is not None
+        assert queued.payload["blob_id"] == blob_id
+        assert queued.payload["metadata"]["owner"] == "hr-team"
+
+        pending = await http.get(
+            f"/admin/api/knowledge/files/{blob_id}", headers={"Authorization": "Bearer hr"}
+        )
+        assert pending.status_code == 404
+
+        await PostgresExtractionCache(database).save(
+            ExtractionRecord(
+                content_hash=blob_id,
+                profile_hash="p1",
+                status="indexed",
+                reason=None,
+                engine="pdfium",
+                route="native_text",
+                pages=1,
+                min_confidence=1.0,
+                document_id="hr/uploaded",
+            )
+        )
+        done = await http.get(
+            f"/admin/api/knowledge/files/{blob_id}", headers={"Authorization": "Bearer hr"}
+        )
+
+    assert done.status_code == 200
+    assert done.json()["status"] == "indexed"
+    assert done.json()["document_id"] == "hr/uploaded"
+
+
+async def test_only_hr_may_upload_a_file(database: Database) -> None:
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        response = await http.post(
+            "/admin/api/knowledge/files",
+            files={"file": ("a.pdf", b"%PDF-1.4 x", "application/pdf")},
+            data={"metadata": "{}"},
+            headers={"Authorization": "Bearer rec"},
+        )
+
+    assert response.status_code == 403

@@ -161,3 +161,27 @@ class KnowledgeUploaded(BaseModel):
     id: str
     title: str
     chunks: int
+
+
+class KnowledgeFileQueued(BaseModel):
+    """A file accepted for extraction. It is not in the corpus yet, and the cabinet says so."""
+
+    model_config = ConfigDict(frozen=True)
+
+    content_hash: str
+    status: str
+
+
+class KnowledgeExtraction(BaseModel):
+    """What happened to one uploaded file under the active extraction profile."""
+
+    model_config = ConfigDict(frozen=True)
+
+    content_hash: str
+    status: str
+    reason: str | None = None
+    engine: str
+    route: str
+    pages: int
+    min_confidence: float
+    document_id: str | None = None

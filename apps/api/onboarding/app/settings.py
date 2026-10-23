@@ -6,6 +6,7 @@ Secrets are ``SecretStr`` so a stray log call prints ``**********`` instead of t
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
@@ -15,6 +16,7 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+_PROFILE_NAME = re.compile(r"[a-z0-9][a-z0-9._-]*")
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +84,13 @@ class Settings(BaseSettings):
     jev_timeout_s: float = 8.0
     jev_max_retries: int = 2
 
+    extraction_profile: str = "native"
+    extraction_profiles_dir: Path = Field(
+        default=REPO_ROOT / "apps" / "api" / "model-profiles" / "extract"
+    )
+    extraction_max_pages: int = 200
+    extraction_max_upload_bytes: int = 25 * 1024 * 1024
+
     answer_min_confidence: float = 0.45
     recall_limit: int = 30
     rerank_limit: int = 5
@@ -142,6 +151,12 @@ class Settings(BaseSettings):
             raise ValueError("LLM_EXTRA_HEADERS values must not contain newlines")
         if self.data_retention_days < 1:
             raise ValueError("DATA_RETENTION_DAYS must be at least 1")
+        if not _PROFILE_NAME.fullmatch(self.extraction_profile):
+            raise ValueError("EXTRACTION_PROFILE must match [a-z0-9][a-z0-9._-]*")
+        if not 1 <= self.extraction_max_pages <= 2000:
+            raise ValueError("EXTRACTION_MAX_PAGES must be within 1..2000")
+        if self.extraction_max_upload_bytes < 1024:
+            raise ValueError("EXTRACTION_MAX_UPLOAD_BYTES must be at least 1024")
 
     def _check_production(self) -> None:
         if self.environment != "production":

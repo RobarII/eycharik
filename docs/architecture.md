@@ -19,6 +19,11 @@ MAX ──webhook──► api ──► Postgres: events + jobs
                               └──► reminder tick ──► jobs (timeout)
 
 recruiter cabinet ──► admin API ──► Postgres: runs, questions, audit
+                            │
+                            └──► Postgres: kb_files + extract_document job
+                                       │
+                                       ▼
+                              worker: read ──► decide ──► index ──► kb_extractions
 ```
 
 Two processes from one image:
@@ -54,6 +59,34 @@ They share code and the database, not memory. The reminder tick runs inside the 
 8. The cabinet closes a question: `resolved_at`, `resolved_by`, `resolution`, the reply as a
    `messages` row, and `question_resolved` in one transaction. The dispatcher delivers the reply
    with the same pacing and retries as any scenario message.
+
+## An uploaded file, end to end
+
+The corpus is markdown, but recruiters bring PDFs and scans. Extraction is the bridge, and it is an
+adapter, not a step in a request (ADR 0015).
+
+1. `POST /admin/api/knowledge/files` (HR only) reads the file and the frontmatter as `multipart`.
+   Metadata is validated against `doc.schema.json` — the same contract a committed document obeys —
+   before anything is stored. A wrong format answers `415`, an oversized file `413`.
+2. The bytes go to `kb_files`, keyed by their SHA-256. Re-uploading the same bytes returns the same
+   id and queues no second job.
+3. The endpoint enqueues `extract_document` and answers `202`. It never waits for recognition.
+4. The worker reads the blob and looks up `kb_extractions` by `(content_hash, profile_hash)`. A hit
+   finishes the job without touching the file.
+5. `RoutingExtraction` reads the file with the cheapest reader that owns the format: pdfium text
+   layer, or `python-pptx` shapes. Pure code decides the route: enough text means no recognition.
+   Otherwise the pages are rasterized, gated on the pre-recognition checks the profile enables, and
+   recognized. There is no glare score: white paper would read as "100% glare". Overexposure is
+   caught after recognition, by the engine's own per-line confidence.
+6. `accept` decides: one page under the confidence floor, or coverage under the policy, refuses the
+   whole document. A refusal is a value with a reason, recorded and shown in the cabinet.
+7. Only an accepted document is rendered to markdown (`compose.render_document`) and indexed through
+   the same `ingest_document` choke point the corpus directory uses. `knowledge/` is never written.
+8. The outcome — `indexed` or `rejected`, with engine, route, pages, and confidence — is cached and
+   audited (`document_extracted`, `document_rejected`, `document_extraction_cached`).
+
+Small fixtures beside the tests (`apps/api/tests/files.py`) generate the PDFs and decks, so a test
+that reads a document says how that document was made.
 
 ## Invariants
 
@@ -134,10 +167,11 @@ holds state, vectors, queue, outbox, questions, and audit; the workload does not
 | `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base |
 | `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop |
 | `apps/api/onboarding/app/llm/` | provider adapters, model profile loader, gateway with retry/breaker/cost, offline extractive provider, embeddings |
-| `apps/api/model-profiles/` | one YAML file per model, validated by `docs/contracts/model-profile.schema.json` |
+| `apps/api/model-profiles/` | one YAML file per model, validated by `docs/contracts/model-profile.schema.json`, and reader configuration under `extract/` |
 | `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |
+| `apps/api/onboarding/app/knowledge/extract/` | readers (pdfium, python-pptx), quality gate, recognizer, routing composite, profile loader, markdown assembly |
 | `apps/api/onboarding/scenarios/` | versioned scenario YAML |
-| `apps/api/onboarding/cli.py` | `ingest`, `seed`, `demo`, `subscribe`, `check` commands |
+| `apps/api/onboarding/cli.py` | `ingest`, `extract`, `seed`, `demo`, `subscribe`, `check` commands |
 | `apps/admin/` | recruiter cabinet (React + TypeScript) |
 | `knowledge/` | the corpus, one Markdown file per document |
 

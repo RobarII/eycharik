@@ -41,7 +41,7 @@ export function OverviewPage({
   const overview = useQuery({
     queryKey: ["overview"],
     queryFn: fetchOverview,
-    refetchInterval: 30_000,
+    refetchInterval: REFRESH.overview,
   });
   const runs = useQuery({
     queryKey: ["runs", "cohort"],
@@ -107,7 +107,7 @@ export function OverviewPage({
         </div>
         <div className="page-count" aria-live="polite">
           {runs.isSuccess
-            ? countLabel(runs.data.items.length, "сотрудник", "сотрудника", "сотрудников")
+            ? countLabel(runs.data.total, "сотрудник", "сотрудника", "сотрудников")
             : "…"}
         </div>
       </header>

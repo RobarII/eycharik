@@ -51,7 +51,8 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 - **Scenario engine**: versioned YAML pinned per run, buttons, reminders, surveys with 10-point
   scales, escalation on timeout. Twenty steps from the welcome message to the end of probation.
   The employee row picks the branch, so the plant variant (`onboarding_plant`) is live, not dead
-  content: its own transport copy and no remote-work question.
+  content: its own transport copy and no remote-work question. The welcome asks «ты» or «вы»; the
+  choice is stored on the run and switches the copy of later steps.
 - **Retrieval**: frontmatter/JSON Schema corpus, deterministic chunking, pgvector HNSW + Russian
   `tsvector`, RRF, hosted rerank, audience and validity as SQL predicates. Every answer carries a
   citation from the retrieved set or escalates.

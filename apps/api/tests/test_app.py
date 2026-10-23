@@ -182,6 +182,7 @@ def test_me_describes_the_recruiter_scope_and_capabilities() -> None:
     assert body["scope"] == {"recruiter_id": "rec-1", "department": None}
     assert body["expires_at"] is None
     assert "questions.resolve" in body["capabilities"]
+    assert "questions.assign" in body["capabilities"]
     assert "knowledge.write" not in body["capabilities"]
     assert "employees.offboard" not in body["capabilities"]
 
@@ -307,3 +308,22 @@ def test_a_malformed_cursor_is_a_bad_request_not_a_partial_page() -> None:
     assert runs.status_code == 400
     assert runs.json()["detail"] == "cursor is not valid"
     assert questions.status_code == 400
+
+
+def test_assignment_rejects_a_name_the_server_cannot_authenticate() -> None:
+    app = create_app(
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="rec:recruiter:rec-1",
+            max_webhook_secret="secret",
+        )
+    )
+    with TestClient(app) as http:
+        answer = http.patch(
+            "/admin/api/questions/1/assignee",
+            json={"assignee": "nobody"},
+            headers={"Authorization": "Bearer rec"},
+        )
+
+    assert answer.status_code == 422
+    assert answer.json()["detail"] == "assignee is not an admin"

@@ -51,7 +51,8 @@ cookie exists at all.
 | `DELETE` | `/admin/api/session` | clear the session cookie |
 | `GET` | `/admin/api/runs?limit=50&cursor=&status=all&q=` | runs, newest activity first, paged; `status` is `active`, `completed` or `all`, `q` searches name, role, department and employee id |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
-| `GET` | `/admin/api/questions?status=unanswered&limit=50&cursor=` | questions by status: `unanswered`, `answered`, `all`, paged |
+| `GET` | `/admin/api/questions?status=unanswered&limit=50&cursor=&assignee=any` | questions by status: `unanswered`, `answered`, `all`, paged; `assignee` is `any`, `me` or `unassigned` |
+| `PATCH` | `/admin/api/questions/{question_id}/assignee` | claim an open question, hand it to another admin, or clear the owner |
 | `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
 | `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
@@ -118,6 +119,7 @@ server does not grant must never become a button that fails with `403`.
 | `runs.read` | yes | yes | yes |
 | `questions.read` | yes | yes | yes |
 | `questions.resolve` | yes | yes | yes |
+| `questions.assign` | yes | yes | yes |
 | `knowledge.read` | yes | yes | yes |
 | `analytics.read` | yes | yes | yes |
 | `knowledge.write` | no | no | yes |
@@ -173,9 +175,29 @@ newest 20.
   "citations": [],
   "asked_at": "2026-10-23T07:12:00Z",
   "resolved_at": null,
-  "resolved_by": null
+  "resolved_by": null,
+  "assignee": null
 }
 ```
+
+`assignee` is the admin subject that picked the question up, or `null` when nobody has. It is a
+claim, not an authorisation: the resolver still checks the scope, and a claim never prevents a
+colleague from answering.
+
+`PATCH /admin/api/questions/{question_id}/assignee` takes `{"assignee": "rec-1"}` or
+`{"assignee": null}` and answers `200` with the new owner:
+
+```json
+{ "id": 42, "employee_id": "1001", "assignee": "rec-1" }
+```
+
+The name must be the subject of a configured admin token; anything else answers `422`
+`"assignee is not an admin"`, so a typo cannot invent a queue nobody can filter. The question must
+be open and inside the caller's scope: `404` when it is not visible, `409` when it is already
+resolved. Both the claim and the release write an audit event (`question_assigned` or
+`question_unassigned`) with the question id, the employee id, the new owner and the actor.
+`assignee=me` resolves to the caller's own subject on the server; the cabinet never substitutes a
+name client-side.
 
 `POST /admin/api/questions/{question_id}/resolve` takes `{"text": "до 2000 символов"}` and answers
 `200` with the closed question:

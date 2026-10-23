@@ -52,6 +52,7 @@ class QuestionRecord:
     asked_at: datetime
     resolved_at: datetime | None
     resolved_by: str | None
+    assignee: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,12 +369,16 @@ class AdminQueries:
         department: str | None = None,
         employee_id: str | None = None,
         after: QuestionCursor | None = None,
+        assignee: str | None = None,
+        unassigned: bool = False,
     ) -> tuple[tuple[QuestionRecord, ...], bool]:
         statement = _question_query(
             recruiter_id=recruiter_id,
             department=department,
             answered=answered,
             employee_id=employee_id,
+            assignee=assignee,
+            unassigned=unassigned,
         )
         if after is not None:
             statement = statement.where(_after_question(after))
@@ -400,6 +405,7 @@ class AdminQueries:
                     asked_at=question.asked_at,
                     resolved_at=question.resolved_at,
                     resolved_by=question.resolved_by,
+                    assignee=question.assignee,
                 )
                 for question, name in all_rows[:limit]
             )
@@ -412,12 +418,16 @@ class AdminQueries:
         answered: bool | None,
         department: str | None = None,
         employee_id: str | None = None,
+        assignee: str | None = None,
+        unassigned: bool = False,
     ) -> int:
         statement = _question_query(
             recruiter_id=recruiter_id,
             department=department,
             answered=answered,
             employee_id=employee_id,
+            assignee=assignee,
+            unassigned=unassigned,
         )
         counter = select(func.count()).select_from(statement.subquery())
         async with self._database.session() as session:
@@ -456,6 +466,8 @@ def _question_query(
     department: str | None,
     answered: bool | None,
     employee_id: str | None,
+    assignee: str | None = None,
+    unassigned: bool = False,
 ) -> Any:
     statement = select(QuestionRow).join(
         EmployeeRow, EmployeeRow.id == QuestionRow.employee_id
@@ -466,6 +478,10 @@ def _question_query(
         statement = statement.where(QuestionRow.answered == answered)
     if employee_id is not None:
         statement = statement.where(QuestionRow.employee_id == employee_id)
+    if assignee is not None:
+        statement = statement.where(QuestionRow.assignee == assignee)
+    if unassigned:
+        statement = statement.where(QuestionRow.assignee.is_(None))
     return statement
 
 

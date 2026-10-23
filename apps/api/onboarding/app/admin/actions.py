@@ -33,6 +33,10 @@ class EmployeeNotFoundError(Exception):
     """No employee row with this id."""
 
 
+class UnknownAssigneeError(Exception):
+    """The requested owner is not an admin the server knows how to authenticate."""
+
+
 @dataclass(frozen=True, slots=True)
 class Resolution:
     question_id: int
@@ -43,12 +47,91 @@ class Resolution:
 
 
 @dataclass(frozen=True, slots=True)
+class Assignment:
+    question_id: int
+    employee_id: str
+    assignee: str | None
+    by: str
+
+
+@dataclass(frozen=True, slots=True)
 class Offboarding:
     employee_id: str
     questions_deleted: int
     messages_deleted: int
     runs_closed: int
     audit_redacted: int
+
+
+class QuestionAssigner:
+    """Puts a name on a question, or takes it off.
+
+    Assignment is not ownership of the answer: the resolver still checks the scope and still refuses
+    a question somebody else already closed. The column only stops two recruiters from drafting the
+    same reply.
+    """
+
+    def __init__(self, database: Database, clock: Clock) -> None:
+        self._database = database
+        self._clock = clock
+
+    async def assign(
+        self,
+        question_id: int,
+        *,
+        assignee: str | None,
+        actor: str,
+        known: frozenset[str],
+        recruiter_id: str | None,
+        department: str | None,
+    ) -> Assignment:
+        if assignee is not None and assignee not in known:
+            raise UnknownAssigneeError(f"assignee {assignee} is not an admin")
+        scope = select(EmployeeRow.id).where(
+            *employee_scope_filters(recruiter_id, department)
+        )
+        async with self._database.session() as session:
+            row = (
+                await session.execute(
+                    update(QuestionRow)
+                    .where(
+                        QuestionRow.id == question_id,
+                        QuestionRow.answered.is_(False),
+                        QuestionRow.employee_id.in_(scope),
+                    )
+                    .values(assignee=assignee)
+                    .returning(QuestionRow)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                visible = await session.scalar(
+                    select(QuestionRow.id).where(
+                        QuestionRow.id == question_id,
+                        QuestionRow.employee_id.in_(scope),
+                    )
+                )
+                if visible is None:
+                    raise QuestionNotFoundError(f"question {question_id} not found")
+                raise QuestionAlreadyResolvedError(f"question {question_id} already resolved")
+
+            session.add(
+                AuditRow(
+                    name="question_assigned" if assignee else "question_unassigned",
+                    fields={
+                        "question_id": row.id,
+                        "employee_id": row.employee_id,
+                        "assignee": assignee,
+                        "by": actor,
+                        "at": self._clock.now().isoformat(),
+                    },
+                )
+            )
+            return Assignment(
+                question_id=row.id,
+                employee_id=row.employee_id or "",
+                assignee=row.assignee,
+                by=actor,
+            )
 
 
 class QuestionResolver:

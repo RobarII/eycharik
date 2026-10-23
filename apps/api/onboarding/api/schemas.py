@@ -73,6 +73,21 @@ class Question(BaseModel):
     asked_at: datetime
     resolved_at: datetime | None
     resolved_by: str | None
+    assignee: str | None = None
+
+
+class AssignQuestion(BaseModel):
+    """`null` clears the owner; a name must be an admin the server can authenticate."""
+
+    assignee: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] | None = None
+
+
+class AssignedQuestion(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    employee_id: str
+    assignee: str | None
 
 
 class ResolveQuestion(BaseModel):

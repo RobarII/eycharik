@@ -39,6 +39,8 @@ from onboarding.api.schemas import (
     AdminIdentity,
     AdminScope,
     AnalyticsOverview,
+    AssignedQuestion,
+    AssignQuestion,
     AuditEvent,
     DigestItem,
     DigestList,
@@ -63,8 +65,10 @@ from onboarding.app.admin.actions import (
     EmployeeNotFoundError,
     EmployeeOffboarder,
     QuestionAlreadyResolvedError,
+    QuestionAssigner,
     QuestionNotFoundError,
     QuestionResolver,
+    UnknownAssigneeError,
 )
 from onboarding.app.admin.queries import (
     AdminQueries,
@@ -234,29 +238,39 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
 
 
 @router.get("/questions", response_model=QuestionList)
-async def list_questions(
+async def list_questions(  # noqa: PLR0917 - the query parameters are the endpoint's interface
+
     request: Request,
     principal: Admin,
     status: Annotated[Literal["unanswered", "answered", "all"], Query()] = "unanswered",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
+    assignee: Annotated[Literal["me", "unassigned", "any"], Query()] = "any",
 ) -> QuestionList:
     answered = {"unanswered": False, "answered": True, "all": None}[status]
     queries = _queries(request)
     recruiter_id = _scope(principal)
     department = _department(principal)
+    mine = principal.subject if assignee == "me" else None
+    unassigned = assignee == "unassigned"
     records, has_more = await queries.questions_page(
         recruiter_id=recruiter_id,
         department=department,
         answered=answered,
         limit=limit,
         after=_question_cursor(cursor),
+        assignee=mine,
+        unassigned=unassigned,
     )
     return QuestionList(
         items=[_question(record) for record in records],
         next_cursor=_next_question_cursor(records, has_more),
         total=await queries.questions_total(
-            recruiter_id=recruiter_id, department=department, answered=answered
+            recruiter_id=recruiter_id,
+            department=department,
+            answered=answered,
+            assignee=mine,
+            unassigned=unassigned,
         ),
     )
 
@@ -292,6 +306,48 @@ async def resolve_question(
         answered=True,
         resolved_at=resolution.resolved_at,
         resolved_by=resolution.resolved_by,
+    )
+
+
+@router.patch(
+    "/questions/{question_id}/assignee",
+    response_model=AssignedQuestion,
+)
+async def assign_question(
+    request: Request,
+    principal: Admin,
+    question_id: int,
+    body: AssignQuestion,
+) -> AssignedQuestion:
+    """Name an owner for an open question, or clear one with `{"assignee": null}`.
+
+    Any role that may answer a question may also claim it: the queue is shared, and picking a card
+    up is not a privilege. HR keeps the ability to reassign somebody else's card, which is what
+    "the recruiter is on holiday" needs.
+    """
+    container = request.app.state.container
+    assigner = QuestionAssigner(container.database, container.clock)
+    try:
+        assignment = await assigner.assign(
+            question_id,
+            assignee=body.assignee or None,
+            actor=principal.subject,
+            known=container.settings.admin_subjects,
+            recruiter_id=_scope(principal),
+            department=_department(principal),
+        )
+    except UnknownAssigneeError:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "assignee is not an admin"
+        ) from None
+    except QuestionNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "question not found") from None
+    except QuestionAlreadyResolvedError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "question already resolved") from None
+    return AssignedQuestion(
+        id=assignment.question_id,
+        employee_id=assignment.employee_id,
+        assignee=assignment.assignee,
     )
 
 
@@ -419,6 +475,7 @@ def _question(record: QuestionRecord) -> Question:
         asked_at=record.asked_at,
         resolved_at=record.resolved_at,
         resolved_by=record.resolved_by,
+        assignee=record.assignee,
     )
 
 

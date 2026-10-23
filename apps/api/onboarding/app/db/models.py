@@ -173,10 +173,13 @@ class QuestionRow(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_by: Mapped[str | None] = mapped_column(String(200))
     resolution: Mapped[str | None] = mapped_column(Text)
+    # Who picked this up. Null means nobody has; the queue is shared, the work is not.
+    assignee: Mapped[str | None] = mapped_column(String(200))
 
     __table_args__ = (
         Index("questions_asked_idx", "asked_at"),
         Index("questions_answered_idx", "answered", "asked_at"),
+        Index("questions_assignee_idx", "assignee", "answered", "asked_at"),
     )
 
 

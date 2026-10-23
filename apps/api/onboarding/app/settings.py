@@ -280,6 +280,15 @@ class Settings(BaseSettings):
         return principals
 
     @property
+    def admin_subjects(self) -> frozenset[str]:
+        """Every subject an admin token can present, for validating a question's assignee.
+
+        Assignment names a person, and the only people the server knows are the ones holding a
+        token. Accepting an arbitrary string would let a typo create a queue nobody can filter.
+        """
+        return frozenset(token.subject for token in self.admin_principals.values())
+
+    @property
     def is_llm_configured(self) -> bool:
         if self.llm_provider == "extractive":
             return True

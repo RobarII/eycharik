@@ -3,6 +3,9 @@
 There is no session and no cookie: the cabinet is a separate SPA talking to a JSON API, and every
 request proves itself. Tokens are compared in constant time, may carry an expiry date, and a peer
 that fails repeatedly is throttled before it can walk a dictionary.
+
+The principal's role decides the capability list the cabinet renders from, so the client never has
+to guess what the server will allow.
 """
 
 from __future__ import annotations
@@ -10,17 +13,47 @@ from __future__ import annotations
 import hmac
 import ipaddress
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import Header, HTTPException, Request, status
 
 from onboarding.api.ratelimit import auth_failures
 
+# The single source of truth for what a role may do. The cabinet renders from this list; every
+# endpoint still enforces its own rule, so a forged capability changes nothing but the UI.
+CAPABILITIES: dict[str, tuple[str, ...]] = {
+    "recruiter": (
+        "runs.read",
+        "questions.read",
+        "questions.resolve",
+        "knowledge.read",
+        "analytics.read",
+    ),
+    "manager": (
+        "runs.read",
+        "questions.read",
+        "questions.resolve",
+        "knowledge.read",
+        "analytics.read",
+    ),
+    "hr_admin": (
+        "runs.read",
+        "questions.read",
+        "questions.resolve",
+        "knowledge.read",
+        "knowledge.write",
+        "employees.offboard",
+        "analytics.read",
+    ),
+}
+
 
 @dataclass(frozen=True, slots=True)
 class AdminPrincipal:
     role: str
     subject: str
+    expires_at: datetime | None = None
 
     @property
     def is_hr(self) -> bool:
@@ -30,6 +63,11 @@ class AdminPrincipal:
     def is_manager(self) -> bool:
         """A department head sees one department and nothing else."""
         return self.role == "manager"
+
+    @property
+    def capabilities(self) -> tuple[str, ...]:
+        """An unknown role gets no capabilities: the default is closed, not open."""
+        return CAPABILITIES.get(self.role, ())
 
 
 def _peer(request: Request) -> str:
@@ -74,7 +112,9 @@ async def current_admin(
                 auth_failures.fail(peer)
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token expired")
             auth_failures.succeed(peer)
-            return AdminPrincipal(role=spec.role, subject=spec.subject)
+            return AdminPrincipal(
+                role=spec.role, subject=spec.subject, expires_at=spec.expires_at
+            )
     auth_failures.fail(peer)
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "unknown token")
 

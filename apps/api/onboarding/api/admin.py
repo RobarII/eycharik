@@ -26,6 +26,8 @@ from fastapi import (
 
 from onboarding.api.auth import AdminPrincipal, current_admin
 from onboarding.api.schemas import (
+    AdminIdentity,
+    AdminScope,
     AnalyticsOverview,
     AuditEvent,
     DigestItem,
@@ -82,6 +84,25 @@ def _scope(principal: AdminPrincipal) -> str | None:
 
 def _department(principal: AdminPrincipal) -> str | None:
     return principal.subject if principal.is_manager else None
+
+
+@router.get("/me", response_model=AdminIdentity)
+async def whoami(principal: Admin) -> AdminIdentity:
+    """Who the caller is and what the cabinet may offer them.
+
+    The cabinet renders buttons from ``capabilities`` instead of guessing from an opaque token, and
+    a capability the server does not grant never becomes a button that fails with 403.
+    """
+    return AdminIdentity(
+        role=principal.role,
+        subject=principal.subject,
+        scope=AdminScope(
+            recruiter_id=_scope(principal),
+            department=_department(principal),
+        ),
+        capabilities=list(principal.capabilities),
+        expires_at=principal.expires_at,
+    )
 
 
 @router.get("/runs", response_model=RunList)

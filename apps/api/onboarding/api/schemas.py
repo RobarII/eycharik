@@ -8,6 +8,27 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
+class AdminScope(BaseModel):
+    """The rows the caller may see. ``None`` means "not narrowed by this dimension"."""
+
+    model_config = ConfigDict(frozen=True)
+
+    recruiter_id: str | None
+    department: str | None
+
+
+class AdminIdentity(BaseModel):
+    """Who the caller is and what the cabinet may offer them."""
+
+    model_config = ConfigDict(frozen=True)
+
+    role: str
+    subject: str
+    scope: AdminScope
+    capabilities: list[str]
+    expires_at: datetime | None
+
+
 class RunSummary(BaseModel):
     model_config = ConfigDict(frozen=True)
 

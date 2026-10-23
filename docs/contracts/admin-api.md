@@ -30,6 +30,7 @@ recruiter's employee is not disclosed.
 
 | Method | Path | Purpose |
 |---|---|---|
+| `GET` | `/admin/api/me` | the caller's role, scope, capabilities and token expiry |
 | `GET` | `/admin/api/runs?limit=50` | active and completed runs, newest activity first |
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
@@ -46,6 +47,43 @@ recruiter's employee is not disclosed.
 `limit` is bounded to `1..200`. There is no cursor pagination yet: the cabinet asks for the newest
 50 and the dataset is one cohort of hires. If a cohort outgrows that, add a cursor before raising
 the cap.
+
+## Identity and capabilities
+
+`GET /admin/api/me` answers the same principal the token maps to:
+
+```json
+{
+  "role": "recruiter",
+  "subject": "rec-1",
+  "scope": { "recruiter_id": "rec-1", "department": null },
+  "capabilities": [
+    "runs.read",
+    "questions.read",
+    "questions.resolve",
+    "knowledge.read",
+    "analytics.read"
+  ],
+  "expires_at": "2030-12-31T00:00:00Z"
+}
+```
+
+The cabinet renders actions from `capabilities`, not from a guess about the token. A capability the
+server does not grant must never become a button that fails with `403`.
+
+| Capability | `recruiter` | `manager` | `hr_admin` |
+|---|---|---|---|
+| `runs.read` | yes | yes | yes |
+| `questions.read` | yes | yes | yes |
+| `questions.resolve` | yes | yes | yes |
+| `knowledge.read` | yes | yes | yes |
+| `analytics.read` | yes | yes | yes |
+| `knowledge.write` | no | no | yes |
+| `employees.offboard` | no | no | yes |
+
+A capability is a rendering hint, never an authorisation. Every endpoint re-checks its own rule, so
+a forged capability changes the buttons and nothing else. `expires_at` is `null` only when the token
+entry omits the date field, which is allowed for a local demo and not for a deployment.
 
 ## Shapes
 

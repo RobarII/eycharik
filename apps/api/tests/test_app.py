@@ -163,3 +163,62 @@ def test_webhook_limits_a_streamed_body() -> None:
         )
 
     assert response.status_code == 413
+
+
+def test_me_describes_the_recruiter_scope_and_capabilities() -> None:
+    app = create_app(
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="rec:recruiter:rec-1",
+            max_webhook_secret="secret",
+        )
+    )
+    with TestClient(app) as http:
+        response = http.get("/admin/api/me", headers={"Authorization": "Bearer rec"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["role"] == "recruiter"
+    assert body["scope"] == {"recruiter_id": "rec-1", "department": None}
+    assert body["expires_at"] is None
+    assert "questions.resolve" in body["capabilities"]
+    assert "knowledge.write" not in body["capabilities"]
+    assert "employees.offboard" not in body["capabilities"]
+
+
+def test_me_scopes_a_manager_by_department_and_grants_no_writes() -> None:
+    app = create_app(
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="mgr:manager:ИТ",
+            max_webhook_secret="secret",
+        )
+    )
+    with TestClient(app) as http:
+        body = http.get("/admin/api/me", headers={"Authorization": "Bearer mgr"}).json()
+
+    assert body["scope"] == {"recruiter_id": None, "department": "ИТ"}
+    assert "knowledge.write" not in body["capabilities"]
+
+
+def test_me_reports_the_full_hr_capability_set_and_expiry() -> None:
+    app = create_app(
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="hr:hr_admin:hr-1:2030-12-31",
+            max_webhook_secret="secret",
+        )
+    )
+    with TestClient(app) as http:
+        response = http.get("/admin/api/me", headers={"Authorization": "Bearer hr"})
+
+    body = response.json()
+    assert body["role"] == "hr_admin"
+    assert body["scope"] == {"recruiter_id": None, "department": None}
+    assert set(body["capabilities"]) >= {"knowledge.write", "employees.offboard"}
+    assert body["expires_at"].startswith("2031-01-01T00:00:00")
+
+
+def test_me_requires_a_token() -> None:
+    with client() as http:
+        assert http.get("/admin/api/me").status_code == 401

@@ -12,6 +12,9 @@ npm run dev          # :5173, proxies /admin/api to http://localhost:8000
 npm run preview:demo # :5173, dev-only API with the documented cohort, no database
 npm run typecheck    # tsc -b --noEmit
 npm run build        # tsc -b + vite build
+npm run lint         # eslint, including jsx-a11y
+npm run test         # vitest, jsdom
+npm run e2e          # playwright against preview:demo, plus axe on every screen
 ```
 
 `npm run dev` is the real frontend: it needs the API and its PostgreSQL. `npm run preview:demo` is a

@@ -1,5 +1,5 @@
 import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, type ComponentType, type SVGProps } from "react";
+import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from "react";
 
 import { Unauthorized, closeSession, fetchMe, fetchOverview, openSession } from "./api";
 import {
@@ -53,10 +53,12 @@ export function App() {
   const queryClient = useQueryClient();
   const { route, navigate } = useRoute();
   const fetching = useIsFetching();
+  // A new epoch is a new identity: it retires the cached one so the shell cannot outlive a logout.
+  const [epoch, setEpoch] = useState(0);
 
   // The cookie is the session; this query only discovers who it belongs to.
   const me = useQuery({
-    queryKey: ["me"],
+    queryKey: ["me", epoch],
     queryFn: fetchMe,
     retry: (count, error) => !(error instanceof Unauthorized) && count < 2,
     staleTime: 5 * 60_000,
@@ -77,16 +79,19 @@ export function App() {
     await closeSession().catch(() => undefined);
     queryClient.clear();
     window.location.hash = "";
+    // `clear()` drops the data but the observer of the old key keeps its last result; a new key
+    // makes it ask again, and the answer is now 401.
+    setEpoch((value) => value + 1);
   }, [queryClient]);
 
   const login = useCallback(
     async (token: string) => {
       await openSession(token);
       try {
-        const identity = await fetchMe();
-        // Everything the previous person loaded is stale: keep the identity, drop the rest.
-        queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
-        queryClient.setQueryData(["me"], identity);
+        // Fail before the shell opens, so a bad token never renders an empty cabinet.
+        await fetchMe();
+        queryClient.clear();
+        setEpoch((value) => value + 1);
       } catch (failure) {
         await closeSession().catch(() => undefined);
         throw failure;

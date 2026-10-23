@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval eval-retrieval eval-ocr eval-sentiment run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check
+.PHONY: install check lint types test eval eval-retrieval eval-ocr eval-sentiment run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e
 
 install:
 	uv sync
@@ -87,3 +87,6 @@ admin-check:
 	cd apps/admin && npm run lint
 	cd apps/admin && npm run typecheck
 	cd apps/admin && npm run test
+
+admin-e2e:
+	cd apps/admin && npm run e2e

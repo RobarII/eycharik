@@ -19,7 +19,10 @@ knowledge document schema, the preview mode, and the known limits.
 4. Timestamps arrive as UTC ISO strings and are formatted for the reader, never recomputed.
 5. A question always shows whose it is. A queue without names is a queue nobody works.
 6. Accessibility is not decoration: real buttons, labels, `aria-live` counts, focus rings,
-   reduced-motion support.
+   reduced-motion support. `npm run e2e` runs axe on every screen; a `critical` or `serious`
+   violation fails it.
+7. A contrast fix is not a taste fix: small text needs 4.5:1, and `prefers-reduced-motion` must
+   turn animations off, not just shorten them.
 
 ## Commands
 
@@ -31,6 +34,7 @@ npm run build        # tsc -b + vite build
 npm run typecheck
 npm run lint         # eslint: typescript, hooks, jsx-a11y
 npm run test         # vitest: routing, lists, write flows, format
+npm run e2e          # playwright + axe against the demo API (make admin-e2e)
 ```
 
 ## API

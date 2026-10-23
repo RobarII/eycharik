@@ -30,3 +30,7 @@ work/
 
 # TypeScript incremental build info
 apps/admin/tsconfig.tsbuildinfo
+
+# Playwright artefacts
+apps/admin/test-results/
+apps/admin/playwright-report/

@@ -5,9 +5,12 @@
 - `make check` is green. `make eval-retrieval` is green; `make eval` is green if a provider is
   reachable.
 - Every schema change has a migration under `apps/api/onboarding/migrations/versions/`.
-- These are set in the environment, never baked into the image: `DATABASE_URL`, `MAX_BOT_TOKEN`,
-  `MAX_WEBHOOK_SECRET`, `LLM_API_KEY`, `ADMIN_TOKENS`, `DATA_RETENTION_DAYS`, and `MAX_CA_BUNDLE`
-  when the Mincifry CA is not in the system store.
+- These are set in the environment, never baked into the image: `DATABASE_URL`, `CHANNELS`,
+  `MAX_BOT_TOKEN`, `MAX_WEBHOOK_SECRET`, `LLM_API_KEY`, `ADMIN_TOKENS`, `DATA_RETENTION_DAYS`, and
+  `MAX_CA_BUNDLE` when the Mincifry CA is not in the system store.
+- `CHANNELS` defaults to `max`. Any other value needs its own credentials and a linked account; see
+  `docs/runbooks/channels.md`. An unknown channel name fails at startup rather than at the first
+  message.
 - The public hostname terminates TLS on port 443. MAX rejects anything else.
 
 ## Steps
@@ -43,7 +46,8 @@
    ```
 
    Re-running replaces the subscription for this bot. Tunnels change hostnames; re-register after
-   every tunnel restart.
+   every tunnel restart. Telegram and VK register their webhooks their own way; the same runbook
+   covers both.
 
 6. Send `/start` from a test account. Expect: an `events` row, a `jobs` row that reaches `done`, an
    outbox row that reaches `sent`, and one welcome message in MAX.

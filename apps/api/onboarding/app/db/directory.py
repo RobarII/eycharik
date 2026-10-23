@@ -53,9 +53,14 @@ class SqlDirectory:
             )
         return EmployeeId(employee_id) if employee_id is not None else None
 
-    async def link(self, channel: Channel, external_id: str, employee_id: EmployeeId) -> None:
+    async def link(self, channel: Channel, external_id: str, employee_id: EmployeeId) -> bool:
         """Bind an account to an employee. Re-linking the same pair is a no-op."""
         async with self._database.session() as session:
+            known = await session.scalar(
+                select(EmployeeRow.id).where(EmployeeRow.id == str(employee_id))
+            )
+            if known is None:
+                return False
             await session.execute(
                 insert(ChannelIdentityRow)
                 .values(
@@ -68,3 +73,4 @@ class SqlDirectory:
                     set_={"employee_id": str(employee_id)},
                 )
             )
+        return True

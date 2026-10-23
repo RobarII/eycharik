@@ -278,8 +278,8 @@ class Directory(Protocol):
         """The employee behind one messenger account, or ``None`` when the account is unlinked."""
         ...
 
-    async def link(self, channel: Channel, external_id: str, employee_id: EmployeeId) -> None:
-        """Bind a messenger account to an employee. Idempotent; one account, one employee."""
+    async def link(self, channel: Channel, external_id: str, employee_id: EmployeeId) -> bool:
+        """Bind a messenger account to an employee. Idempotent; ``False`` for an unknown person."""
         ...
 
 

@@ -53,6 +53,7 @@ cookie exists at all.
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50&cursor=` | questions by status: `unanswered`, `answered`, `all`, paged |
 | `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
+| `POST` | `/admin/api/identities` | HR links one messenger account (channel + external id) to an employee; nothing else lets a stranger in |
 | `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
@@ -215,8 +216,21 @@ The counts cover the window that starts at `since` and come from the audit log, 
 materialised table. `unanswered_questions` is a live queue size; `resolved_questions` counts replies
 a recruiter sent inside the window. A wrong number must be traceable to events.
 
+`POST /admin/api/identities` is HR-only and idempotent. The body is one link:
+
+```json
+{"channel": "telegram", "external_id": "222", "employee_id": "1001"}
+```
+
+`channel` is one of `max`, `telegram`, `vk`; `external_id` is the messenger's own user id, which is
+what the inbound adapter reads. An unknown employee answers `404`; a known pair answers `204` and
+rebinding the account to another employee replaces the link. This route exists because the access
+gate is a company fact: an unlinked account is acknowledged by the webhook and audited as
+`unlinked_channel_user`, and receives nothing (ADR 0019).
+
 `DELETE /admin/api/employees/{employee_id}` is HR-only; a recruiter or manager answers `403`. It
-marks the employee `left`, completes their active runs, deletes their question rows, deletes every
+marks the employee `left`, completes their active runs, deletes their channel identity links, deletes
+their question rows, deletes every
 outbox message for their chat (pending reminders and replies included), and strips the employee's
 own words from their audit rows. The employee row and the audit skeleton stay so counts remain
 traceable. A repeated call answers `200` with zero counts. The response is:

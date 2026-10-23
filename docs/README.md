@@ -57,6 +57,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | What metrics exist and what should alert? | [runbooks/observability.md](runbooks/observability.md) |
 | The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
 | Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
+| How do I turn on Telegram or VK? | [runbooks/channels.md](runbooks/channels.md) |
 | How is answer quality measured? | [evals/README.md](evals/README.md) |
 | How is the risk radar scored, and what does a label mean? | [evals/sentiment-guide.md](evals/sentiment-guide.md) |
 | How is the retrieval corpus built, and what can it prove? | [evals/corpus-design.md](evals/corpus-design.md) |

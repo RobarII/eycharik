@@ -15,7 +15,14 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 
 from onboarding.app.admin.queries import employee_scope_filters
-from onboarding.app.db.models import AuditRow, EmployeeRow, MessageRow, QuestionRow, RunRow
+from onboarding.app.db.models import (
+    AuditRow,
+    ChannelIdentityRow,
+    EmployeeRow,
+    MessageRow,
+    QuestionRow,
+    RunRow,
+)
 from onboarding.app.db.session import Database
 from onboarding.core.models import Address, Channel, ChatId
 from onboarding.core.retention import redact_fields
@@ -171,6 +178,10 @@ class EmployeeOffboarder:
                     )
                 )
             }
+            # A left employee keeps no way back in: the messenger accounts go with the transcript.
+            await session.execute(
+                delete(ChannelIdentityRow).where(ChannelIdentityRow.employee_id == employee_id)
+            )
             deleted = await session.execute(
                 delete(QuestionRow).where(QuestionRow.employee_id == employee_id)
             )

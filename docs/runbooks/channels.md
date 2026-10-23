@@ -1,0 +1,82 @@
+# Runbook: enable a channel
+
+MAX is on by default. Telegram and VK are off until the environment says otherwise, because a
+channel without a secret and a linked account is an open door (ADR 0019). This runbook turns one on
+and proves it works.
+
+## Preconditions
+
+- `make check` is green and the migrations are applied: `channel_identities` exists and every
+  employee has a MAX link.
+- `apps/api/channel-profiles/<channel>.yaml` validates against
+  `docs/contracts/channel-profile.schema.json`. `make check` covers this.
+- You have the bot token and the webhook secret for the messenger, and the public hostname from
+  `docs/runbooks/deploy.md`.
+
+## Steps
+
+1. Set the environment and restart both processes:
+
+   ```bash
+   CHANNELS=max,telegram        # the enabled set; an unknown name fails at startup
+   TELEGRAM_BOT_TOKEN=...       # never in git
+   TELEGRAM_WEBHOOK_SECRET=...  # the value Telegram echoes in X-Telegram-Bot-Api-Secret-Token
+   ```
+
+   For VK: `CHANNELS=max,vk`, `VK_ACCESS_TOKEN`, `VK_WEBHOOK_SECRET`, `VK_CONFIRMATION_CODE`. VK
+   needs all three; a missing confirmation code leaves the channel unconfigured and its webhook
+   answers `503`.
+
+2. Link the test account to an employee. Nothing else lets a stranger in:
+
+   ```bash
+   curl -X POST https://$HOST/admin/api/identities \
+     -H "Authorization: Bearer $HR_TOKEN" -H "content-type: application/json" \
+     -d '{"channel": "telegram", "external_id": "222", "employee_id": "1001"}'
+   ```
+
+   `external_id` is the messenger's own user id: `from.id` in Telegram, `from_id`/`user_id` in VK.
+   It is not the chat id, and it is not the employee id.
+
+3. Register the webhook.
+
+   Telegram:
+
+   ```bash
+   curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+     -d "url=https://$HOST/webhook/telegram" \
+     -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+   ```
+
+   VK: in the community settings, set the callback URL to `https://$HOST/webhook/vk`, paste the
+   secret, and set the confirmation code to the same value as `VK_CONFIRMATION_CODE`. VK calls the
+   URL with `{"type": "confirmation"}` and expects the code back as plain text; the route answers it
+   before it parses anything.
+
+4. Send `/start` from the linked account. Expect: an `events` row keyed `<channel>:<id>`, a `jobs`
+   row that reaches `done`, a queued message whose `channel` column is the new channel, and one
+   welcome message in the messenger.
+
+5. Send `/start` from an unlinked account. Expect `200`, no run, no message, and one audit row:
+
+   ```sql
+   select name, fields from audit_log where name = 'unlinked_channel_user' order by id desc limit 5;
+   ```
+
+## Verification queries
+
+```sql
+select channel, count(*) from messages group by channel;
+select channel, count(*) from runs group by channel;
+select channel, count(*) from channel_identities group by channel;
+```
+
+A message stuck in `pending` for one channel while others deliver means that channel's token or
+rate limit, not the dispatcher: the dispatcher leases rows per channel and one failing channel does
+not block the rest.
+
+## Rolling back
+
+Remove the channel from `CHANNELS` and restart. Its inbound route answers `404`, its queued rows stay
+in `messages` untouched, and nothing is deleted. Rows for that channel resume when it is enabled
+again.

@@ -129,7 +129,7 @@ async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
         report = await ingest(
             directory=args.dir or settings.knowledge_dir,
             schema_path=settings.contracts_dir / "doc.schema.json",
-            writer=PostgresKnowledgeWriter(container.database),
+            writer=PostgresKnowledgeWriter(container.database, container.embedder),
             embedder=container.embedder,
             max_chars=args.max_chars,
             overlap_chars=args.overlap_chars,

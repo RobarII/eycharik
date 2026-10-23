@@ -24,6 +24,11 @@ class HashingEmbedder:
     def dim(self) -> int:
         return self._dim
 
+    @property
+    def fingerprint(self) -> str:
+        """Identity of the vectors this embedder produces. A change requires a reindex."""
+        return f"hashing:{self._dim}"
+
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         return tuple(self._embed(text) for text in texts)
 

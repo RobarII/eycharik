@@ -195,6 +195,25 @@ class AuditRow(Base):
     __table_args__ = (Index("audit_name_at_idx", "name", "at"),)
 
 
+class IndexStateRow(Base):
+    """Which embedder built the vector index. One row, id ``active``.
+
+    A model swap without a reindex is silent corruption: the vectors are still 1024 wide, so every
+    query succeeds and every answer is wrong. Recording the identity turns that into a startup-time
+    failure with a sentence a human can act on.
+    """
+
+    __tablename__ = "kb_index_state"
+
+    id: Mapped[str] = mapped_column(String(16), primary_key=True)
+    embedder: Mapped[str] = mapped_column(String(120))
+    dim: Mapped[int] = mapped_column(Integer)
+    chunks: Mapped[int] = mapped_column(Integer, server_default=sql_text("0"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class DocumentRow(Base):
     __tablename__ = "kb_documents"
 

@@ -13,7 +13,7 @@ from sqlalchemy import ColumnElement, Select, Text, cast, delete, func, select, 
 from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from onboarding.app.db.models import EMBEDDING_DIM, ChunkRow, DocumentRow
+from onboarding.app.db.models import EMBEDDING_DIM, ChunkRow, DocumentRow, IndexStateRow
 from onboarding.app.db.session import Database
 from onboarding.core.models import Chunk, ChunkId, DocId, ScoredChunk
 from onboarding.core.ranking import reciprocal_rank_fusion
@@ -45,6 +45,7 @@ class PostgresKnowledgeBase:
         # until a measurement on a larger corpus says otherwise.
         self._bm25_enabled = bm25
         self._bm25_available: bool | None = None
+        self._index_checked = False
 
     async def search(self, query: SearchQuery) -> tuple[ScoredChunk, ...]:
         if not query.text.strip():
@@ -54,6 +55,7 @@ class PostgresKnowledgeBase:
         except Exception as error:
             raise KnowledgeUnavailableError(f"embedding failed: {error}") from error
         async with self._database.session() as session:
+            await self._check_index(session)
             if self._bm25_enabled and self._bm25_available is None:
                 self._bm25_available = await _has_bm25(session)
                 if not self._bm25_available:
@@ -81,9 +83,32 @@ class PostgresKnowledgeBase:
         )
 
 
+    async def _check_index(self, session: AsyncSession) -> None:
+        """Refuse to search vectors that another model produced.
+
+        The first search pays for one row read; later searches on the same instance are free. A
+        table without a row is a pre-0012 index and is accepted as-is, because failing there would
+        break every existing deployment on upgrade.
+        """
+        if self._index_checked:
+            return
+        self._index_checked = True
+        state = await session.get(IndexStateRow, "active")
+        if state is None:
+            return
+        current = getattr(self._embedder, "fingerprint", "")
+        if current and state.embedder != current:
+            raise KnowledgeUnavailableError(
+                f"knowledge index was built with {state.embedder!r}, this process embeds with "
+                f"{current!r}; reindex before serving answers"
+            )
+
+
 class PostgresKnowledgeWriter:
-    def __init__(self, database: Database) -> None:
+    def __init__(self, database: Database, embedder: object | None = None) -> None:
         self._database = database
+        self._fingerprint = getattr(embedder, "fingerprint", "")
+        self._dim = getattr(embedder, "dim", 0)
 
     async def replace_document(
         self,
@@ -121,6 +146,15 @@ class PostgresKnowledgeWriter:
                     },
                 )
             )
+            if self._fingerprint:
+                await session.execute(
+                    insert(IndexStateRow)
+                    .values(id="active", embedder=self._fingerprint, dim=self._dim, chunks=0)
+                    .on_conflict_do_update(
+                        index_elements=[IndexStateRow.id],
+                        set_={"embedder": self._fingerprint, "dim": self._dim},
+                    )
+                )
             await session.execute(delete(ChunkRow).where(ChunkRow.doc_id == str(record.id)))
             for chunk, embedding in zip(chunks, embeddings, strict=True):
                 await session.execute(

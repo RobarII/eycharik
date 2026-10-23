@@ -20,6 +20,8 @@ from onboarding.app.llm.profiles import rerank_profile
 from onboarding.app.settings import Settings
 from onboarding.ports import RerankUnavailableError
 
+_BACKOFF = (2.0, 6.0)
+
 MAX_DOCUMENTS = 100
 
 
@@ -45,9 +47,12 @@ class RemoteReranker:
         self, query: str, documents: Sequence[str], top_n: int
     ) -> httpx.Response:
         last = "no attempt"
-        for attempt in range(2):
+        # The free endpoint answers 429 in bursts; a single 0.2 s retry never clears one. Three
+        # spaced attempts turn a burst into a slow rerank instead of a silent fallback to the
+        # fused order, which is what an eval would then measure by accident.
+        for attempt in range(3):
             if attempt:
-                await asyncio.sleep(0.2)
+                await asyncio.sleep(_BACKOFF[attempt - 1])
             try:
                 response = await self.client.post(
                     f"{self.base_url.rstrip('/')}/rerank",

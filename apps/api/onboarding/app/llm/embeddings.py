@@ -18,6 +18,8 @@ from onboarding.app.llm.providers import GigaChatProvider
 from onboarding.app.settings import Settings
 from onboarding.ports import KnowledgeUnavailableError
 
+_BACKOFF = (0.5, 1.5, 3.0, 6.0, 10.0)
+
 
 class RemoteEmbedder:
     def __init__(
@@ -42,6 +44,11 @@ class RemoteEmbedder:
     @property
     def dim(self) -> int:
         return self._dim
+
+    @property
+    def fingerprint(self) -> str:
+        """Model and width together: two models with the same width still produce two spaces."""
+        return f"{self._model}@{self._dim}"
 
     async def embed(self, texts: Sequence[str]) -> tuple[tuple[float, ...], ...]:
         if not texts:
@@ -69,11 +76,15 @@ class RemoteEmbedder:
         return body
 
     async def _post_with_retry(self, texts: list[str]) -> httpx.Response:
-        """Cheap gateways answer 429/503 under load; two retries turn an outage into a delay."""
+        """Gateways answer 429/503 under load; retries with a growing pause cover a cold shard.
+
+        The pause used to be 0.2/0.4 s, shorter than a provider's own failover; a reindex or an eval
+        run that dies on one 503 wastes far more than a few seconds of waiting.
+        """
         last = "no attempt"
-        for attempt in range(3):
+        for attempt in range(6):
             if attempt:
-                await asyncio.sleep(0.2 * attempt)
+                await asyncio.sleep(_BACKOFF[attempt - 1])
             try:
                 response = await self._client.post(
                     self._endpoint,

@@ -74,6 +74,7 @@ export function RunDetailPage({
                     void queryClient.invalidateQueries({ queryKey: ["questions"] });
                   }}
                   onUnauthorized={onUnauthorized}
+                  onBack={onBack}
                 />
               ) : null}
             </div>
@@ -198,11 +199,13 @@ function OffboardButton({
   name,
   onDone,
   onUnauthorized,
+  onBack,
 }: {
   employeeId: string;
   name: string;
   onDone: () => void;
   onUnauthorized: () => void;
+  onBack: () => void;
 }) {
   const [armed, setArmed] = useState(false);
   const mutation = useMutation({
@@ -213,11 +216,17 @@ function OffboardButton({
   useUnauthorized(mutation.error, onUnauthorized);
 
   if (mutation.isSuccess) {
+    const { questions_deleted: questions, messages_deleted: messages } = mutation.data;
     return (
-      <p className="note note-ok" role="status">
-        {name} офборджен: удалено {countLabel(mutation.data.questions_deleted, "вопрос", "вопроса", "вопросов")}
-        , {countLabel(mutation.data.messages_deleted, "сообщение", "сообщения", "сообщений")}.
-      </p>
+      <div className="note note-ok" role="status">
+        <p>
+          {name} офборджен: удалено {countLabel(questions, "вопрос", "вопроса", "вопросов")},{" "}
+          {countLabel(messages, "сообщение", "сообщения", "сообщений")}.
+        </p>
+        <button type="button" className="link-button" onClick={onBack}>
+          К списку сотрудников
+        </button>
+      </div>
     );
   }
 

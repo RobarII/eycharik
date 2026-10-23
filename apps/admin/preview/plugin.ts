@@ -154,6 +154,21 @@ async function handle(
     return;
   }
 
+  if (request.method === "DELETE" && path.startsWith("/admin/api/employees/")) {
+    if (role !== "hr_admin") {
+      send(response, 403, { detail: "only hr_admin may offboard an employee" });
+      return;
+    }
+    send(response, 200, {
+      employee_id: decodeURIComponent(path.slice("/admin/api/employees/".length)),
+      questions_deleted: 2,
+      messages_deleted: 14,
+      runs_closed: 1,
+      audit_redacted: 6,
+    });
+    return;
+  }
+
   if (request.method === "POST" && path === "/admin/api/knowledge/files") {
     if (role !== "hr_admin") {
       send(response, 403, { detail: "only hr_admin may change the knowledge base" });

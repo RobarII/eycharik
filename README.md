@@ -50,6 +50,8 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 - **MAX webhook**: secret check, `events` dedupe, durable job enqueue, `200` in milliseconds.
 - **Scenario engine**: versioned YAML pinned per run, buttons, reminders, surveys with 10-point
   scales, escalation on timeout. Twenty steps from the welcome message to the end of probation.
+  The employee row picks the branch, so the plant variant (`onboarding_plant`) is live, not dead
+  content: its own transport copy and no remote-work question.
 - **Retrieval**: frontmatter/JSON Schema corpus, deterministic chunking, pgvector HNSW + Russian
   `tsvector`, RRF, hosted rerank, audience and validity as SQL predicates. Every answer carries a
   citation from the retrieved set or escalates.
@@ -71,6 +73,8 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 | Golden set, 16 cases, real model | recall@5 1.00, MRR 1.00, citation 1.00, escalation 1.00, p95 2 237 ms, 0.077 ₽/answer | `docs/measurements/2026-10-23-eval-full-case-corpus.md` |
 | Retrieval with rerank, 12 cases | recall@5 1.00, MRR 1.00 | `docs/measurements/2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md` |
 | Tests | 300+ unit and integration tests; `core/` purity enforced by a test | `apps/api/tests/` |
+
+![Run detail](docs/assets/cabinet-run.png)
 
 ![Run list](docs/assets/cabinet-runs.png)
 

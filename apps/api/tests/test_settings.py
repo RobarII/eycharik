@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -12,10 +14,11 @@ def test_admin_principals_parse_role_and_subject() -> None:
         admin_tokens_raw="alpha:recruiter:rec-1,beta:hr_admin:hr-1",
     )
 
-    assert settings.admin_principals == {
-        "alpha": ("recruiter", "rec-1"),
-        "beta": ("hr_admin", "hr-1"),
-    }
+    assert set(settings.admin_principals) == {"alpha", "beta"}
+    assert settings.admin_principals["alpha"].role == "recruiter"
+    assert settings.admin_principals["alpha"].subject == "rec-1"
+    assert settings.admin_principals["beta"].role == "hr_admin"
+    assert settings.admin_principals["beta"].expires_at is None
 
 
 @pytest.mark.parametrize(
@@ -87,3 +90,41 @@ def test_production_rejects_hashing_embeddings() -> None:
 def test_jev_without_a_key_is_refused_at_startup() -> None:
     with pytest.raises(ValidationError, match="JEV_API_KEY"):
         Settings(_env_file=None, sentiment_provider="jev")
+
+
+def test_manager_token_is_supported() -> None:
+    principals = Settings(
+        _env_file=None, admin_tokens_raw="m-token:manager:ИТ"
+    ).admin_principals
+
+    assert principals["m-token"].role == "manager"
+    assert principals["m-token"].subject == "ИТ"
+    assert principals["m-token"].expires_at is None
+
+
+def test_token_expiry_is_the_day_after_the_last_valid_day() -> None:
+    principals = Settings(
+        _env_file=None, admin_tokens_raw="t:recruiter:rec-1:2030-12-31"
+    ).admin_principals
+
+    assert principals["t"].expires_at == datetime(2031, 1, 1, tzinfo=UTC)
+
+
+def test_bad_token_expiry_is_refused() -> None:
+    with pytest.raises(ValueError, match="ISO date"):
+        _ = Settings(
+            _env_file=None, admin_tokens_raw="t:recruiter:rec-1:31.12.2030"
+        ).admin_principals
+
+
+def test_duplicate_tokens_are_refused() -> None:
+    with pytest.raises(ValueError, match="duplicate"):
+        _ = Settings(
+            _env_file=None,
+            admin_tokens_raw="t:recruiter:rec-1,t:hr_admin:hr-1",
+        ).admin_principals
+
+
+def test_retention_window_must_be_positive() -> None:
+    with pytest.raises(ValidationError, match="DATA_RETENTION_DAYS"):
+        Settings(_env_file=None, data_retention_days=0)

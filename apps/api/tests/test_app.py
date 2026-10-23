@@ -80,3 +80,38 @@ def test_unknown_paths_do_not_become_metric_labels() -> None:
         http.get("/metrics")
 
     assert 'route="unmatched"' in http.get("/metrics").text
+
+
+def expired_client() -> TestClient:
+    app = create_app(
+        Settings(
+            _env_file=None,
+            admin_tokens_raw="old:hr_admin:hr-1:2020-01-01",
+            max_webhook_secret="secret",
+        )
+    )
+    return TestClient(app)
+
+
+def test_expired_admin_token_is_rejected() -> None:
+    with expired_client() as http:
+        response = http.get(
+            "/admin/api/runs", headers={"Authorization": "Bearer old"}
+        )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "token expired"
+
+
+def test_repeated_bad_tokens_are_throttled() -> None:
+    with client() as http:
+        for _ in range(10):
+            assert (
+                http.get("/admin/api/runs", headers={"Authorization": "Bearer nope"}).status_code
+                == 401
+            )
+        blocked = http.get(
+            "/admin/api/runs", headers={"Authorization": "Bearer nope"}
+        )
+
+    assert blocked.status_code == 429

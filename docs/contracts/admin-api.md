@@ -5,11 +5,15 @@ The recruiter cabinet reads this API. The bot never calls it.
 ## Authentication
 
 `Authorization: Bearer <token>`. Tokens are configured in `ADMIN_TOKENS` as
-`token:role:subject` entries:
+`token:role:subject[:YYYY-MM-DD]` entries:
 
 ```
-ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
+ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-manager-token:manager:ИТ,dev-hr-token:hr_admin:hr-1:2030-12-31
 ```
+
+The optional fourth field is the last valid day; the token expires at `00:00` UTC of the next day.
+Omitting it is allowed for a local demo, not for a deployment. A token entry with a duplicate token
+or a malformed date refuses to start the process.
 
 | Role | Scope |
 |---|---|
@@ -17,8 +21,9 @@ ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
 | `manager` | employees of one department: the token's subject is the department name |
 | `hr_admin` | every employee and every question |
 
-There is no session and no cookie. Tokens are compared in constant time. An unknown or missing
-token answers `401`; a run outside the caller's scope answers `404`, so the existence of another
+There is no session and no cookie. Tokens are compared in constant time. An unknown, missing or
+expired token answers `401`; ten failed attempts from one peer within a minute answer `429` for the
+next minute. A run outside the caller's scope answers `404`, so the existence of another
 recruiter's employee is not disclosed.
 
 ## Endpoints
@@ -29,6 +34,7 @@ recruiter's employee is not disclosed.
 | `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
 | `GET` | `/admin/api/questions?status=unanswered&limit=50` | questions by status: `unanswered`, `answered`, `all` |
 | `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
+| `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript |
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
 | `GET` | `/admin/api/knowledge` | active knowledge documents, newest first |
@@ -112,13 +118,29 @@ question outside the caller's scope answers `404`; resolving an already closed q
   "high_risk": 2,
   "medium_risk": 5,
   "unanswered_questions": 3,
+  "resolved_questions": 5,
   "top_tags": [{"tag": "access", "count": 4}, {"tag": "manager", "count": 2}],
   "since": "2026-10-16T09:00:00Z"
 }
 ```
 
 The counts cover the window that starts at `since` and come from the audit log, not from a
-materialised table: the cabinet is read-only, and a wrong number must be traceable to events.
+materialised table. `unanswered_questions` is a live queue size; `resolved_questions` counts replies
+a recruiter sent inside the window. A wrong number must be traceable to events.
+
+`DELETE /admin/api/employees/{employee_id}` is HR-only; a recruiter or manager answers `403`. It
+marks the employee `left`, completes their active runs, deletes their question rows, and strips the
+employee's own words from their audit rows. The employee row and the audit skeleton stay so counts
+remain traceable. A repeated call answers `200` with zero counts. The response is:
+
+```json
+{
+  "employee_id": "1001",
+  "questions_deleted": 4,
+  "runs_closed": 1,
+  "audit_redacted": 6
+}
+```
 
 `DigestList`:
 

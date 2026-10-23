@@ -6,6 +6,8 @@ Secrets are ``SecretStr`` so a stray log call prints ``**********`` instead of t
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -13,6 +15,15 @@ from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+
+
+@dataclass(frozen=True, slots=True)
+class AdminToken:
+    """One ``ADMIN_TOKENS`` entry. ``expires_at`` is the first instant the token is invalid."""
+
+    role: str
+    subject: str
+    expires_at: datetime | None
 
 
 class Settings(BaseSettings):
@@ -79,6 +90,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding"
     admin_tokens_raw: str = Field(default="", alias="ADMIN_TOKENS")
     admin_page_size: int = 50
+    data_retention_days: int = 365
 
     prompts_dir: Path = Field(default=REPO_ROOT / "docs" / "prompts")
     model_profiles_dir: Path = Field(default=REPO_ROOT / "apps" / "api" / "model-profiles")
@@ -127,6 +139,8 @@ class Settings(BaseSettings):
             raise ValueError("LLM_EXTRA_HEADERS names must not contain newlines")
         if any(char in value for value in self.llm_extra_headers.values() for char in "\r\n"):
             raise ValueError("LLM_EXTRA_HEADERS values must not contain newlines")
+        if self.data_retention_days < 1:
+            raise ValueError("DATA_RETENTION_DAYS must be at least 1")
 
     def _check_production(self) -> None:
         if self.environment != "production":
@@ -177,24 +191,42 @@ class Settings(BaseSettings):
         return {str(name): str(header) for name, header in value.items()}
 
     @property
-    def admin_principals(self) -> dict[str, tuple[str, str]]:
-        """``ADMIN_TOKENS`` as ``token:role:subject`` entries.
+    def admin_principals(self) -> dict[str, AdminToken]:
+        """``ADMIN_TOKENS`` as ``token:role:subject[:YYYY-MM-DD]`` entries.
 
-        ``subject`` is the recruiter id for ``recruiter`` and the HR id for ``hr_admin``. The
-        subject scopes what the token may read; a token never carries a wildcard.
+        ``subject`` is the recruiter id for ``recruiter``, the department for ``manager`` and the
+        HR id for ``hr_admin``. The optional date is the last valid day; the token expires at
+        00:00 UTC of the next day, so a date is inclusive. A token never carries a wildcard.
         """
-        principals: dict[str, tuple[str, str]] = {}
+        principals: dict[str, AdminToken] = {}
         for raw in self.admin_tokens_raw.split(","):
             entry = raw.strip()
             if not entry:
                 continue
             parts = entry.split(":")
-            if len(parts) != 3:
-                raise ValueError("ADMIN_TOKENS entries must be token:role:subject")
-            token, role, subject = parts
-            if not token or role not in {"recruiter", "hr_admin"} or not subject:
-                raise ValueError("ADMIN_TOKENS must be comma-separated token:role:subject entries")
-            principals[token] = (role, subject)
+            if len(parts) not in {3, 4}:
+                raise ValueError(
+                    "ADMIN_TOKENS entries must be token:role:subject"
+                    " or token:role:subject:YYYY-MM-DD"
+                )
+            token, role, subject = parts[:3]
+            if not token or role not in {"recruiter", "manager", "hr_admin"} or not subject:
+                raise ValueError(
+                    "ADMIN_TOKENS must be comma-separated token:role:subject entries "
+                    "with role recruiter, manager or hr_admin"
+                )
+            if token in principals:
+                raise ValueError("ADMIN_TOKENS contains a duplicate token")
+            expires_at: datetime | None = None
+            if len(parts) == 4:
+                try:
+                    last_day = date.fromisoformat(parts[3])
+                except ValueError:
+                    raise ValueError(
+                        "ADMIN_TOKENS expiry must be an ISO date, for example 2026-12-31"
+                    ) from None
+                expires_at = datetime.combine(last_day + timedelta(days=1), time.min, tzinfo=UTC)
+            principals[token] = AdminToken(role=role, subject=subject, expires_at=expires_at)
         return principals
 
     @property

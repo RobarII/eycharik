@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from onboarding.api.ratelimit import auth_failures
 from onboarding.core.models import (
     ChunkId,
     EmployeeId,
@@ -79,3 +80,10 @@ def message_event() -> Event:
 @pytest.fixture
 def chunk_id() -> ChunkId:
     return ChunkId("hr/leave-policy#0")
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_failures() -> Any:
+    auth_failures.reset()
+    yield
+    auth_failures.reset()

@@ -19,6 +19,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
 | What does the sentiment layer return? | [contracts/sentiment.schema.json](contracts/sentiment.schema.json) |
+| Which model runs, and what does it allow? | [contracts/model-profile.schema.json](contracts/model-profile.schema.json), profiles in `apps/api/model-profiles/` |
 | What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
 | How do I demo this in five minutes? | [product/demo-script.md](product/demo-script.md) |
 | Who may see what? | [product/roles.md](product/roles.md) |
@@ -33,6 +34,8 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is the latency gate 8 s? | [decisions/0009-latency-budget.md](decisions/0009-latency-budget.md) |
 | Why one vendor for answers, embeddings, and rerank? | [decisions/0010-one-model-vendor.md](decisions/0010-one-model-vendor.md) |
 | Why is Jev behind a flag? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md) |
+| Why not BM25 / ParadeDB? | [decisions/0012-no-bm25-in-request-path.md](decisions/0012-no-bm25-in-request-path.md) |
+| Why is a model a profile file? | [decisions/0012-model-profiles.md](decisions/0012-model-profiles.md) |
 | How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
 | How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
 | How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |

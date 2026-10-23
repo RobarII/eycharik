@@ -20,6 +20,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
 | How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
 | What does the sentiment layer return? | [contracts/sentiment.schema.json](contracts/sentiment.schema.json) |
+| What may a Jev rubric contain? | [contracts/jev-rubric.schema.json](contracts/jev-rubric.schema.json), rubric [prompts/sentiment-jev/v1.yaml](prompts/sentiment-jev/v1.yaml) |
 | Which model runs, and what does it allow? | [contracts/model-profile.schema.json](contracts/model-profile.schema.json), profiles in `apps/api/model-profiles/` |
 | What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
 | Which mascot image belongs to which step? | [product/scenario-images.md](product/scenario-images.md) |
@@ -43,6 +44,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is contextual retrieval written but switched off? | [decisions/0016-contextual-retrieval.md](decisions/0016-contextual-retrieval.md) |
 | How is the sentiment eval measured, and why does it abort on an outage? | [decisions/0017-sentiment-eval-v2.md](decisions/0017-sentiment-eval-v2.md) |
 | Why does the cabinet hold a cookie instead of a token? | [decisions/0018-session-cookie-for-the-cabinet.md](decisions/0018-session-cookie-for-the-cabinet.md) |
+| Why is Jev a profile and not a special case? | [decisions/0019-jev-as-a-classifier-profile.md](decisions/0019-jev-as-a-classifier-profile.md) |
 | How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
 | An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |
 | How is OCR quality measured? | [evals/ocr.yaml](evals/ocr.yaml), `make eval-ocr` |

@@ -1,8 +1,12 @@
-"""Parse the sentiment classifier output.
+"""The sentiment layer: two model classifiers, one deterministic fallback, one way to build them.
 
-The model labels one answer; the risk level and the escalation decision are computed by
-``core/risk.py``. Parsing here is strict for the same reason as ``output.py``: model output is
-untrusted, and a malformed label must degrade to the keyword fallback, not to a silent guess.
+The prompt classifier labels one answer with the versioned chat prompt; the Jev classifier labels
+it with a rubric and returns probabilities. Both satisfy :class:`SentimentAnalysis`, both degrade
+to ``core/risk.keyword_signal`` through :mod:`onboarding.app.llm.fallback`, and both are built by
+:func:`build_sentiment`, so the composition root and the eval runner cannot choose differently.
+
+Parsing here is strict for the same reason as ``output.py``: model output is untrusted, and a
+malformed label must degrade to the keyword fallback, not to a silent guess.
 """
 
 from __future__ import annotations
@@ -10,29 +14,60 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from onboarding.app.audit import NullAudit
+from onboarding.app.llm.fallback import (
+    MAX_ANSWER_CHARS,
+    MAX_TAGS,
+    TAGS,
+    KeywordSentiment,
+    fallback_signal,
+)
 from onboarding.app.llm.gateway import LLMResponseError
+from onboarding.app.llm.jev import build_jev_classifier
 from onboarding.app.llm.output import AnswerFormatError, parse_json_object
+from onboarding.app.llm.profiles import classify_profile
+from onboarding.app.llm.rubric import RubricLibrary
+from onboarding.app.llm.transport import model_breaker
 from onboarding.app.prompts import PromptLibrary
+from onboarding.app.settings import Settings
 from onboarding.core.models import RiskSignal, Sentiment, SignalTag
-from onboarding.core.risk import keyword_signal
 from onboarding.ports import (
     LLM,
     AuditLog,
+    ClassifyProfile,
+    Clock,
     CompletionRequest,
     LLMUnavailableError,
     Message,
+    SentimentAnalysis,
 )
 
 PROMPT_NAME = "sentiment"
 PROMPT_VERSION = 1
-MAX_TAGS = 3
 MAX_REASON_CHARS = 200
-_TAGS = {tag.value: tag for tag in SignalTag}
+
+__all__ = [
+    "MAX_ANSWER_CHARS",
+    "MAX_TAGS",
+    "PROMPT_NAME",
+    "PROMPT_VERSION",
+    "KeywordSentiment",
+    "SentimentClassifier",
+    "SentimentFormatError",
+    "SentimentSetupError",
+    "build_sentiment",
+    "parse_sentiment",
+]
 
 
 class SentimentFormatError(AnswerFormatError):
     """The model did not honour the sentiment contract."""
+
+
+class SentimentSetupError(ValueError):
+    """The selected provider cannot run: a missing key, or an unbuildable model profile."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +103,7 @@ def _tags(payload: dict[str, Any]) -> tuple[SignalTag, ...]:
         raise SentimentFormatError(f"tags must contain at most {MAX_TAGS} items")
     tags: list[SignalTag] = []
     for item in value:
-        tag = _TAGS.get(str(item))
+        tag = TAGS.get(str(item))
         if tag is None:
             raise SentimentFormatError(f"unknown tag {item!r}")
         if tag not in tags:
@@ -118,7 +153,7 @@ class SentimentClassifier:
 
     async def classify(self, text: str, *, source: str) -> RiskSignal:
         prompt = self._prompts.load(PROMPT_NAME, PROMPT_VERSION)
-        rendered = prompt.render({"answer": text[:2000]})
+        rendered = prompt.render({"answer": text[:MAX_ANSWER_CHARS]})
         try:
             completion = await self._llm.complete(
                 CompletionRequest(
@@ -139,6 +174,7 @@ class SentimentClassifier:
         await self._audit.record(
             "sentiment_classified",
             source=source,
+            provider="prompt",
             sentiment=draft.sentiment.value,
             tags=[tag.value for tag in draft.tags],
             confidence=draft.confidence,
@@ -153,5 +189,72 @@ class SentimentClassifier:
         )
 
     async def _fallback(self, text: str, source: str, *, reason: str) -> RiskSignal:
-        await self._audit.record("sentiment_fallback", source=source, reason=reason)
-        return keyword_signal(text, source=source)
+        return await fallback_signal(
+            self._audit, text, source, provider="prompt", reason=reason
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SentimentChoice:
+    """What was built, and what it is: a measurement must name the model and the rubric."""
+
+    provider: str
+    classifier: SentimentAnalysis
+    model: str = ""
+    rubric: str = ""
+    prompt_version: int | None = None
+
+
+def build_sentiment(
+    settings: Settings,
+    *,
+    clock: Clock,
+    client: httpx.AsyncClient,
+    prompts: PromptLibrary,
+    audit: AuditLog | None = None,
+    llm: LLM | None = None,
+    provider: str | None = None,
+) -> SentimentChoice:
+    """Build the configured classifier. The only place that knows a provider or a rubric path."""
+    chosen = provider or settings.sentiment_provider
+    if chosen == "keyword":
+        return SentimentChoice(provider="keyword", classifier=KeywordSentiment())
+    if chosen == "prompt":
+        if llm is None or not settings.is_llm_configured:
+            raise SentimentSetupError("LLM_API_KEY is not set; the prompt provider cannot run")
+        return SentimentChoice(
+            provider="prompt",
+            classifier=SentimentClassifier(llm=llm, prompts=prompts, audit=audit),
+            model=settings.llm_profile or settings.llm_model,
+            prompt_version=PROMPT_VERSION,
+        )
+    if chosen == "jev":
+        if not settings.jev_api_key.get_secret_value():
+            raise SentimentSetupError("JEV_API_KEY is not set; the jev provider cannot run")
+        profile = _classify_profile(settings)
+        classifier = build_jev_classifier(
+            client=client,
+            endpoint=f"{settings.jev_base_url.rstrip('/')}/systemone",
+            api_key=settings.jev_api_key,
+            profile=profile,
+            rubrics=RubricLibrary(
+                settings.prompts_dir, settings.contracts_dir / "jev-rubric.schema.json"
+            ),
+            audit=audit,
+            clock=clock,
+            breaker=model_breaker(settings),
+        )
+        return SentimentChoice(
+            provider="jev",
+            classifier=classifier,
+            model=profile.model,
+            rubric=profile.rubric,
+        )
+    raise SentimentSetupError(f"unknown sentiment provider {chosen!r}")
+
+
+def _classify_profile(settings: Settings) -> ClassifyProfile:
+    try:
+        return classify_profile(settings)
+    except ValueError as error:
+        raise SentimentSetupError(str(error)) from None

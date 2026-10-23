@@ -6,9 +6,7 @@ client, a database or a model adapter on its own.
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -39,11 +37,8 @@ from onboarding.app.knowledge.extract.profiles import ExtractionProfileLibrary
 from onboarding.app.knowledge.extract.router import RoutingExtraction
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
-from onboarding.app.llm.jev import build_jev_classifier
-from onboarding.app.llm.profiles import classify_profile
 from onboarding.app.llm.rerank import build_reranker
-from onboarding.app.llm.rubric import RubricLibrary
-from onboarding.app.llm.sentiment import SentimentClassifier
+from onboarding.app.llm.sentiment import build_sentiment
 from onboarding.app.max.client import MaxClient
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.scenarios import ScenarioCatalog
@@ -52,7 +47,6 @@ from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.service import OnboardingService
-from onboarding.core.breaker import CircuitBreaker
 from onboarding.ports import (
     LLM,
     AuditLog,
@@ -106,31 +100,19 @@ def _classifier(
     prompts: PromptLibrary,
     audit: AuditLog,
 ) -> SentimentAnalysis | None:
-    if settings.sentiment_provider == "jev":
-        return build_jev_classifier(
-            client=http,
-            endpoint=f"{settings.jev_base_url.rstrip('/')}/systemone",
-            api_key=settings.jev_api_key,
-            profile=classify_profile(settings),
-            rubrics=RubricLibrary(
-                settings.prompts_dir, settings.contracts_dir / "jev-rubric.schema.json"
-            ),
-            audit=audit,
-            clock=SystemClock(),
-            breaker=breaker(settings),
-            sleep=asyncio.sleep,
-        )
-    if not settings.is_llm_configured:
+    if settings.sentiment_provider == "prompt" and not settings.is_llm_configured:
         return None
-    return SentimentClassifier(llm=llm, prompts=prompts, audit=audit)
-
-
-def breaker(settings: Settings) -> CircuitBreaker:
-    """One outage policy for every model call: the answer path and the classifier share it."""
-    return CircuitBreaker(
-        threshold=settings.llm_breaker_threshold,
-        cooldown=timedelta(seconds=settings.llm_breaker_cooldown_s),
-    )
+    try:
+        return build_sentiment(
+            settings,
+            clock=SystemClock(),
+            client=http,
+            prompts=prompts,
+            audit=audit,
+            llm=llm,
+        ).classifier
+    except ValueError as error:
+        raise RuntimeError(f"sentiment provider misconfigured: {error}") from error
 
 
 def build_container(settings: Settings) -> Container:

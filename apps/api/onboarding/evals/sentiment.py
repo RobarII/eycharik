@@ -39,14 +39,11 @@ import yaml
 
 from onboarding.app.clock import SystemClock
 from onboarding.app.llm.gateway import build_llm
-from onboarding.app.llm.jev import build_jev_classifier
-from onboarding.app.llm.profiles import classify_profile
-from onboarding.app.llm.rubric import RubricLibrary
-from onboarding.app.llm.sentiment import PROMPT_VERSION, SentimentClassifier
+from onboarding.app.llm.sentiment import SentimentChoice, SentimentSetupError, build_sentiment
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.core.models import RiskLevel, RiskSignal, Sentiment, SignalTag
-from onboarding.core.risk import assess, keyword_signal
+from onboarding.core.risk import assess
 from onboarding.ports import AuditLog, SentimentAnalysis
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -130,6 +127,10 @@ class Report:
     fallbacks: int
     format_errors: int
     fallback_reasons: tuple[tuple[str, int], ...] = ()
+    # What ran: a measurement without a model and a prompt version is an anecdote.
+    model: str = ""
+    rubric: str = ""
+    prompt_version: int | None = None
 
     @property
     def cases(self) -> tuple[Case, ...]:
@@ -474,6 +475,7 @@ async def evaluate(
     repeat: int = 1,
     split: str = "all",
     min_interval_s: float = 0.0,
+    identity: SentimentChoice | None = None,
 ) -> Report:
     results: list[CaseResult] = []
     for rep in range(repeat):
@@ -494,6 +496,9 @@ async def evaluate(
         fallbacks=audit.fallbacks,
         format_errors=audit.format_errors,
         fallback_reasons=tuple(sorted(audit.reasons.items())),
+        model=identity.model if identity else "",
+        rubric=identity.rubric if identity else "",
+        prompt_version=identity.prompt_version if identity else None,
     )
 
 
@@ -516,6 +521,8 @@ def render_markdown(
         f"- commit: `{_commit()}`",
         f"- environment: `{Settings().environment}`",
         f"- split: `{report.split}`",
+        f"- model: `{report.model or 'deterministic'}`",
+        f"- rubric: `{report.rubric or '—'}`",
         f"- cases: {len(cases)} ({_split_counts(cases)})",
         f"- repetitions per case: {report.repeat}",
         f"- calls: {len(report.results)}",
@@ -756,6 +763,9 @@ def load_artifact(path: Path) -> Report:
         fallback_reasons=tuple(
             (str(reason), int(count)) for reason, count in header.get("fallback_reasons", [])
         ),
+        model=str(header.get("model") or ""),
+        rubric=str(header.get("rubric") or ""),
+        prompt_version=header.get("prompt_version"),
     )
 
 
@@ -767,9 +777,9 @@ def render_artifact(report: Report, *, command: str) -> str:
         "repeat": report.repeat,
         "commit": _commit(),
         "environment": Settings().environment,
-        "prompt_version": PROMPT_VERSION if report.provider == "prompt" else None,
-        "rubric_version": 1 if report.provider == "jev" else None,
-        "model": Settings().llm_model if report.provider == "prompt" else None,
+        "prompt_version": report.prompt_version,
+        "rubric": report.rubric or None,
+        "model": report.model or None,
         "command": command,
         "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "cases": len(report.cases),
@@ -811,38 +821,6 @@ def _commit() -> str:
         ).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
-
-
-def _classifier(
-    provider: str, settings: Settings, http: httpx.AsyncClient, audit: AuditLog
-) -> SentimentAnalysis:
-    if provider == "prompt":
-        if not settings.is_llm_configured:
-            raise SentimentSetError("LLM_API_KEY is not set; the prompt provider cannot run")
-        return SentimentClassifier(
-            llm=build_llm(settings, SystemClock(), http),
-            prompts=PromptLibrary(settings.prompts_dir),
-            audit=audit,
-        )
-    if provider == "jev":
-        if not settings.jev_api_key.get_secret_value():
-            raise SentimentSetError("JEV_API_KEY is not set; the jev provider cannot run")
-        return build_jev_classifier(
-            client=http,
-            endpoint=f"{settings.jev_base_url.rstrip('/')}/systemone",
-            api_key=settings.jev_api_key,
-            profile=classify_profile(settings),
-            rubrics=RubricLibrary(
-                settings.prompts_dir, settings.contracts_dir / "jev-rubric.schema.json"
-            ),
-            audit=audit,
-        )
-
-    class KeywordClassifier:
-        async def classify(self, text: str, *, source: str) -> RiskSignal:
-            return keyword_signal(text, source=source)
-
-    return KeywordClassifier()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -908,6 +886,23 @@ def _abort(code: int, message: str) -> NoReturn:
     raise _EvalAbortError(code)
 
 
+def _build(
+    provider: str, settings: Settings, http: httpx.AsyncClient, audit: AuditLog
+) -> SentimentChoice:
+    try:
+        return build_sentiment(
+            settings,
+            clock=SystemClock(),
+            client=http,
+            prompts=PromptLibrary(settings.prompts_dir),
+            audit=audit,
+            llm=build_llm(settings, SystemClock(), http),
+            provider=provider,
+        )
+    except SentimentSetupError as error:
+        raise SentimentSetError(str(error)) from None
+
+
 async def _measure(args: argparse.Namespace, cases: tuple[Case, ...]) -> Report:
     if args.repeat < 1:
         _abort(2, "--repeat must be at least 1")
@@ -919,17 +914,18 @@ async def _measure(args: argparse.Namespace, cases: tuple[Case, ...]) -> Report:
     audit = CountingAudit()
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as http:
         try:
-            classifier = _classifier(args.provider, Settings(), http, audit)
+            choice = _build(args.provider, Settings(), http, audit)
         except SentimentSetError as error:
             _abort(2, str(error))
         return await evaluate(
             cases,
-            classifier,
+            choice.classifier,
             provider=args.provider,
             audit=audit,
             repeat=args.repeat,
             split=args.split,
             min_interval_s=args.min_interval,
+            identity=choice,
         )
 
 

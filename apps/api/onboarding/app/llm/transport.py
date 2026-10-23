@@ -12,11 +12,13 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TypeVar
 
 import httpx
 
 from onboarding.app.llm.providers import PreparedRequest, ProviderError
+from onboarding.app.settings import Settings
 from onboarding.core.breaker import CircuitBreaker
 from onboarding.ports import Clock
 
@@ -36,6 +38,14 @@ class RejectedError(RuntimeError):
     def __init__(self, status_code: int) -> None:
         super().__init__(f"HTTP {status_code}")
         self.status_code = status_code
+
+
+def model_breaker(settings: Settings) -> CircuitBreaker:
+    """One outage policy for every model call: answers and classifiers trip the same way."""
+    return CircuitBreaker(
+        threshold=settings.llm_breaker_threshold,
+        cooldown=timedelta(seconds=settings.llm_breaker_cooldown_s),
+    )
 
 
 @dataclass(slots=True)

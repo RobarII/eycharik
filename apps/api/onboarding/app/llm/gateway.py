@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import timedelta
 
 import httpx
 
@@ -21,7 +20,12 @@ from onboarding.app.llm.providers import (
     OpenAICompatibleProvider,
     Provider,
 )
-from onboarding.app.llm.transport import ModelTransport, RejectedError, TransportError
+from onboarding.app.llm.transport import (
+    ModelTransport,
+    RejectedError,
+    TransportError,
+    model_breaker,
+)
 from onboarding.app.settings import Settings
 from onboarding.core.breaker import CircuitBreaker
 from onboarding.ports import (
@@ -189,10 +193,7 @@ def build_llm(settings: Settings, clock: Clock, client: httpx.AsyncClient) -> LL
         profile,
         clock=clock,
         client=client,
-        breaker=CircuitBreaker(
-            threshold=settings.llm_breaker_threshold,
-            cooldown=timedelta(seconds=settings.llm_breaker_cooldown_s),
-        ),
+        breaker=model_breaker(settings),
         sleep=asyncio.sleep,
     )
 

@@ -23,16 +23,14 @@ from pydantic import SecretStr
 
 from onboarding.app.audit import NullAudit
 from onboarding.app.clock import SystemClock
+from onboarding.app.llm.fallback import MAX_ANSWER_CHARS, fallback_signal
 from onboarding.app.llm.providers import PreparedRequest
 from onboarding.app.llm.rubric import Rubric, RubricLibrary
 from onboarding.app.llm.transport import ModelTransport, RejectedError, TransportError
 from onboarding.core.breaker import CircuitBreaker
 from onboarding.core.models import RiskSignal, Sentiment, SignalTag
-from onboarding.core.risk import keyword_signal
 from onboarding.ports import AuditLog, ClassifyProfile, Clock, SentimentAnalysis
 
-MAX_ANSWER_CHARS = 2000
-MAX_TAGS = 3
 _PROBABILITY_TOLERANCE = 0.05
 
 
@@ -245,10 +243,9 @@ class JevSentimentClassifier:
         return payload, elapsed_s
 
     async def _fallback(self, text: str, source: str, *, reason: str) -> RiskSignal:
-        await self._audit.record(
-            "sentiment_fallback", source=source, provider="jev", reason=reason
+        return await fallback_signal(
+            self._audit, text, source, provider="jev", reason=reason
         )
-        return keyword_signal(text, source=source)
 
 
 def _input_tokens(payload: Any) -> int:

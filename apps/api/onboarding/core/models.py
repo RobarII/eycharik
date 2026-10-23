@@ -73,6 +73,7 @@ class EscalationReason(StrEnum):
     OUT_OF_SCOPE = "out_of_scope"
     TIMEOUT = "timeout"
     MANUAL = "manual"
+    UNAVAILABLE = "unavailable"
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +123,20 @@ class Scenario:
 
 class ScenarioError(ValueError):
     """A scenario document violates the contract."""
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeProfile:
+    employee_id: EmployeeId
+    name: str
+    role: str
+    department: str
+    started_at: date
+    audience: tuple[str, ...]
+    recruiter_id: str | None = None
+
+    def onboarding_day(self, on_date: date) -> int:
+        return max(1, (on_date - self.started_at).days + 1)
 
 
 @dataclass(frozen=True, slots=True)

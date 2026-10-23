@@ -1,7 +1,8 @@
 """Load a versioned prompt and its metadata.
 
-A prompt is a file pair: ``<name>/<version>.md`` and ``<name>/<version>.meta.yaml``. The version in
-the file name, the metadata, and the request must agree, so a trace can name exactly what ran.
+A prompt is a file pair: ``<name>/v<version>.md`` and ``<name>/v<version>.meta.yaml``.
+The version in the file name, the metadata, and the request must agree, so a trace can name
+exactly what ran.
 """
 
 from __future__ import annotations
@@ -48,8 +49,8 @@ class PromptLibrary:
 
     def _read(self, name: str, version: int) -> Prompt:
         directory = self._root / name
-        body_path = directory / f"{version}.md"
-        meta_path = directory / f"{version}.meta.yaml"
+        body_path = directory / f"v{version}.md"
+        meta_path = directory / f"v{version}.meta.yaml"
         for path in (body_path, meta_path):
             if not path.is_file():
                 raise PromptNotFoundError(f"missing prompt file {path}")

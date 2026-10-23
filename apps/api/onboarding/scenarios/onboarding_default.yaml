@@ -1,0 +1,72 @@
+# The first scenario. Version is pinned per run: editing this file never changes a live run.
+id: onboarding_default
+version: 1
+title: Адаптация по умолчанию
+start: welcome
+
+steps:
+  - id: welcome
+    kind: send
+    message: >-
+      Добро пожаловать в «Группу ПОЛИПЛАСТИК»! Я помогу пройти адаптацию: подскажу шаги,
+      напомню о документах и отвечу на вопросы о компании.
+    next: first_day_checklist
+
+  - id: first_day_checklist
+    kind: wait
+    message: >-
+      Первый день: получите пропуск и ноутбук, познакомьтесь с наставником, проверьте доступы.
+      Отметьте, когда всё будет готово.
+    expects: button
+    keyboard:
+      - - id: checklist_done
+          text: Готово
+        - id: ask_question
+          text: Задать вопрос
+    routes:
+      checklist_done: meet_the_team
+      ask_question: meet_the_team
+    timeout:
+      after_hours: 48
+      action: remind
+
+  - id: meet_the_team
+    kind: wait
+    message: >-
+      Наставник и руководитель — ваши первые контакты. Напишите здесь, если нужно познакомить
+      вас с командой или назначить встречу.
+    expects: message
+    routes:
+      default: documents
+    timeout:
+      after_hours: 72
+      action: remind
+
+  - id: documents
+    kind: wait
+    message: >-
+      Пришлите, пожалуйста, документы для оформления: паспорт, СНИЛС, ИНН, диплом и фото.
+      Можно отправить файлами прямо в этот чат.
+    expects: file
+    routes:
+      default: week_one_check
+    timeout:
+      after_hours: 72
+      action: escalate
+      next: week_one_check
+
+  - id: week_one_check
+    kind: wait
+    message: >-
+      Неделя прошла. Короткий чек: понятны ли задачи на первую неделю, есть ли доступы ко всем
+      системам, состоялась ли встреча с наставником?
+    expects: message
+    routes:
+      default: done
+    timeout:
+      after_hours: 48
+      action: escalate
+
+  - id: done
+    kind: terminal
+    outcome: completed

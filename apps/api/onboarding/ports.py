@@ -16,6 +16,7 @@ from onboarding.core.models import (
     Chunk,
     DocId,
     EmployeeId,
+    EmployeeProfile,
     Keyboard,
     ReminderPlan,
     RunId,
@@ -111,6 +112,13 @@ class Messaging(Protocol):
 
 
 @runtime_checkable
+class Directory(Protocol):
+    async def profile(self, employee_id: EmployeeId) -> EmployeeProfile | None:
+        """Employee facts needed for the assistant context. ``None`` when unknown."""
+        ...
+
+
+@runtime_checkable
 class EventDeduper(Protocol):
     async def claim(self, event_id: str) -> bool:
         """True when this delivery is new. Claims atomically; a repeat answers False."""
@@ -164,6 +172,6 @@ class KnowledgeWriter(Protocol):
 
 @runtime_checkable
 class AuditLog(Protocol):
-    async def record(self, event: str, **fields: object) -> None:
+    async def record(self, name: str, **fields: object) -> None:
         """Append-only record. Fields must not contain secrets or raw personal data."""
         ...

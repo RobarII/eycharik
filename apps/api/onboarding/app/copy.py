@@ -24,6 +24,7 @@ class Copy:
     escalation: dict[str, str]
     reminder_prefix: str
     escalation_footer: str
+    completion: str
 
     def escalation_for(self, reason: EscalationReason) -> str:
         try:
@@ -48,12 +49,19 @@ def load_copy(path: Path) -> Copy:
     for reason, text in escalation.items():
         if not isinstance(reason, str) or not isinstance(text, str) or not text.strip():
             raise CopyError(f"{path}: escalation copy for {reason!r} must be a non-empty string")
-    reminder_prefix = raw.get("reminder_prefix")
-    footer = raw.get("escalation_footer")
-    if not isinstance(reminder_prefix, str) or not isinstance(footer, str):
-        raise CopyError(f"{path}: reminder_prefix and escalation_footer must be strings")
+    reminder_prefix = _text(raw, "reminder_prefix", path)
+    footer = _text(raw, "escalation_footer", path)
+    completion = _text(raw, "completion", path)
     return Copy(
         escalation=dict(escalation),
         reminder_prefix=reminder_prefix,
         escalation_footer=footer,
+        completion=completion,
     )
+
+
+def _text(raw: dict[object, object], key: str, path: Path) -> str:
+    value = raw.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise CopyError(f"{path}: {key} must be a non-empty string")
+    return value

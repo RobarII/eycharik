@@ -99,6 +99,7 @@ export function RiskPage({
                   <strong>{item.employee_name}</strong>
                   <span className="muted">{item.department}</span>
                 </div>
+                {item.quote ? <p className="digest-quote">«{item.quote}»</p> : null}
                 <p className="digest-reasons">{item.reasons.join("; ") || "без формулировки"}</p>
                 <p className="digest-meta">
                   {item.step_title} · {formatDateTime(item.at)}

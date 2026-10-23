@@ -199,6 +199,7 @@ async def weekly_digest(
                 level=record.level,
                 reasons=list(record.reasons),
                 tags=list(record.tags),
+                quote=record.quote,
                 at=record.at,
             )
             for record in records

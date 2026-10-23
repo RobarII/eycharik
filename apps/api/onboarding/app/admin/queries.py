@@ -70,6 +70,7 @@ class DigestRecord:
     level: str
     reasons: tuple[str, ...]
     tags: tuple[str, ...]
+    quote: str | None
     at: datetime
 
 
@@ -212,16 +213,26 @@ class AdminQueries:
                 .where(
                     AuditRow.name == "risk_assessed",
                     AuditRow.at >= since,
-                    AuditRow.fields["level"].astext.in_(("high", "medium")),
                     *_scope_filters(recruiter_id, department),
                 )
                 .order_by(desc(AuditRow.at), desc(AuditRow.id))
-                .limit(200)
+                .limit(500)
             )
             rows = (await session.execute(statement)).all()
+        quotes: dict[tuple[str, str], str] = {}
+        for event, _, _ in rows:
+            key = (
+                str(event.fields.get("employee_id", "")),
+                str(event.fields.get("step", "")),
+            )
+            quote = _quote(event.fields.get("evidence"))
+            if quote is not None:
+                quotes.setdefault(key, quote)
         seen: set[tuple[str, str]] = set()
         items: list[DigestRecord] = []
         for event, name, department_name in rows:
+            if event.fields.get("level") not in ("high", "medium"):
+                continue
             employee_id = str(event.fields.get("employee_id", ""))
             step_id = str(event.fields.get("step", ""))
             if (employee_id, step_id) in seen:
@@ -238,6 +249,8 @@ class AdminQueries:
                     level=str(event.fields.get("level", "")),
                     reasons=_texts(event.fields.get("reasons")),
                     tags=_texts(event.fields.get("tags")),
+                    quote=_quote(event.fields.get("evidence"))
+                    or quotes.get((employee_id, step_id)),
                     at=event.at,
                 )
             )
@@ -285,6 +298,18 @@ class AdminQueries:
 
 def _texts(value: object) -> tuple[str, ...]:
     return tuple(str(item) for item in value) if isinstance(value, list) else ()
+
+
+def _quote(value: object) -> str | None:
+    """The employee's own words, so the digest is evidence rather than a label."""
+    if not isinstance(value, list):
+        return None
+    for item in value:
+        if isinstance(item, dict):
+            text = item.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return None
 
 
 def _scope_filters(recruiter_id: str | None, department: str | None) -> tuple[Any, ...]:

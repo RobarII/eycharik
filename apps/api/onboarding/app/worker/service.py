@@ -176,6 +176,17 @@ class OnboardingService:
             score=assessment.score,
             tags=[tag.value for tag in assessment.tags],
             reasons=list(assessment.reasons),
+            evidence=[
+                {
+                    "source": signal.source,
+                    "text": signal.text[:500],
+                    "sentiment": signal.sentiment.value,
+                    "tags": [tag.value for tag in signal.tags],
+                    "confidence": signal.confidence,
+                }
+                for signal in signals[:3]
+                if signal.text
+            ],
         )
         if assessment.escalate_to is None:
             return False

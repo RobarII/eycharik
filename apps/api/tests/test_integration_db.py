@@ -448,6 +448,7 @@ async def test_analytics_and_digest_follow_the_risk_audit(database: Database) ->
         level="high",
         tags=["manager"],
         reasons=["конфликт с руководителем"],
+        evidence=[{"source": "survey:difficulties", "text": "руководитель не отвечает"}],
     )
     await audit.record(
         "risk_assessed",
@@ -456,6 +457,15 @@ async def test_analytics_and_digest_follow_the_risk_audit(database: Database) ->
         level="medium",
         tags=["access"],
         reasons=["доступ не выдали"],
+    )
+    await audit.record(
+        "risk_assessed",
+        employee_id=str(EMPLOYEE),
+        step="day_three_survey",
+        level="low",
+        tags=[],
+        reasons=[],
+        evidence=[{"source": "survey:first_days_score", "text": "нет доступа к 1С"}],
     )
     queries = AdminQueries(database)
 
@@ -472,6 +482,8 @@ async def test_analytics_and_digest_follow_the_risk_audit(database: Database) ->
     )
     assert [item.level for item in digest] == ["medium", "high"]
     assert digest[1].reasons == ("конфликт с руководителем",)
+    assert digest[1].quote == "руководитель не отвечает"
+    assert digest[0].quote == "нет доступа к 1С"
 
     assert (
         await queries.digest(

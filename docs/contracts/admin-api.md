@@ -108,6 +108,7 @@ materialised table: the cabinet is read-only, and a wrong number must be traceab
       "level": "high",
       "reasons": ["конфликт с руководителем"],
       "tags": ["manager"],
+      "quote": "руководитель не отвечает третий день",
       "at": "2026-10-22T15:30:00Z"
     }
   ],
@@ -115,9 +116,10 @@ materialised table: the cabinet is read-only, and a wrong number must be traceab
 }
 ```
 
-Only `high` and `medium` levels appear. `reasons` and `tags` are the classifier's short phrases,
-never the full answer text: the digest is a list of leads, not a transcript. A manager sees the
-same shape, scoped to one department.
+Only `high` and `medium` levels appear. `reasons` and `tags` are the classifier's short phrases.
+`quote` is the employee's own words, truncated to 500 characters at write time and carried in the
+`risk_assessed` audit event as `evidence`; it is `null` for a pure scale signal, which has no text.
+A manager sees the same shape, scoped to one department.
 
 `KnowledgeDocument`:
 

@@ -66,6 +66,7 @@ export interface DigestItem {
   level: "high" | "medium";
   reasons: string[];
   tags: string[];
+  quote: string | null;
   at: string;
 }
 

@@ -90,6 +90,7 @@ class DigestItem(BaseModel):
     level: str
     reasons: list[str]
     tags: list[str]
+    quote: str | None
     at: datetime
 
 

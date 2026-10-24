@@ -66,8 +66,10 @@ jobs:
         run: |
           make migrate
           make ingest
-      - name: Retrieval eval, paired against the pinned baseline
-        run: make eval-retrieval ARGS="--compare docs/evals/baseline.json --fail-on-regression"
+      - name: Retrieval eval against the pinned gates
+        # The gates live in docs/evals/baseline.json; --compare takes a JSONL artifact, not a gate
+        # file, and the nightly run has no earlier artifact to pair against.
+        run: make eval-retrieval
       - name: Full eval with generation
         run: make eval ARGS="--note nightly run in CI"
       - name: Upload the measurement and its artifact

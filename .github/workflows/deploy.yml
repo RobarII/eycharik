@@ -27,6 +27,7 @@ on:
 permissions:
   contents: read
   packages: read
+  checks: read
 
 concurrency:
   group: deploy-production

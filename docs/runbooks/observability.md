@@ -6,8 +6,8 @@ What the process exposes, what to alert on, and what it deliberately does not co
 
 `GET /metrics` returns the Prometheus text format. When `METRICS_TOKEN` is set, the endpoint
 requires `Authorization: Bearer <token>` and answers `401` otherwise; when it is empty it is open
-like `/healthz`, which is only acceptable behind a local ingress. A deployment sets the token and
-configures the scraper with it.
+like `/healthz`, which is only acceptable for a local demo. Production refuses to start without
+`METRICS_TOKEN`, and the host nginx exposes `/metrics` only to loopback.
 
 | metric | type | labels | meaning |
 |---|---|---|---|
@@ -68,7 +68,8 @@ make run
 curl -s -H "Authorization: Bearer $METRICS_TOKEN" localhost:8000/metrics | grep onboarding_answer
 ```
 
-With an empty `METRICS_TOKEN`, drop the header.
+For a local process with an empty `METRICS_TOKEN`, drop the header; production does not start
+without one.
 
 If the file is empty, no answer has been produced in this process yet. `/metrics` itself and
 `/healthz` are not logged to keep the access log readable.

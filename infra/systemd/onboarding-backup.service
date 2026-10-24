@@ -1,0 +1,18 @@
+[Unit]
+Description=Onboarding Postgres backup
+Documentation=file:/opt/onboarding/docs/runbooks/backup.md
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/onboarding
+EnvironmentFile=-/etc/onboarding-backup.env
+ExecStart=/opt/onboarding/scripts/backup.sh
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+PrivateTmp=true
+NoNewPrivileges=true

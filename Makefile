@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types arch test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e
+.PHONY: install check lint types arch test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
 
 install:
 	uv sync
@@ -70,6 +70,26 @@ down:
 
 logs:
 	docker compose logs -f api worker
+
+prod-config:                       # validate the prod override without a real .env.prod
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod config -q
+
+prod-up:                           # production compose on the VM; needs .env.prod and TAG
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod up -d
+
+smoke:                             # public smoke test; BASE_URL overrides the default host
+	./scripts/smoke.sh
+
+deploy-remote:                     # on the VM: SHA=<commit> make deploy-remote
+	@test -n "$(SHA)" || { echo "SHA is required" >&2; exit 2; }
+	./scripts/deploy-remote.sh "$(SHA)"
+
+backup:                            # consistent dump; BACKUP_S3_URI enables offsite upload
+	./scripts/backup.sh
+
+restore:                           # destructive: CONFIRM_RESTORE=yes FILE=<dump> make restore
+	@test -n "$(FILE)" || { echo "FILE is required" >&2; exit 2; }
+	CONFIRM_RESTORE=yes ./scripts/restore.sh "$(FILE)"
 
 migrate:
 	$(PY) alembic upgrade head

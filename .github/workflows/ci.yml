@@ -61,3 +61,46 @@ jobs:
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the production compose override
+        run: |
+          cat > .env.prod <<'ENV'
+          IMAGE_PREFIX=ghcr.io/example/onboarding
+          TAG=0000000000000000000000000000000000000000
+          DOMAIN=example.com
+          PUBLIC_URL=https://example.com
+          POSTGRES_USER=onboarding
+          POSTGRES_PASSWORD=onboarding
+          POSTGRES_DB=onboarding
+          DATABASE_URL=postgresql+asyncpg://onboarding:onboarding@postgres:5432/onboarding
+          ENV
+          docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod config -q
+          rm -f .env.prod
+
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: api
+            context: .
+            file: Dockerfile
+          - name: admin
+            context: apps/admin
+            file: apps/admin/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.name }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          load: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}

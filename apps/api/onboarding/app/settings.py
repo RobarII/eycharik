@@ -244,6 +244,7 @@ class Settings(BaseSettings):
                 ("MAX_WEBHOOK_SECRET", self.max_webhook_secret.get_secret_value()),
                 ("LLM_API_KEY", self.llm_api_key.get_secret_value()),
                 ("ADMIN_TOKENS", self.admin_tokens_raw),
+                ("METRICS_TOKEN", self.metrics_token.get_secret_value()),
             )
             if not value
         ]

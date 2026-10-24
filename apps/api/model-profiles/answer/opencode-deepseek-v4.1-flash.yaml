@@ -1,6 +1,6 @@
 name: opencode-deepseek-v4.1-flash
 role: answer
-description: "Answer model on opencode-go: cheaper per token than the OpenRouter pilot, prefix cache billed separately."
+description: "Answer model on opencode-go; the demo deployment choice (ADR 0025). Prefix cache is billed separately."
 family: openai-chat
 model: deepseek-v4.1-flash
 json_mode: true

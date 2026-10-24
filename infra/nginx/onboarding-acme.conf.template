@@ -1,0 +1,17 @@
+# Bootstrap vhost: HTTP only, so certbot can solve the ACME challenge before a certificate exists.
+# scripts/bootstrap-vps.sh installs this file, issues the certificate, then replaces it with
+# onboarding.conf.template.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}

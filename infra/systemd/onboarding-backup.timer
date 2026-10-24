@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily onboarding Postgres backup
+Documentation=file:/opt/onboarding/docs/runbooks/backup.md
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

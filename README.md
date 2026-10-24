@@ -39,6 +39,9 @@ make cron         # one scheduler pass for reminders and the outbox (crontab-fri
 make admin-install # cabinet dependencies
 make admin-dev    # recruiter cabinet on :5173
 make up           # postgres + migrate + api + worker + cabinet in docker
+make prod-config  # validate docker-compose.prod.yml with .env.prod
+make smoke        # public health, webhook, cabinet headers, metrics exposure
+make backup       # verified Postgres dump; BACKUP_S3_URI enables offsite upload
 ```
 
 Offline demo in five minutes: [docs/product/demo-script.md](docs/product/demo-script.md).

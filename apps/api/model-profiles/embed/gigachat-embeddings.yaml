@@ -1,6 +1,6 @@
 name: gigachat-embeddings
 role: embed
-description: "Production embedder; same 1024 dimensions, so the column and the vectors agree."
+description: "Russian-hosted embedder for a 152-ФЗ pilot; same 1024 dimensions, so the column and the vectors agree."
 family: gigachat
 model: Embeddings
 dim: 1024

@@ -1,0 +1,79 @@
+# TLS terminator for the onboarding host. The cabinet and the API share one origin because the
+# session cookie is Secure and the cabinet CSP uses connect-src 'self'.
+#
+#   /webhook/*        -> API (MAX, Telegram, VK)
+#   /healthz /readyz  -> API
+#   /metrics          -> API, loopback only
+#   everything else   -> cabinet nginx, which proxies /admin/api/ to the API
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${DOMAIN};
+
+    server_tokens off;
+
+    ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # The API caps uploads at 25 MB; leave room for multipart framing.
+    client_max_body_size 26m;
+
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_connect_timeout 5s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+
+    location /webhook/ {
+        proxy_pass http://127.0.0.1:18000;
+        # MAX requires the webhook to answer within 30 seconds.
+        proxy_read_timeout 35s;
+    }
+
+    location = /healthz {
+        proxy_pass http://127.0.0.1:18000;
+        proxy_read_timeout 5s;
+    }
+
+    location = /readyz {
+        proxy_pass http://127.0.0.1:18000;
+        proxy_read_timeout 5s;
+    }
+
+    location = /metrics {
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+        proxy_pass http://127.0.0.1:18000;
+        proxy_read_timeout 10s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:13000;
+    }
+}

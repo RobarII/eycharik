@@ -1,0 +1,92 @@
+# Production override for the single-VM topology.
+#
+# Use it together with the base file and the production environment file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod ...
+#
+# Requires Compose 2.24+ for the !reset and !override merge tags.
+#
+# The host nginx terminates TLS and forwards to loopback ports; nothing in this file is published
+# on a public interface except through that proxy. Images come from the registry and are never
+# built on the host. Migrations are a one-shot service, as in the base file.
+
+name: onboarding
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  logging: *logging
+
+services:
+  # The Cloudflare tunnel is a local-development escape hatch; production is a public host.
+  tunnel: !reset null
+
+  postgres:
+    # The database is reachable only from the compose network.
+    ports: !reset []
+    shm_size: 128mb
+    mem_limit: ${POSTGRES_MEM_LIMIT:-192m}
+    restart: unless-stopped
+    logging: *logging
+
+  migrate:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-api:${TAG:?TAG is required}
+    build: !reset null
+    env_file: !override
+      - .env.prod
+    restart: "no"
+    mem_limit: ${MIGRATE_MEM_LIMIT:-192m}
+    logging: *logging
+
+  api:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-api:${TAG:?TAG is required}
+    build: !reset null
+    env_file: !override
+      - .env.prod
+    ports: !override
+      - "127.0.0.1:${API_PORT:-18000}:8000"
+    init: true
+    stop_grace_period: 30s
+    mem_limit: ${API_MEM_LIMIT:-256m}
+    <<: *hardening
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/readyz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  worker:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-api:${TAG:?TAG is required}
+    build: !reset null
+    env_file: !override
+      - .env.prod
+    init: true
+    stop_grace_period: 60s
+    mem_limit: ${WORKER_MEM_LIMIT:-256m}
+    <<: *hardening
+    cap_drop:
+      - ALL
+
+  admin:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX is required}-admin:${TAG:?TAG is required}
+    build: !reset null
+    ports: !override
+      - "127.0.0.1:${ADMIN_PORT:-13000}:80"
+    mem_limit: ${ADMIN_MEM_LIMIT:-48m}
+    <<: *hardening
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost/ | grep -q '<div id=\"root\">' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

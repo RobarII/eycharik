@@ -1,0 +1,80 @@
+name: deploy
+
+# Deploy the image built by the release workflow. A tag release reaches production only after the
+# build succeeds; a manual run can redeploy or roll back to any previously released SHA.
+#
+# Required repository variables: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PORT (optional), DEPLOY_PATH
+# (optional). Required secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS. Configure the `production`
+# environment with required reviewers so a tag cannot deploy without a human.
+
+on:
+  workflow_run:
+    workflows: [release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 40-character commit SHA to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Resolve the release SHA
+        id: release
+        run: |
+          sha="${{ github.event.inputs.sha || github.event.workflow_run.head_sha }}"
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "not a 40-character lowercase commit SHA: $sha" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Validate the target
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER: ${{ vars.DEPLOY_USER }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_DIR: ${{ vars.DEPLOY_PATH || '/opt/onboarding' }}
+        run: |
+          [[ "$HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "DEPLOY_HOST is missing or invalid" >&2; exit 1; }
+          [[ "$USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "DEPLOY_USER is missing or invalid" >&2; exit 1; }
+          [[ "$PORT" =~ ^[0-9]{1,5}$ ]] || { echo "DEPLOY_PORT is invalid" >&2; exit 1; }
+          [[ "$DEPLOY_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "DEPLOY_PATH is missing or invalid" >&2; exit 1; }
+      - name: Install the deploy key
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          [ -n "$SSH_KEY" ] || { echo "DEPLOY_SSH_KEY is empty" >&2; exit 1; }
+          [ -n "$KNOWN_HOSTS" ] || { echo "DEPLOY_KNOWN_HOSTS is empty" >&2; exit 1; }
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Deploy
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER: ${{ vars.DEPLOY_USER }}
+          PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_DIR: ${{ vars.DEPLOY_PATH || '/opt/onboarding' }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          ssh -i ~/.ssh/deploy -p "$PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=10 \
+            "$USER@$HOST" "cd '$DEPLOY_DIR' && ./scripts/deploy-remote.sh '$SHA'"

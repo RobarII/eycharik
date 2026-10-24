@@ -9,6 +9,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
+# MAX and GigaChat chains anchor at the Russian Trusted Root CA, which is absent from the default
+# Python store. Install it into the system bundle and make httpx use that merged bundle.
+COPY infra/certs/russian_trusted_ca.crt /usr/local/share/ca-certificates/russian_trusted_ca.crt
+RUN update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
+    MAX_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+
 COPY --from=ghcr.io/astral-sh/uv:0.11.8 /uv /uvx /usr/local/bin/
 
 WORKDIR /app

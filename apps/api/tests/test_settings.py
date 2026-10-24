@@ -68,6 +68,20 @@ def test_production_requires_secrets() -> None:
         Settings(_env_file=None, environment="production")
 
 
+def test_production_requires_a_metrics_token() -> None:
+    with pytest.raises(ValidationError, match="METRICS_TOKEN"):
+        Settings(
+            _env_file=None,
+            environment="production",
+            max_bot_token="bot",
+            max_webhook_secret="secret",
+            llm_api_key="key",
+            embed_provider="gigachat",
+            admin_tokens_raw="token:hr_admin:hr-1",
+            metrics_token="",
+        )
+
+
 def test_recall_must_not_be_smaller_than_rerank() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, recall_limit=3, rerank_limit=5)

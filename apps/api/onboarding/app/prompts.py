@@ -7,6 +7,7 @@ exactly what ran.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ import yaml
 from onboarding.core.prompting import PromptError, render
 
 MAX_PROMPT_BYTES = 64_000
+_VERSION_FILE = re.compile(r"^v(\d+)\.md$")
 
 
 class PromptNotFoundError(LookupError):
@@ -39,6 +41,24 @@ class PromptLibrary:
     def __init__(self, root: Path) -> None:
         self._root = root
         self._cache: dict[tuple[str, int], Prompt] = {}
+
+    def versions(self, name: str) -> tuple[int, ...]:
+        """Every version on disk, ordered. The directory is the list; nothing is pinned twice."""
+        directory = self._root / name
+        if not directory.is_dir():
+            raise PromptNotFoundError(f"missing prompt directory {directory}")
+        found = sorted(
+            int(match.group(1))
+            for path in directory.iterdir()
+            if (match := _VERSION_FILE.match(path.name)) and path.is_file()
+        )
+        if not found:
+            raise PromptNotFoundError(f"{directory} holds no v<number>.md file")
+        return tuple(found)
+
+    def load_latest(self, name: str) -> Prompt:
+        """The newest version is in force: publishing ``v8`` activates it, deleting it undoes."""
+        return self.load(name, self.versions(name)[-1])
 
     def load(self, name: str, version: int) -> Prompt:
         key = (name, version)

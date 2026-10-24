@@ -11,7 +11,7 @@ from onboarding.app.llm.gateway import LLMResponseError
 from onboarding.app.observability import metrics
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
-from onboarding.app.worker.answerer import PROMPT_NAME, PROMPT_VERSION, Answerer
+from onboarding.app.worker.answerer import PROMPT_NAME, Answerer
 from onboarding.core.models import Chunk, ChunkId, DocId, EmployeeId, EscalationReason, ScoredChunk
 from onboarding.ports import LLMUnavailableError, RerankUnavailableError
 
@@ -210,10 +210,19 @@ async def test_citation_is_kept_in_the_outcome(citation: str) -> None:
     assert outcome.citations == (ChunkId(citation),)
 
 
-def test_the_answerer_uses_an_existing_prompt_version() -> None:
-    prompt = PromptLibrary(PROMPTS).load(PROMPT_NAME, PROMPT_VERSION)
+async def test_the_answerer_answers_with_the_newest_prompt_version() -> None:
+    """The version is the file, not a constant: publishing v8 activates it without touching code."""
+    newest = PromptLibrary(PROMPTS).versions(PROMPT_NAME)[-1]
+    answerer, _, _, audit = build([answer_json("hr/a#0")], (scored_chunk("hr/a#0"),))
 
-    assert prompt.version == PROMPT_VERSION
+    await answerer.answer("отпуск", profile(), ON_DATE)
+
+    recorded = {
+        fields["prompt_version"]
+        for _name, fields in audit.events
+        if "prompt_version" in fields
+    }
+    assert recorded == {newest}
 
 
 async def test_reranker_decides_what_the_model_sees() -> None:

@@ -5,6 +5,7 @@ kind: решение
 owner: p4ulbr4dl3y
 status: принято
 last_verified: 2026-10-24
+superseded_by: [34]
 ---
 
 # 0004 — Промпты как версионированные файлы

@@ -41,7 +41,6 @@ from onboarding.ports import (
 )
 
 PROMPT_NAME = "answer"
-PROMPT_VERSION = 7
 
 log = logging.getLogger(__name__)
 
@@ -149,7 +148,7 @@ class Answerer:
         # What the model is shown and what the verdict is checked against must be one set: a
         # citation is grounded only when it points at a fragment this question put in the prompt.
         shown = retrieved[: self._settings.rerank_limit]
-        prompt = self._prompts.load(PROMPT_NAME, PROMPT_VERSION)
+        prompt = self._prompts.load_latest(PROMPT_NAME)
         rendered = prompt.render(
             {
                 "employee_name": profile.name,
@@ -168,7 +167,7 @@ class Answerer:
                     temperature=prompt.temperature,
                     max_tokens=self._settings.llm_max_tokens,
                     prompt_name=PROMPT_NAME,
-                    prompt_version=PROMPT_VERSION,
+                    prompt_version=prompt.version,
                     timeout_s=self._settings.llm_timeout_s,
                     response_format="json_object",
                 )
@@ -178,7 +177,7 @@ class Answerer:
             await self._audit.record(
                 "answer_unavailable",
                 retrieved=len(retrieved),
-                prompt_version=PROMPT_VERSION,
+                prompt_version=prompt.version,
             )
             return self._escalate(EscalationReason.UNAVAILABLE, retrieved)
 
@@ -189,7 +188,7 @@ class Answerer:
                 "answer_rejected",
                 reason="format",
                 retrieved=len(retrieved),
-                prompt_version=PROMPT_VERSION,
+                prompt_version=prompt.version,
             )
             return self._escalate(EscalationReason.NO_SOURCES, retrieved, completion)
 
@@ -204,7 +203,7 @@ class Answerer:
             reason=verdict.reason,
             citations=len(verdict.citations),
             retrieved=len(retrieved),
-            prompt_version=PROMPT_VERSION,
+            prompt_version=prompt.version,
             input_tokens=completion.input_tokens,
             output_tokens=completion.output_tokens,
             cost_rub=completion.cost_rub,

@@ -1,6 +1,6 @@
 name: openrouter-free
 role: answer
-description: "Zero-cost answer model for a reviewer without a budget. OpenRouter routes to a free model; the daily cap is small, so this is a demo profile, not an eval profile."
+description: "Demo only: cross-border, not admissible for personal data (ADR 0030). Zero-cost answer model for a reviewer without a budget. OpenRouter routes to a free model; the daily cap is small, so this is a demo profile, not an eval profile."
 family: openai-chat
 model: openrouter/free
 json_mode: true

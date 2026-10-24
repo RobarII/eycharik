@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e admin-e2e-stack security prod-config prod-up smoke deploy-remote backup restore
+.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl tco run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e admin-e2e-stack security prod-config prod-up smoke deploy-remote backup restore
 
 COVERAGE_MIN ?= 85
 
@@ -103,6 +103,9 @@ eval-ocr:                          # extraction quality; needs no database and n
 
 eval-sentiment:                     # PROVIDER=keyword|prompt|decisions, SPLIT=dev|test|all
 	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --split $(or $(SPLIT),all) --repeat $(or $(REPEAT),1) $(ARGS) --write
+
+tco:                                # TCO from prices and measured token budget; NEWCOMERS and SETUP are inputs
+	$(PY) python scripts/tco.py --newcomers $(or $(NEWCOMERS),50,100,300,600) --answers-per-newcomer $(or $(ANSWERS),20) --hr-hourly-rub $(or $(HR_HOUR),1000) $(if $(SETUP),--setup-rub $(SETUP))
 
 run:
 	$(PY) uvicorn onboarding.api.app:create_app --factory --reload --port 8000

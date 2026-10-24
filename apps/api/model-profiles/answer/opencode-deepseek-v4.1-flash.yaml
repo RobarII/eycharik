@@ -1,6 +1,6 @@
 name: opencode-deepseek-v4.1-flash
 role: answer
-description: "Answer model on opencode-go; the demo deployment choice (ADR 0025). Prefix cache is billed separately."
+description: "Demo only: cross-border, not admissible for personal data (ADR 0030). Answer model on opencode-go; the demo deployment choice (ADR 0025). Prefix cache is billed separately."
 family: openai-chat
 model: deepseek-v4.1-flash
 json_mode: true

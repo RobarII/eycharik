@@ -1,6 +1,6 @@
 name: openrouter-gpt-4.1-mini
 role: answer
-description: "Answer model through OpenRouter, so one key covers answer, embed and rerank. Added for a reviewer without an opencode or GigaChat account."
+description: "Demo only: cross-border, not admissible for personal data (ADR 0030). Answer model through OpenRouter, so one key covers answer, embed and rerank. Added for a reviewer without an opencode or GigaChat account."
 family: openai-chat
 model: openai/gpt-4.1-mini
 json_mode: true

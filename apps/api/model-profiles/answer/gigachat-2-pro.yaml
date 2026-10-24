@@ -1,6 +1,6 @@
 name: gigachat-2-pro
 role: answer
-description: "Russian-hosted answer model for a 152-ФЗ pilot; the demo uses opencode-deepseek-v4.1-flash (ADR 0025)."
+description: "Russian-hosted answer model, the only one on disk; ADR 0030 names GigaChat3.1-10B-A1.8B for the pilot and that profile is still to be added. The demo uses opencode-deepseek-v4.1-flash (ADR 0025)."
 family: gigachat
 model: GigaChat-2-Pro
 json_mode: true

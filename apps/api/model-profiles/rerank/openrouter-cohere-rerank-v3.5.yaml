@@ -1,6 +1,6 @@
 name: openrouter-cohere-rerank-v3.5
 role: rerank
-description: "Hosted cross-encoder (ADR 0008). An outage keeps the hybrid order, never fails a turn."
+description: "Demo only: cross-border, not admissible for personal data (ADR 0030). Hosted cross-encoder (ADR 0008). An outage keeps the hybrid order, never fails a turn."
 family: cohere-rerank
 model: cohere/rerank-v3.5
 timeout_s: 3.0

@@ -1,6 +1,6 @@
 name: openrouter-jev-1.14
 role: classify
-description: "TypeSafe Jev through OpenRouter: the same System One API, billed to the OpenRouter account."
+description: "Demo only: a second vendor across the border, not admissible for personal data (ADR 0030). TypeSafe Jev through OpenRouter: the same System One API, billed to the OpenRouter account."
 note: >
   Same wire shape as the direct endpoint, so the adapter needs no branch: JEV_BASE_URL points at
   https://openrouter.ai/api/v1 and the path stays /systemone. The model page lists

@@ -1,6 +1,6 @@
 name: openrouter-qwen3-reranker-8b
 role: rerank
-description: "Hosted 8B cross-encoder on OpenRouter (Fireworks backend), the measured replacement for the rate-limited free endpoint (ADR 0008)."
+description: "Demo only: cross-border, not admissible for personal data (ADR 0030). Hosted 8B cross-encoder on OpenRouter (Fireworks backend), the measured replacement for the rate-limited free endpoint (ADR 0008)."
 family: cohere-rerank
 model: qwen/qwen3-reranker-8b
 timeout_s: 8.0

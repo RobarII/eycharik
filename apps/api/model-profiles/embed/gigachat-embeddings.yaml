@@ -1,6 +1,6 @@
 name: gigachat-embeddings
 role: embed
-description: "Russian-hosted embedder for a 152-ФЗ pilot; same 1024 dimensions, so the column and the vectors agree."
+description: "Russian-hosted embedder, the only one on disk; ADR 0030 names bge-m3 for the pilot and that profile is still to be added. Same 1024 dimensions, so the column and the vectors agree."
 family: gigachat
 model: Embeddings
 dim: 1024

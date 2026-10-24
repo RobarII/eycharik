@@ -1,20 +1,22 @@
-#!/usr/bin/env python3
-"""Measure the prompt and context token budget of the answer path.
+"""Measure the prompt, context, completion, and rerank token budget per tokenizer.
 
-The number that matters for unit economics is "how many tokens does one answer cost". It has
-three parts: the answer prompt, the chunks the retriever puts in front of it, and the completion.
-The first two are measurable offline without a provider: chunk the corpus with the production
-chunker, then tokenize prompt + N chunks with the tokenizer of the model under consideration. The
-completion is a policy value, not a measurement, and it is passed in with `--completion`.
+Unit economics need "how many tokens does one answer cost". It has three parts: the answer prompt,
+the chunks the retriever puts in front, and the completion. Every vendor bills its own tokenizer, so
+one measurement reused across five models quietly lies by 10-25%. This script takes several
+tokenizer files and prints one row per tokenizer.
 
-The tokenizer file comes from the model repository (`hf download <repo> tokenizer.json`), so the
-result is tied to a named model rather than to a tokenizer guess:
+The completion is a budget, not a measurement: a real Russian fragment of the corpus is truncated to
+`--completion-chars` and tokenized with each tokenizer, so the comparison is like-for-like without
+pretending to know the answers. `--rerank-tokenizer` adds what a cross-encoder sees per answer.
 
+    HUB=~/.cache/huggingface/hub
     hf download ai-sage/GigaChat3.1-10B-A1.8B tokenizer.json
+    hf download Qwen/Qwen3.5-9B tokenizer.json
     uv run --with tokenizers python scripts/token_budget.py \
-        --tokenizer "$HOME/.cache/huggingface/hub/models--ai-sage--GigaChat3.1-10B-A1.8B/"\
-"snapshots"/*/tokenizer.json \
-        --prompt docs/prompts/answer/v7.md --chunks 5 --completion 250
+        --tokenizer $HUB/models--ai-sage--GigaChat3.1-10B-A1.8B/snapshots/*/tokenizer.json \
+        --tokenizer $HUB/models--Qwen--Qwen3.5-9B/snapshots/*/tokenizer.json \
+        --rerank-tokenizer $HUB/models--BAAI--bge-reranker-v2-m3/snapshots/*/tokenizer.json \
+        --prompt docs/prompts/answer/v7.md --chunks 5 --completion-chars 700
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps" / "api"))
 
 from onboarding.core.chunking import DEFAULT_MAX_CHARS, split_document  # noqa: E402
-from onboarding.core.models import DocId, Document  # noqa: E402
+from onboarding.core.models import Chunk, DocId, Document  # noqa: E402
 
 
 def _documents(root: Path) -> list[Document]:
@@ -50,63 +52,120 @@ def _documents(root: Path) -> list[Document]:
     return documents
 
 
+def _chunks(root: Path) -> list[Chunk]:
+    return [
+        chunk
+        for document in _documents(root)
+        for chunk in split_document(document, max_chars=DEFAULT_MAX_CHARS)
+    ]
+
+
+def _answer_sample(chunks: list[Chunk], chars: int) -> str:
+    """A deterministic Russian fragment of the corpus, used as the answer-length probe."""
+    text = " ".join(chunk.text for chunk in chunks)
+    return text[:chars]
+
+
 def _percentile(values: list[int], share: float) -> int:
     ordered = sorted(values)
     return ordered[min(len(ordered) - 1, int(share * len(ordered)))]
 
 
+def _row(
+    name: str,
+    tokenizer: Tokenizer,
+    *,
+    prompt: str,
+    chunks: list[Chunk],
+    sample: str,
+    context_chunks: int,
+) -> dict[str, object]:
+    prompt_tokens = len(tokenizer.encode(prompt).ids)
+    chunk_tokens = [len(tokenizer.encode(chunk.text).ids) for chunk in chunks]
+    mean_chunk = round(statistics.mean(chunk_tokens))
+    completion_tokens = len(tokenizer.encode(sample).ids)
+    input_tokens = prompt_tokens + context_chunks * mean_chunk
+    return {
+        "tokenizer": name,
+        "prompt_tokens": prompt_tokens,
+        "chunk_tokens_mean": mean_chunk,
+        "chunk_tokens_p95": _percentile(chunk_tokens, 0.95),
+        "context_tokens": context_chunks * mean_chunk,
+        "input_tokens": input_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": input_tokens + completion_tokens,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tokenizer", required=True, type=Path)
+    parser.add_argument("--tokenizer", required=True, action="append", type=Path)
     parser.add_argument("--prompt", type=Path, default=ROOT / "docs/prompts/answer/v7.md")
     parser.add_argument("--knowledge", type=Path, default=ROOT / "knowledge")
     parser.add_argument("--chunks", type=int, default=5)
-    parser.add_argument("--completion", type=int, default=250)
+    parser.add_argument("--completion-chars", type=int, default=700)
+    parser.add_argument("--rerank-tokenizer", type=Path)
+    parser.add_argument("--rerank-candidates", type=int, default=30)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    tokenizer = Tokenizer.from_file(str(args.tokenizer))
-    prompt_tokens = len(tokenizer.encode(args.prompt.read_text(encoding="utf-8")).ids)
+    prompt = args.prompt.read_text(encoding="utf-8")
+    chunks = _chunks(args.knowledge)
+    sample = _answer_sample(chunks, args.completion_chars)
 
-    chunks = [
-        chunk
-        for document in _documents(args.knowledge)
-        for chunk in split_document(document, max_chars=DEFAULT_MAX_CHARS)
-    ]
-    chunk_tokens = [len(tokenizer.encode(chunk.text).ids) for chunk in chunks]
-    mean_chunk = round(statistics.mean(chunk_tokens))
+    rerank_tokens = 0
+    if args.rerank_tokenizer is not None:
+        rerank_tokenizer = Tokenizer.from_file(str(args.rerank_tokenizer))
+        candidates = [chunk.text for chunk in chunks[: args.rerank_candidates]]
+        rerank_tokens = len(rerank_tokenizer.encode(" ".join(candidates)).ids)
 
-    input_tokens = prompt_tokens + args.chunks * mean_chunk
+    rows = []
+    for path in args.tokenizer:
+        name = next(
+            (part.split("models--")[1] for part in path.parts if "models--" in part),
+            path.name,
+        )
+        rows.append(
+            _row(
+                name,
+                Tokenizer.from_file(str(path)),
+                prompt=prompt,
+                chunks=chunks,
+                sample=sample,
+                context_chunks=args.chunks,
+            )
+        )
+
     report = {
-        "tokenizer": str(args.tokenizer),
         "prompt": str(args.prompt.relative_to(ROOT)),
-        "prompt_tokens": prompt_tokens,
         "knowledge_files": len({chunk.id.split("#")[0] for chunk in chunks}),
         "chunks": len(chunks),
-        "chunk_tokens_mean": mean_chunk,
-        "chunk_tokens_median": round(statistics.median(chunk_tokens)),
-        "chunk_tokens_p95": _percentile(chunk_tokens, 0.95),
-        "chunk_tokens_max": max(chunk_tokens),
         "context_chunks": args.chunks,
-        "input_tokens": input_tokens,
-        "completion_tokens": args.completion,
-        "total_tokens": input_tokens + args.completion,
+        "completion_chars": args.completion_chars,
+        "rerank_candidates": args.rerank_candidates,
+        "rerank_tokens": rerank_tokens,
+        "rows": rows,
     }
     if args.json:
         print(json.dumps(report, indent=2))
         return 0
 
-    print(f"tokenizer           {report['tokenizer']}")
-    print(f"prompt              {report['prompt']} ({prompt_tokens} tokens)")
-    print(f"chunks              {len(chunks)} from {report['knowledge_files']} files")
     print(
-        "chunk tokens        mean {chunk_tokens_mean} median {chunk_tokens_median} "
-        "p95 {chunk_tokens_p95} max {chunk_tokens_max}".format(**report)
+        f"prompt {report['prompt']}, {report['chunks']} chunks "
+        f"from {report['knowledge_files']} files"
     )
-    print(f"context             {args.chunks} chunks -> {args.chunks * mean_chunk} tokens")
-    print(f"input per answer    {input_tokens} tokens")
-    print(f"completion budget   {args.completion} tokens")
-    print(f"total per answer    {input_tokens + args.completion} tokens")
+    print(f"answer sample {args.completion_chars} chars, context {args.chunks} chunks")
+    if rerank_tokens:
+        print(f"rerank {args.rerank_candidates} candidates -> {rerank_tokens} tokens "
+              f"({args.rerank_tokenizer})")
+    header = f"{'tokenizer':<52}{'prompt':>7}{'chunk':>7}{'in':>7}{'out':>6}{'total':>7}"
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        print(
+            f"{str(row['tokenizer'])[:50]:<52}{row['prompt_tokens']:>7}{row['chunk_tokens_mean']:>7}"
+            f"{row['input_tokens']:>7}{row['completion_tokens']:>6}{row['total_tokens']:>7}"
+        )
     return 0
 
 

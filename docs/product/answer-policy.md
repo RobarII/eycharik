@@ -12,6 +12,12 @@ company knowledge base.
 ## Must escalate
 
 - Anything with no supporting chunk, or only with chunks filtered out by audience or validity.
+- A question whose answer lives in a document the viewer may not see. A shared word is not a
+  supporting chunk: the sales rate threshold is not answered by a procurement tender rule just
+  because both mention a contract. The answer must contain the fact that was asked for, and "the
+  topic is in the context" is not that fact. Prompt `answer/v5` states this in the model's own
+  terms, because `answer/v4` escalated 14 of 15 blocked questions and answered the fifteenth from
+  adjacent documents.
 - Personal cases: salary amount, contract terms for a specific person, a named mentor or manager,
   conflict with a manager, health or leave for medical reasons.
 - Legal, tax, and disciplinary questions.

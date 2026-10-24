@@ -1,0 +1,12 @@
+version: 7
+name: answer
+model: deepseek-v4.1-flash
+temperature: 0.0
+max_tokens: 700
+supersedes: 6
+eval: docs/measurements/2026-10-24-eval-full-prompt-v7.md
+notes: >
+  The text is version 6 unchanged; the temperature is 0 instead of 0.2. Two runs of version 6 on the
+  same corpus moved `escalation_recall` from 1.000 to 0.867 and `answer_contains` from 0.918 to
+  0.885, which is two deciding cases in fifteen. A gate cannot separate a regression from a sampler,
+  so the sampler goes away before the gate is trusted.

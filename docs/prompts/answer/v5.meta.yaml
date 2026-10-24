@@ -1,0 +1,14 @@
+version: 5
+name: answer
+model: deepseek-v4.1-flash
+temperature: 0.2
+max_tokens: 700
+supersedes: 4
+eval: docs/measurements/2026-10-24-eval-full-prompt-v5.md
+notes: >
+  Version 4 said "if the answer is not there, do not answer", and a model read that as "the topic is
+  there, so the answer is there": the 2026-10-24 full eval answered "С какой суммы договор
+  согласуют юристы?" from tender rules and counterparty checks, because the sales document that
+  holds the threshold is invisible to the viewer. Rule 1 now defines a missing answer as a missing
+  fact, names that exact failure as an example, and forbids assembling an answer from adjacent
+  fragments.

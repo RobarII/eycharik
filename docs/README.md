@@ -17,7 +17,7 @@ from this table. If a question is not answered here, the answer does not exist y
 | What does VK give us? | [contracts/vk-api.md](contracts/vk-api.md) |
 | What can one messenger carry, and where is that written? | [contracts/channel-profile.schema.json](contracts/channel-profile.schema.json), profiles in `apps/api/channel-profiles/` |
 | What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
-| What exactly does the model see? | [prompts/answer/v4.md](prompts/answer/v4.md) (current), [v3](prompts/answer/v3.md), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
+| What exactly does the model see? | [prompts/answer/v7.md](prompts/answer/v7.md) (current), [v6](prompts/answer/v6.md), [v5](prompts/answer/v5.md), [v4](prompts/answer/v4.md), [v3](prompts/answer/v3.md), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
 | How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
 | What is the Jev classifier pilot? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md), rubric [prompts/sentiment-jev/v1.yaml](prompts/sentiment-jev/v1.yaml) |
 | How is a chunk given context before embedding? | [prompts/context/v1.md](prompts/context/v1.md) |

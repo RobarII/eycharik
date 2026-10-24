@@ -47,6 +47,17 @@ class StubIndexer:
         self.payloads.append(dict(payload))  # type: ignore[arg-type]
 
 
+class StubFiles:
+    def __init__(self) -> None:
+        self.saved: list[tuple[str, str, int, tuple[str, ...]]] = []
+
+    async def save(self, employee_id: object, address: object, files: object) -> list[str]:
+        owner, channel, chat_id = _address(employee_id, address)
+        tokens = tuple(file.token for file in files)  # type: ignore[attr-defined]
+        self.saved.append((owner, channel, chat_id, tokens))
+        return []
+
+
 class RecordingQueue:
     def __init__(self) -> None:
         self.completed: list[int] = []
@@ -71,6 +82,7 @@ def build_with_indexer() -> tuple[JobRunner, StubIndexer]:
         audit=NullAudit(),
         extractor=StubExtractor(),  # type: ignore[arg-type]
         indexer=indexer,  # type: ignore[arg-type]
+        files=StubFiles(),  # type: ignore[arg-type]
     )
     return runner, indexer
 
@@ -91,6 +103,7 @@ def build_with_extractor() -> tuple[JobRunner, StubService, RecordingQueue, Stub
         audit=NullAudit(),
         extractor=extractor,  # type: ignore[arg-type]
         indexer=StubIndexer(),  # type: ignore[arg-type]
+        files=StubFiles(),  # type: ignore[arg-type]
     )
     return runner, service, queue, extractor
 
@@ -121,6 +134,58 @@ async def test_message_job_restores_the_event() -> None:
     )
 
     assert service.handled == [("1001", "max", 42, "message_received")]
+
+
+async def test_a_file_job_is_stored_before_the_step_is_applied() -> None:
+    service = StubService()
+    files = StubFiles()
+    runner = JobRunner(
+        queue=RecordingQueue(),  # type: ignore[arg-type]
+        service=service,  # type: ignore[arg-type]
+        clock=FrozenClock(NOW),
+        audit=NullAudit(),
+        extractor=StubExtractor(),  # type: ignore[arg-type]
+        indexer=StubIndexer(),  # type: ignore[arg-type]
+        files=files,  # type: ignore[arg-type]
+    )
+
+    await runner._dispatch(
+        "message",
+        {
+            "employee_id": "1001",
+            "channel": "max",
+            "chat_id": 42,
+            "event": {"kind": "file_received", "at": "2026-10-23T09:00:00+00:00"},
+            "files": [
+                {
+                    "token": "photo-token-1",
+                    "url": "https://cdn.test/1",
+                    "filename": "passport.jpg",
+                    "media_type": "image/jpeg",
+                    "size": 1024,
+                }
+            ],
+        },
+    )
+
+    assert files.saved == [("1001", "max", 42, ("photo-token-1",))]
+    assert service.handled == [("1001", "max", 42, "file_received")]
+
+
+async def test_a_malformed_file_list_is_rejected() -> None:
+    runner, _, _ = build()
+
+    with pytest.raises(JobPayloadError, match="files must be a list"):
+        await runner._dispatch(
+            "message",
+            {
+                "employee_id": "1001",
+                "channel": "max",
+                "chat_id": 42,
+                "event": {"kind": "file_received", "at": "2026-10-23T09:00:00+00:00"},
+                "files": "passport.jpg",
+            },
+        )
 
 
 async def test_timeout_job_uses_the_job_clock() -> None:

@@ -70,6 +70,7 @@ class FakeContainer:
     audit: object = field(default_factory=object)
     extractor: object = field(default_factory=object)
     indexer: object = field(default_factory=object)
+    files: object = field(default_factory=object)
     database: object = field(default_factory=object)
     dispatcher: CountingDispatcher = field(default_factory=CountingDispatcher)
     scheduler: CountingScheduler = field(default_factory=CountingScheduler)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -14,10 +15,12 @@ from onboarding.app.channels.max.client import (
     MaxUnavailableError,
     Subscription,
 )
+from onboarding.app.channels.max.files import FileFetchError, MaxFiles
 from onboarding.app.channels.max.media import ImageAssetError
 from onboarding.app.channels.max.render import to_attachments
+from onboarding.app.files.errors import FileTooLargeError
 from onboarding.core.models import Address, Button, Channel, ChatId
-from onboarding.ports import OutboundMessage
+from onboarding.ports import InboundFile, OutboundMessage
 
 ADDRESS = Address(channel=Channel.MAX, chat_id=ChatId(1))
 
@@ -97,9 +100,7 @@ async def test_send_uploads_an_image_once_and_reuses_the_token(tmp_path: Path) -
             )
         if request.url.host == "upload.test":
             uploads.append(request)
-            return httpx.Response(
-                200, json={"photos": {"photoIds": {"token": "media-token"}}}
-            )
+            return httpx.Response(200, json={"photos": {"photoIds": {"token": "media-token"}}})
         messages.append(request)
         return httpx.Response(200, json={"message": {"body": {"mid": "mid-1"}}})
 
@@ -132,9 +133,7 @@ async def test_an_unprocessed_image_is_retried(
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal attempts
         if request.url.host == "upload.test":
-            return httpx.Response(
-                200, json={"photos": {"photoIds": {"token": "media-token"}}}
-            )
+            return httpx.Response(200, json={"photos": {"photoIds": {"token": "media-token"}}})
         if request.url.path == "/uploads":
             return httpx.Response(200, json={"url": "https://upload.test/image"})
         attempts += 1
@@ -207,3 +206,60 @@ async def test_subscription_posts_the_secret() -> None:
         "update_types": ["message_created"],
         "secret": "s3cret",
     }
+
+
+def build_files(handler: httpx.MockTransport, max_bytes: int = 1000) -> MaxFiles:
+    return MaxFiles(
+        client=httpx.AsyncClient(transport=handler),
+        token=SecretStr("bot-token"),
+        platform_host="platform-api2.max.ru",
+        max_bytes=max_bytes,
+    )
+
+
+def test_a_file_is_downloaded_without_sending_the_token_to_a_cdn() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"\xff\xd8\xffdata")
+
+    files = build_files(httpx.MockTransport(handler))
+    data = asyncio.run(files.fetch(InboundFile(token="t", url="https://cdn.max.ru/f/1")))
+
+    assert data == b"\xff\xd8\xffdata"
+    assert seen[0].headers.get("authorization") is None
+
+
+def test_the_token_rides_along_for_max_itself() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"%PDF-1.7")
+
+    files = build_files(httpx.MockTransport(handler))
+    asyncio.run(files.fetch(InboundFile(token="t", url="https://platform-api2.max.ru/f/1")))
+
+    assert seen[0].headers["authorization"] == "bot-token"
+
+
+def test_a_declared_and_a_streamed_file_are_both_capped() -> None:
+    declared = httpx.MockTransport(
+        lambda request: httpx.Response(200, headers={"content-length": "5000"}, content=b"x")
+    )
+    streamed = httpx.MockTransport(lambda request: httpx.Response(200, content=b"x" * 5000))
+
+    with pytest.raises(FileTooLargeError):
+        asyncio.run(build_files(declared).fetch(InboundFile(token="t", url="https://cdn.test/f")))
+    with pytest.raises(FileTooLargeError):
+        asyncio.run(build_files(streamed).fetch(InboundFile(token="t", url="https://cdn.test/f")))
+
+
+def test_a_missing_url_and_a_bad_status_are_named() -> None:
+    files = build_files(httpx.MockTransport(lambda request: httpx.Response(404, content=b"{}")))
+
+    with pytest.raises(FileFetchError, match="no_url"):
+        asyncio.run(files.fetch(InboundFile(token="t")))
+    with pytest.raises(FileFetchError, match="status_404"):
+        asyncio.run(files.fetch(InboundFile(token="t", url="https://cdn.test/f")))

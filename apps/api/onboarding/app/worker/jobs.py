@@ -9,13 +9,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 
+from onboarding.app.files.intake import InboundFileIntake
 from onboarding.app.jobs import EXTRACT_DOCUMENT, INDEX_DOCUMENT, MESSAGE, START, TIMEOUT
 from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.index import DocumentIndexer
 from onboarding.app.worker.payload import JobPayloadError
 from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import Address, Channel, ChatId, EmployeeId, Event, EventKind
-from onboarding.ports import AuditLog, Clock, JobSink
+from onboarding.ports import AuditLog, Clock, InboundFile, JobSink
 
 
 class JobRunner:
@@ -28,6 +29,7 @@ class JobRunner:
         audit: AuditLog,
         extractor: DocumentExtractor,
         indexer: DocumentIndexer,
+        files: InboundFileIntake,
     ) -> None:
         self._queue = queue
         self._service = service
@@ -35,6 +37,7 @@ class JobRunner:
         self._audit = audit
         self._extractor = extractor
         self._indexer = indexer
+        self._files = files
 
     async def run_once(self) -> int:
         jobs = await self._queue.claim()
@@ -71,6 +74,11 @@ class JobRunner:
             return
         if kind == MESSAGE:
             event = _event(payload.get("event"))
+            attachments = _files(payload.get("files"))
+            if attachments:
+                # Stored before the step is applied, so a recruiter sees the document even if the
+                # reply that follows fails. The webhook already answered 200; this is the slow part.
+                await self._files.save(employee_id, address, attachments)
         elif kind == TIMEOUT:
             event = Event(kind=EventKind.TIMEOUT, at=self._clock.now())
         else:
@@ -89,6 +97,44 @@ def _integer(payload: Mapping[str, object], key: str) -> int:
     value = payload.get(key)
     if not isinstance(value, int) or isinstance(value, bool):
         raise JobPayloadError(f"{key} must be an integer")
+    return value
+
+
+def _files(raw: object) -> tuple[InboundFile, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        raise JobPayloadError("files must be a list")
+    files: list[InboundFile] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            raise JobPayloadError("each file must be a mapping")
+        token = item.get("token")
+        if not isinstance(token, str) or not token:
+            raise JobPayloadError("file.token must be a non-empty string")
+        files.append(
+            InboundFile(
+                token=token,
+                url=_optional_text(item, "url"),
+                filename=_optional_text(item, "filename"),
+                media_type=_optional_text(item, "media_type"),
+                size=_optional_int(item, "size"),
+            )
+        )
+    return tuple(files)
+
+
+def _optional_text(raw: Mapping[str, object], key: str) -> str | None:
+    value = raw.get(key)
+    return value if isinstance(value, str) and value else None
+
+
+def _optional_int(raw: Mapping[str, object], key: str) -> int | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise JobPayloadError(f"file.{key} must be a non-negative integer")
     return value
 
 

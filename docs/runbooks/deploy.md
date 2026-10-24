@@ -62,7 +62,15 @@ $EDITOR .env.prod
 ```
 
 `ENVIRONMENT=production` отказывается стартовать без `MAX_BOT_TOKEN`, `MAX_WEBHOOK_SECRET`,
-`LLM_API_KEY`, `ADMIN_TOKENS` и `METRICS_TOKEN`. Демо-выбор модели требует ещё `EMBED_API_KEY` для
+`LLM_API_KEY`, `ADMIN_TOKENS`, `METRICS_TOKEN` и `INBOUND_FILES_KEY`. Ключ — base64 от 32 байт:
+
+```bash
+python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+```
+
+Он шифрует документы, которые люди присылают в чат. Потеря ключа не ломает бота: новые файлы
+получат статус `unavailable`, а старые перестанут скачиваться. Храните его там же, где остальные
+секреты, и не меняйте без ротации: старые блобы читаются только своим ключом. Демо-выбор модели требует ещё `EMBED_API_KEY` для
 OpenRouter; GigaChat использует один ключ на обе роли. Образ `api` уже ставит Russian Trusted CA и
 указывает `MAX_CA_BUNDLE` на объединённый системный бандл.
 

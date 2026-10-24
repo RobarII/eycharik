@@ -257,6 +257,22 @@ class Messaging(Sender, Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class InboundFile:
+    """One attachment a messenger delivered, described but not yet downloaded.
+
+    ``token`` is the messenger's own id: it is the deduplication key, so a redelivery cannot store
+    the same passport twice. ``url`` is how the bytes are fetched later, in the worker, never in the
+    webhook.
+    """
+
+    token: str
+    url: str | None = None
+    filename: str | None = None
+    media_type: str | None = None
+    size: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class InboundMessage:
     """One delivery, already typed. The adapter namespaces ``dedupe_key`` with its channel."""
 
@@ -265,6 +281,16 @@ class InboundMessage:
     sender: str
     event: Event
     starts_run: bool = False
+    files: tuple[InboundFile, ...] = ()
+
+
+@runtime_checkable
+class FileFetcher(Protocol):
+    """Downloads an attachment the messenger already accepted. Raises on transport failure."""
+
+    async def fetch(self, file: InboundFile) -> bytes:
+        """The attachment bytes. Implementations cap the size before reading the whole body."""
+        ...
 
 
 @runtime_checkable

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 from onboarding.app.channels.max.ingress import parse_update
 from onboarding.core.models import ChatId, EventKind
+from onboarding.ports import InboundFile
 
 RECEIVED = datetime(2026, 10, 23, 9, 0, tzinfo=UTC)
 
@@ -159,6 +160,43 @@ def test_a_file_falls_back_to_the_documented_ids() -> None:
 
         assert inbound is not None
         assert inbound.event.file_id == expected
+
+
+def test_a_file_carries_where_to_download_it() -> None:
+    inbound = parse_update(
+        {
+            **MESSAGE_CREATED,
+            "message": {
+                **MESSAGE_CREATED["message"],
+                "body": {
+                    "mid": "mid-photo-3",
+                    "attachments": [
+                        {
+                            "type": "image",
+                            "payload": {
+                                "token": "t-3",
+                                "url": "https://cdn.max.ru/f/3",
+                                "filename": "passport.jpg",
+                                "size": 2048,
+                            },
+                        }
+                    ],
+                },
+            },
+        },
+        received_at=RECEIVED,
+    )
+
+    assert inbound is not None
+    assert inbound.files == (
+        InboundFile(
+            token="t-3",
+            url="https://cdn.max.ru/f/3",
+            filename="passport.jpg",
+            media_type=None,
+            size=2048,
+        ),
+    )
 
 
 def test_a_caption_stays_with_the_file() -> None:

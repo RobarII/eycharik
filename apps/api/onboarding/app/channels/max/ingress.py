@@ -21,7 +21,7 @@ from typing import Any
 from pydantic import SecretStr
 
 from onboarding.core.models import Address, Channel, ChatId, Event, EventKind
-from onboarding.ports import InboundMessage
+from onboarding.ports import InboundFile, InboundMessage
 
 HANDLED_TYPES = frozenset({"message_created", "message_callback", "bot_started"})
 SECRET_HEADER = "X-Max-Bot-Api-Secret"  # noqa: S105 - a header name, not a secret
@@ -68,6 +68,7 @@ class MaxIngress:
             sender=str(update.user_id),
             event=update.event,
             starts_run=update.starts_run,
+            files=update.files,
         )
 
 
@@ -79,6 +80,7 @@ class InboundUpdate:
     user_id: int | None
     event: Event
     starts_run: bool
+    files: tuple[InboundFile, ...] = ()
 
 
 def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> InboundUpdate | None:
@@ -116,6 +118,7 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
     )
 
     starts_run = update_type == "bot_started"
+    files: tuple[InboundFile, ...] = ()
     if update_type == "bot_started":
         event = Event(kind=EventKind.EMPLOYEE_CREATED, at=at)
     elif update_type == "message_created":
@@ -128,8 +131,9 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
             starts_run = True
             event = Event(kind=EventKind.EMPLOYEE_CREATED, at=at)
         elif attachment is not None:
-            # The file is not downloaded or stored: the event carries the attachment id, and the
-            # scenario only needs to know that something was sent.
+            # The webhook only describes the file: the worker downloads and stores it, so a slow
+            # messenger never holds the delivery open.
+            files = _attachments(body.get("attachments"))
             event = Event(kind=EventKind.FILE_RECEIVED, at=at, text=clean, file_id=attachment)
         else:
             event = Event(kind=EventKind.MESSAGE_RECEIVED, at=at, text=clean)
@@ -144,7 +148,34 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
         user_id=user_id,
         event=event,
         starts_run=starts_run,
+        files=files,
     )
+
+
+def _attachments(value: object) -> tuple[InboundFile, ...]:
+    """Every attachment, in order. An item without any id is skipped, not guessed at."""
+    if not isinstance(value, list):
+        return ()
+    files: list[InboundFile] = []
+    for item in value:
+        payload = _mapping(_mapping(item).get("payload"))
+        token = _attachment_id([{"payload": payload}])
+        if token is None:
+            continue
+        url = payload.get("url")
+        filename = payload.get("filename") or payload.get("file_name")
+        media_type = payload.get("mime_type") or payload.get("content_type")
+        size = _int(payload.get("size"))
+        files.append(
+            InboundFile(
+                token=token,
+                url=url if isinstance(url, str) and url else None,
+                filename=filename if isinstance(filename, str) and filename else None,
+                media_type=media_type if isinstance(media_type, str) and media_type else None,
+                size=size,
+            )
+        )
+    return tuple(files)
 
 
 def _attachment_id(value: object) -> str | None:

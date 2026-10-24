@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     max_messages_per_second: float = 2.0
     max_callbacks_enabled: bool = False
 
+    # Documents people send in a chat. The key is base64 of 32 bytes; without it the service records
+    # that a file arrived but keeps no bytes, which is a visible gap rather than a silent one.
+    inbound_files_key: SecretStr = SecretStr("")
+    inbound_files_max_bytes: int = 15 * 1024 * 1024
+
     telegram_base_url: str = "https://api.telegram.org"
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_webhook_secret: SecretStr = SecretStr("")
@@ -245,6 +250,7 @@ class Settings(BaseSettings):
                 ("LLM_API_KEY", self.llm_api_key.get_secret_value()),
                 ("ADMIN_TOKENS", self.admin_tokens_raw),
                 ("METRICS_TOKEN", self.metrics_token.get_secret_value()),
+                ("INBOUND_FILES_KEY", self.inbound_files_key.get_secret_value()),
             )
             if not value
         ]

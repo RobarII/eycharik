@@ -30,6 +30,7 @@ async def run_forever(settings: Settings, stop: asyncio.Event) -> None:
         audit=container.audit,
         extractor=container.extractor,
         indexer=container.indexer,
+        files=container.files,
     )
     purger = RetentionPurger(
         container.database,

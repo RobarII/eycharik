@@ -25,10 +25,11 @@ messenger ──webhook/{channel}──► api ──► Postgres: events + jobs
                               ▼
                         worker ──► scenario engine ──► outbox ──► channel adapter ──► messenger
                               │            │
+                              ├──► inbound file ──► AES-GCM ──► Postgres: inbound_files
                               │            └──► retrieval ──► one model call ──► grounding
                               └──► reminder tick ──► jobs (timeout)
 
-recruiter cabinet ──► admin API ──► Postgres: runs, questions, audit
+recruiter cabinet ──► admin API ──► Postgres: runs, questions, audit, inbound_files (decrypted)
                             │
                             └──► Postgres: kb_files + extract_document job
                                        │

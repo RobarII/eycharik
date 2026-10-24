@@ -24,6 +24,7 @@ from onboarding.app.db.models import (
     AuditRow,
     ChannelIdentityRow,
     EmployeeRow,
+    InboundFileRow,
     MessageRow,
     QuestionRow,
     RunRow,
@@ -100,6 +101,7 @@ class Offboarding:
     messages_deleted: int
     runs_closed: int
     audit_redacted: int
+    files_deleted: int = 0
 
 
 class QuestionAssigner:
@@ -263,6 +265,7 @@ class EmployeeOffboarder:
                     messages_deleted=0,
                     runs_closed=0,
                     audit_redacted=0,
+                    files_deleted=0,
                 )
 
             employee.status = "left"
@@ -299,6 +302,10 @@ class EmployeeOffboarder:
             deleted = await session.execute(
                 delete(QuestionRow).where(QuestionRow.employee_id == employee_id)
             )
+            # Passport scans go with the transcript: a person who left keeps no documents here.
+            deleted_files = await session.execute(
+                delete(InboundFileRow).where(InboundFileRow.employee_id == employee_id)
+            )
             messages_deleted = 0
             for channel, chat_id in sorted(addresses):
                 deleted_messages = await session.execute(
@@ -322,6 +329,7 @@ class EmployeeOffboarder:
                     redacted += 1
 
             questions_deleted = int(cast(CursorResult[Any], deleted).rowcount or 0)
+            files_deleted = int(cast(CursorResult[Any], deleted_files).rowcount or 0)
             runs_closed = int(cast(CursorResult[Any], closed).rowcount or 0)
             session.add(
                 AuditRow(
@@ -331,6 +339,7 @@ class EmployeeOffboarder:
                         "by": actor,
                         "questions_deleted": questions_deleted,
                         "messages_deleted": messages_deleted,
+                        "files_deleted": files_deleted,
                         "runs_closed": runs_closed,
                     },
                 )
@@ -341,6 +350,7 @@ class EmployeeOffboarder:
                 messages_deleted=messages_deleted,
                 runs_closed=runs_closed,
                 audit_redacted=redacted,
+                files_deleted=files_deleted,
             )
 
 

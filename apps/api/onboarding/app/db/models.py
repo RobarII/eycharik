@@ -304,6 +304,39 @@ class FileRow(Base):
     )
 
 
+class InboundFileRow(Base):
+    """A document a person sent in a chat, stored for the recruiter.
+
+    The bytes are encrypted with the deployment key before they reach this table: a passport scan
+    must not be readable from a database dump. ``token`` is the messenger's id, unique per chat, so
+    a redelivery cannot store the same file twice.
+    """
+
+    __tablename__ = "inbound_files"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PgUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    employee_id: Mapped[str] = mapped_column(String(64), index=True)
+    channel: Mapped[str] = mapped_column(String(16))
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    token: Mapped[str] = mapped_column(String(300))
+    filename: Mapped[str] = mapped_column(String(300))
+    media_type: Mapped[str] = mapped_column(String(120))
+    size: Mapped[int] = mapped_column(Integer)
+    sha256: Mapped[str] = mapped_column(String(64))
+    content: Mapped[bytes | None] = mapped_column(LargeBinary)
+    status: Mapped[str] = mapped_column(String(16))
+    error: Mapped[str | None] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("channel", "chat_id", "token", name="inbound_files_token_uq"),
+    )
+
+
 class ExtractionRow(Base):
     """The cached outcome of one (file, extraction profile) pair.
 

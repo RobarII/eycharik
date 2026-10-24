@@ -6,6 +6,7 @@ its tables, so never point it at anything you care about.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from collections.abc import AsyncIterator
@@ -20,8 +21,9 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from onboarding.api.app import create_app
-from onboarding.app.admin.actions import QuestionResolver
+from onboarding.app.admin.actions import EmployeeOffboarder, QuestionResolver
 from onboarding.app.admin.queries import AdminQueries
+from onboarding.app.audit import NullAudit
 from onboarding.app.channels.profiles import ChannelProfileLibrary
 from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
@@ -35,6 +37,7 @@ from onboarding.app.db.models import (
     EmployeeRow,
     ExtractionRow,
     FileRow,
+    InboundFileRow,
     JobRow,
     MessageRow,
     QuestionRow,
@@ -52,6 +55,8 @@ from onboarding.app.db.repos import (
 from onboarding.app.db.retention import RetentionPurger
 from onboarding.app.db.scheduler import ReminderScheduler
 from onboarding.app.db.session import Database
+from onboarding.app.files.crypto import decrypt
+from onboarding.app.files.intake import InboundFileIntake
 from onboarding.app.knowledge.embedding import HashingEmbedder
 from onboarding.app.knowledge.ingest import CorpusError
 from onboarding.app.knowledge.pipeline import ingest, ingest_document
@@ -79,7 +84,13 @@ from onboarding.core.models import (
     TimeoutAction,
 )
 from onboarding.core.transitions import start as start_run
-from onboarding.ports import ExtractionRecord, OutboundMessage, SearchQuery, StoredRun
+from onboarding.ports import (
+    ExtractionRecord,
+    InboundFile,
+    OutboundMessage,
+    SearchQuery,
+    StoredRun,
+)
 from tests.files import digital_pdf
 
 from .fakes import (
@@ -90,7 +101,7 @@ from .fakes import (
     ScriptedLLM,
     scored_chunk,
 )
-from .test_jobs import StubExtractor, StubIndexer
+from .test_jobs import StubExtractor, StubFiles, StubIndexer
 
 pytestmark = pytest.mark.integration
 
@@ -128,7 +139,7 @@ async def database() -> AsyncIterator[Database]:
         await session.execute(
             text(
                 "TRUNCATE messages, jobs, events, questions, audit_log, runs, employees, "
-                "channel_identities, "
+                "channel_identities, inbound_files, "
                 "kb_chunks, kb_documents, kb_files, kb_extractions RESTART IDENTITY CASCADE"
             )
         )
@@ -208,9 +219,15 @@ async def test_survey_progress_survives_a_save_and_load(database: Database) -> N
         question_index=1,
         pending_reason="manager",
     )
-    await runs.create(StoredRun(state=state, reminder=ScheduleReminder(
-        due_at=NOW, step_id="week_two_check", action=TimeoutAction.REMIND
-    ), address=MAX))
+    await runs.create(
+        StoredRun(
+            state=state,
+            reminder=ScheduleReminder(
+                due_at=NOW, step_id="week_two_check", action=TimeoutAction.REMIND
+            ),
+            address=MAX,
+        )
+    )
 
     loaded = await runs.load(state.run_id)
 
@@ -459,9 +476,7 @@ async def test_a_second_active_run_for_the_same_employee_is_a_race(
         EMPLOYEE,
         NOW,
     )
-    await repository.create(
-        StoredRun(state=first.state, reminder=first.reminder, address=MAX)
-    )
+    await repository.create(StoredRun(state=first.state, reminder=first.reminder, address=MAX))
 
     second = start_run(
         scenario,
@@ -569,6 +584,7 @@ async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
         audit=DatabaseAuditLog(database),
         extractor=StubExtractor(),  # type: ignore[arg-type]
         indexer=StubIndexer(),  # type: ignore[arg-type]
+        files=StubFiles(),  # type: ignore[arg-type]
     )
 
     queued, handled, delivered = await tick_once(
@@ -662,41 +678,39 @@ async def test_admin_resolves_a_question_and_queues_the_reply(database: Database
     app = admin_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
-            response = await http.post(
-                f"/admin/api/questions/{question_id}/resolve",
-                json={"text": "Отпуск — 28 дней, заявление за 14 дней."},
-                headers={"Authorization": "Bearer rec"},
-            )
-            assert response.status_code == 200, response.text
-            body = response.json()
-            assert body["id"] == question_id
-            assert body["answered"] is True
-            assert body["resolved_by"] == "rec-1"
+        response = await http.post(
+            f"/admin/api/questions/{question_id}/resolve",
+            json={"text": "Отпуск — 28 дней, заявление за 14 дней."},
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["id"] == question_id
+        assert body["answered"] is True
+        assert body["resolved_by"] == "rec-1"
 
-            second = await http.post(
-                f"/admin/api/questions/{question_id}/resolve",
-                json={"text": "Повтор"},
-                headers={"Authorization": "Bearer rec"},
-            )
-            assert second.status_code == 409
+        second = await http.post(
+            f"/admin/api/questions/{question_id}/resolve",
+            json={"text": "Повтор"},
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert second.status_code == 409
 
-            foreign = await http.post(
-                f"/admin/api/questions/{question_id}/resolve",
-                json={"text": "Чужой"},
-                headers={"Authorization": "Bearer other"},
-            )
-            assert foreign.status_code == 404
+        foreign = await http.post(
+            f"/admin/api/questions/{question_id}/resolve",
+            json={"text": "Чужой"},
+            headers={"Authorization": "Bearer other"},
+        )
+        assert foreign.status_code == 404
 
-            empty = await http.post(
-                f"/admin/api/questions/{question_id}/resolve",
-                json={"text": "   "},
-                headers={"Authorization": "Bearer rec"},
-            )
-            assert empty.status_code == 422
+        empty = await http.post(
+            f"/admin/api/questions/{question_id}/resolve",
+            json={"text": "   "},
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert empty.status_code == 422
 
     async with database.session() as session:
         question = await session.get(QuestionRow, question_id)
@@ -704,14 +718,10 @@ async def test_admin_resolves_a_question_and_queues_the_reply(database: Database
         assert question.answered
         assert question.resolved_by == "rec-1"
         assert question.resolution == "Отпуск — 28 дней, заявление за 14 дней."
-        reply = await session.scalar(
-            select(MessageRow).where(MessageRow.chat_id == 1)
-        )
+        reply = await session.scalar(select(MessageRow).where(MessageRow.chat_id == 1))
         assert reply is not None
         assert reply.status == "pending"
-        audit = await session.scalar(
-            select(AuditRow).where(AuditRow.name == "question_resolved")
-        )
+        audit = await session.scalar(select(AuditRow).where(AuditRow.name == "question_resolved"))
         assert audit is not None
         assert audit.fields["question_id"] == question_id
         assert "text" not in audit.fields
@@ -722,30 +732,26 @@ async def test_manager_scope_and_expired_token(database: Database) -> None:
     app = admin_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
-            expired = await http.get(
-                "/admin/api/questions", headers={"Authorization": "Bearer expired"}
-            )
-            assert expired.status_code == 401
+        expired = await http.get(
+            "/admin/api/questions", headers={"Authorization": "Bearer expired"}
+        )
+        assert expired.status_code == 401
 
-            anonymous = await http.get("/admin/api/questions")
-            assert anonymous.status_code == 401
+        anonymous = await http.get("/admin/api/questions")
+        assert anonymous.status_code == 401
 
-            manager = await http.post(
-                f"/admin/api/questions/{question_id}/resolve",
-                json={"text": "Ответ руководителя отдела."},
-                headers={"Authorization": "Bearer mgr"},
-            )
-            assert manager.status_code == 200, manager.text
+        manager = await http.post(
+            f"/admin/api/questions/{question_id}/resolve",
+            json={"text": "Ответ руководителя отдела."},
+            headers={"Authorization": "Bearer mgr"},
+        )
+        assert manager.status_code == 200, manager.text
 
 
 async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Database) -> None:
-    service = build_service(
-        database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase()
-    )
+    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
     await service.start(EMPLOYEE, MAX)
     await seed_question(database)
     async with database.session() as session:
@@ -754,31 +760,29 @@ async def test_hr_offboards_an_employee_and_purges_the_transcript(database: Data
     app = admin_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
-            refused = await http.delete(
-                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer rec"}
-            )
-            assert refused.status_code == 403
+        refused = await http.delete(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer rec"}
+        )
+        assert refused.status_code == 403
 
-            removed = await http.delete(
-                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
-            )
-            assert removed.status_code == 200, removed.text
-            body = removed.json()
-            assert body["employee_id"] == str(EMPLOYEE)
-            assert body["questions_deleted"] == 1
-            assert body["messages_deleted"] == 1
-            assert body["runs_closed"] == 1
+        removed = await http.delete(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+        )
+        assert removed.status_code == 200, removed.text
+        body = removed.json()
+        assert body["employee_id"] == str(EMPLOYEE)
+        assert body["questions_deleted"] == 1
+        assert body["messages_deleted"] == 1
+        assert body["runs_closed"] == 1
 
-            again = await http.delete(
-                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
-            )
-            assert again.status_code == 200
-            assert again.json()["questions_deleted"] == 0
-            assert again.json()["messages_deleted"] == 0
+        again = await http.delete(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+        )
+        assert again.status_code == 200
+        assert again.json()["questions_deleted"] == 0
+        assert again.json()["messages_deleted"] == 0
 
     async with database.session() as session:
         employee = await session.get(EmployeeRow, str(EMPLOYEE))
@@ -873,9 +877,7 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
             ]
         )
 
-    result = await RetentionPurger(
-        database, FrozenClock(NOW), days=365
-    ).run_once()
+    result = await RetentionPurger(database, FrozenClock(NOW), days=365).run_once()
 
     assert result.questions_deleted == 1
     assert result.files_deleted == 1
@@ -889,16 +891,12 @@ async def test_retention_purges_old_questions_and_redacts_audit(database: Databa
         assert texts == ["свежий вопрос"]
         queued = list(await session.scalars(select(MessageRow.text)))
         assert queued == ["свежее в очереди"]
-        audit = await session.scalar(
-            select(AuditRow).where(AuditRow.name == "risk_assessed")
-        )
+        audit = await session.scalar(select(AuditRow).where(AuditRow.name == "risk_assessed"))
         assert audit is not None
         assert "evidence" not in audit.fields
         assert audit.fields["redacted"] is True
         assert audit.fields["level"] == "high"
-        purged = await session.scalar(
-            select(AuditRow).where(AuditRow.name == "retention_purged")
-        )
+        purged = await session.scalar(select(AuditRow).where(AuditRow.name == "retention_purged"))
         assert purged is not None
         assert purged.fields["messages_deleted"] == 3
 
@@ -992,9 +990,7 @@ async def test_hr_uploads_a_pdf_and_the_extraction_job_is_queued(database: Datab
     app = admin_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         response = await http.post(
             "/admin/api/knowledge/files",
@@ -1026,9 +1022,7 @@ async def test_hr_uploads_a_pdf_and_the_extraction_job_is_queued(database: Datab
         blob_id = response.json()["content_hash"]
 
         async with database.session() as session:
-            queued = await session.scalar(
-                select(JobRow).where(JobRow.kind == "extract_document")
-            )
+            queued = await session.scalar(select(JobRow).where(JobRow.kind == "extract_document"))
         assert queued is not None
         assert queued.payload["blob_id"] == blob_id
         assert queued.payload["metadata"]["owner"] == "hr-team"
@@ -1078,9 +1072,7 @@ valid_from: 2026-01-01
 """
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         response = await http.post(
             "/admin/api/knowledge",
@@ -1092,13 +1084,9 @@ valid_from: 2026-01-01
         assert queued["status"] == "queued"
 
         async with database.session() as session:
-            job = await session.scalar(
-                select(JobRow).where(JobRow.kind == "index_document")
-            )
+            job = await session.scalar(select(JobRow).where(JobRow.kind == "index_document"))
             extraction = await session.scalar(
-                select(ExtractionRow).where(
-                    ExtractionRow.content_hash == queued["content_hash"]
-                )
+                select(ExtractionRow).where(ExtractionRow.content_hash == queued["content_hash"])
             )
         assert job is not None
         assert extraction is not None
@@ -1117,9 +1105,7 @@ async def test_only_hr_may_upload_a_file(database: Database) -> None:
     app = admin_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         response = await http.post(
             "/admin/api/knowledge/files",
@@ -1188,9 +1174,7 @@ async def test_an_unlinked_account_is_acknowledged_and_audited(database: Databas
     app = channel_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         response = await http.post(
             "/webhook/telegram", json=telegram_update(), headers=TELEGRAM_HEADERS
@@ -1215,9 +1199,7 @@ async def test_a_linked_account_reaches_the_queue_once(database: Database) -> No
     app = channel_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         first = await http.post(
             "/webhook/telegram", json=telegram_update(), headers=TELEGRAM_HEADERS
@@ -1240,9 +1222,7 @@ async def test_a_first_contact_queues_a_start_not_a_message(database: Database) 
     app = channel_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         response = await http.post(
             "/webhook/telegram",
@@ -1257,9 +1237,7 @@ async def test_a_first_contact_queues_a_start_not_a_message(database: Database) 
 async def test_a_backfilled_max_link_still_starts_a_run(database: Database) -> None:
     """The migration links every existing employee to their MAX user id, so nothing breaks."""
     async with database.session() as session:
-        session.add(
-            ChannelIdentityRow(channel="max", external_id="222", employee_id=str(EMPLOYEE))
-        )
+        session.add(ChannelIdentityRow(channel="max", external_id="222", employee_id=str(EMPLOYEE)))
     app = channel_app()
     body = {
         "update_type": "bot_started",
@@ -1269,9 +1247,7 @@ async def test_a_backfilled_max_link_still_starts_a_run(database: Database) -> N
     }
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         response = await http.post(
             "/webhook/max", json=body, headers={"X-Max-Bot-Api-Secret": "max-secret"}
@@ -1289,9 +1265,7 @@ async def test_the_webhook_rejects_a_wrong_secret_and_an_unknown_channel(
     app = channel_app()
     async with (
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
-        httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app), base_url="http://test"
-        ) as http,
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
         wrong = await http.post(
             "/webhook/telegram",
@@ -1336,18 +1310,14 @@ async def test_hr_creates_an_employee_and_the_list_is_scoped(database: Database)
         assert repeated.status_code == 409
         assert repeated.json()["code"] == "employee_already_exists"
 
-        recruiter = await http.get(
-            "/admin/api/employees", headers={"Authorization": "Bearer rec"}
-        )
+        recruiter = await http.get("/admin/api/employees", headers={"Authorization": "Bearer rec"})
         assert recruiter.status_code == 200, recruiter.text
         assert {item["employee_id"] for item in recruiter.json()["items"]} == {
             str(EMPLOYEE),
             "2001",
         }
 
-        other = await http.get(
-            "/admin/api/employees", headers={"Authorization": "Bearer other"}
-        )
+        other = await http.get("/admin/api/employees", headers={"Authorization": "Bearer other"})
         assert other.json()["items"] == []
         assert other.json()["total"] == 0
 
@@ -1411,42 +1381,42 @@ async def test_hr_corrects_a_row_and_restores_after_leaving(database: Database) 
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
-            patched = await http.patch(
-                f"/admin/api/employees/{EMPLOYEE}",
-                json={"name": "Иван Петров", "audience": ["all"]},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert patched.status_code == 200, patched.text
-            assert patched.json()["name"] == "Иван Петров"
-            assert patched.json()["audience"] == ["all"]
+        patched = await http.patch(
+            f"/admin/api/employees/{EMPLOYEE}",
+            json={"name": "Иван Петров", "audience": ["all"]},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert patched.status_code == 200, patched.text
+        assert patched.json()["name"] == "Иван Петров"
+        assert patched.json()["audience"] == ["all"]
 
-            invalid = await http.patch(
-                f"/admin/api/employees/{EMPLOYEE}",
-                json={"audience": ["everyone"]},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert invalid.status_code == 422
-            assert invalid.json()["code"] == "validation_failed"
+        invalid = await http.patch(
+            f"/admin/api/employees/{EMPLOYEE}",
+            json={"audience": ["everyone"]},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["code"] == "validation_failed"
 
-            left = await http.delete(
-                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
-            )
-            assert left.status_code == 200, left.text
+        left = await http.delete(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+        )
+        assert left.status_code == 200, left.text
 
-            gone = await http.get(
-                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
-            )
-            assert gone.json()["status"] == "left"
-            assert gone.json()["left_at"] is not None
+        gone = await http.get(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+        )
+        assert gone.json()["status"] == "left"
+        assert gone.json()["left_at"] is not None
 
-            restored = await http.patch(
-                f"/admin/api/employees/{EMPLOYEE}",
-                json={"status": "active"},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert restored.status_code == 200, restored.text
-            assert restored.json()["status"] == "active"
-            assert restored.json()["left_at"] is None
+        restored = await http.patch(
+            f"/admin/api/employees/{EMPLOYEE}",
+            json={"status": "active"},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert restored.status_code == 200, restored.text
+        assert restored.json()["status"] == "active"
+        assert restored.json()["left_at"] is None
 
 
 async def test_bulk_upsert_corrects_a_row_without_resurrecting_it(database: Database) -> None:
@@ -1471,51 +1441,47 @@ async def test_bulk_upsert_corrects_a_row_without_resurrecting_it(database: Data
         app.router.lifespan_context(app),  # type: ignore[attr-defined]
         httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
     ):
-            first = await http.post(
-                "/admin/api/employees/bulk",
-                json={"employees": rows},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert first.status_code == 200, first.text
-            assert first.json() == {"created": 2, "updated": 0}
+        first = await http.post(
+            "/admin/api/employees/bulk",
+            json={"employees": rows},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert first.status_code == 200, first.text
+        assert first.json() == {"created": 2, "updated": 0}
 
-            second = await http.post(
-                "/admin/api/employees/bulk",
-                json={"employees": [{**rows[0], "role": "Старший бухгалтер"}, rows[1]]},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert second.json() == {"created": 0, "updated": 2}
+        second = await http.post(
+            "/admin/api/employees/bulk",
+            json={"employees": [{**rows[0], "role": "Старший бухгалтер"}, rows[1]]},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert second.json() == {"created": 0, "updated": 2}
 
-            detail = await http.get(
-                "/admin/api/employees/3001", headers={"Authorization": "Bearer hr"}
-            )
-            assert detail.json()["role"] == "Старший бухгалтер"
+        detail = await http.get("/admin/api/employees/3001", headers={"Authorization": "Bearer hr"})
+        assert detail.json()["role"] == "Старший бухгалтер"
 
-            offboarded = await http.delete(
-                "/admin/api/employees/3002", headers={"Authorization": "Bearer hr"}
-            )
-            assert offboarded.status_code == 200, offboarded.text
+        offboarded = await http.delete(
+            "/admin/api/employees/3002", headers={"Authorization": "Bearer hr"}
+        )
+        assert offboarded.status_code == 200, offboarded.text
 
-            third = await http.post(
-                "/admin/api/employees/bulk",
-                json={"employees": [{**rows[1], "name": "Борис С."}]},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert third.json() == {"created": 0, "updated": 1}
+        third = await http.post(
+            "/admin/api/employees/bulk",
+            json={"employees": [{**rows[1], "name": "Борис С."}]},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert third.json() == {"created": 0, "updated": 1}
 
-            after = await http.get(
-                "/admin/api/employees/3002", headers={"Authorization": "Bearer hr"}
-            )
-            assert after.json()["name"] == "Борис С."
-            assert after.json()["status"] == "left"
+        after = await http.get("/admin/api/employees/3002", headers={"Authorization": "Bearer hr"})
+        assert after.json()["name"] == "Борис С."
+        assert after.json()["status"] == "left"
 
-            duplicate = await http.post(
-                "/admin/api/employees/bulk",
-                json={"employees": [rows[0], rows[0]]},
-                headers={"Authorization": "Bearer hr"},
-            )
-            assert duplicate.status_code == 422
-            assert duplicate.json()["code"] == "validation_failed"
+        duplicate = await http.post(
+            "/admin/api/employees/bulk",
+            json={"employees": [rows[0], rows[0]]},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert duplicate.status_code == 422
+        assert duplicate.json()["code"] == "validation_failed"
 
 
 async def test_the_directory_pages_without_gaps_or_repeats(database: Database) -> None:
@@ -1559,3 +1525,130 @@ async def test_the_directory_pages_without_gaps_or_repeats(database: Database) -
                 break
         assert len(seen) == len(set(seen))
         assert set(seen) == {str(EMPLOYEE), "4000", "4001", "4002"}
+
+
+# --- inbound files ---------------------------------------------------------
+
+JPEG = b"\xff\xd8\xff\xe0" + b"scan-padding" * 20 + b"SECRET-MARKER"
+
+
+class StubFetcher:
+    def __init__(self, data: bytes = JPEG, error: Exception | None = None) -> None:
+        self.data = data
+        self.error = error
+        self.calls: list[str] = []
+
+    async def fetch(self, file: object) -> bytes:
+        self.calls.append(file.token)  # type: ignore[attr-defined]
+        if self.error is not None:
+            raise self.error
+        return self.data
+
+
+def intake(
+    db: Database, fetcher: StubFetcher, *, key: bytes | None = b"k" * 32, max_bytes: int = 10_000
+) -> InboundFileIntake:
+    return InboundFileIntake(
+        database=db, fetcher=fetcher, audit=NullAudit(), key=key, max_bytes=max_bytes
+    )
+
+
+async def test_an_inbound_file_is_encrypted_and_stored_once(database: Database) -> None:
+    fetcher = StubFetcher()
+    store = intake(database, fetcher)
+    attachment = InboundFile(
+        token="token-1", url="https://cdn.test/1", filename="passport.jpg", size=len(JPEG)
+    )
+
+    first = await store.save(str(EMPLOYEE), MAX, [attachment])
+    again = await store.save(str(EMPLOYEE), MAX, [attachment])
+
+    assert [file.status for file in first] == ["stored"]
+    assert [file.status for file in again] == ["stored"]
+    # The token is the idempotency key: a redelivery does not fetch or insert twice.
+    assert fetcher.calls == ["token-1"]
+    async with database.session() as session:
+        rows = (await session.scalars(select(InboundFileRow))).all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.filename == "passport.jpg"
+    assert row.media_type == "image/jpeg"
+    assert row.content is not None
+    assert b"SECRET-MARKER" not in row.content
+    assert decrypt(b"k" * 32, row.content) == JPEG
+    assert row.sha256 == hashlib.sha256(JPEG).hexdigest()
+
+
+async def test_a_file_that_is_not_a_document_is_rejected(database: Database) -> None:
+    store = intake(database, StubFetcher(b"just some text"))
+
+    stored = await store.save(
+        str(EMPLOYEE), MAX, [InboundFile(token="t", url="https://cdn.test/t", filename="a.jpg")]
+    )
+
+    assert stored[0].status == "rejected"
+    assert stored[0].error == "unsupported_type"
+    async with database.session() as session:
+        row = await session.scalar(select(InboundFileRow))
+    assert row is not None
+    assert row.content is None
+
+
+async def test_an_oversized_file_is_refused_before_download(database: Database) -> None:
+    fetcher = StubFetcher()
+    store = intake(database, fetcher, max_bytes=1000)
+
+    stored = await store.save(
+        str(EMPLOYEE),
+        MAX,
+        [InboundFile(token="t", url="https://cdn.test/t", filename="scan.pdf", size=5000)],
+    )
+
+    assert stored[0].status == "rejected"
+    assert stored[0].error == "declared_size"
+    assert fetcher.calls == []
+
+
+async def test_a_failed_download_is_recorded_and_a_retry_fills_it(database: Database) -> None:
+    failing = StubFetcher(error=RuntimeError("cdn down"))
+    store = intake(database, failing)
+    attachment = InboundFile(token="t", url="https://cdn.test/t", filename="scan.pdf")
+
+    failed = await store.save(str(EMPLOYEE), MAX, [attachment])
+    retried = await intake(database, StubFetcher()).save(str(EMPLOYEE), MAX, [attachment])
+
+    assert failed[0].status == "failed"
+    assert failed[0].error is not None
+    assert "RuntimeError" in failed[0].error
+    assert retried[0].status == "stored"
+
+
+async def test_without_a_key_the_attempt_is_recorded_but_no_bytes_are_kept(
+    database: Database,
+) -> None:
+    store = intake(database, StubFetcher(), key=None)
+
+    stored = await store.save(
+        str(EMPLOYEE), MAX, [InboundFile(token="t", url="https://cdn.test/t", filename="a.jpg")]
+    )
+
+    assert stored[0].status == "unavailable"
+    assert stored[0].error == "no_key"
+    async with database.session() as session:
+        row = await session.scalar(select(InboundFileRow))
+    assert row is not None
+    assert row.content is None
+
+
+async def test_offboarding_deletes_the_documents(database: Database) -> None:
+    await intake(database, StubFetcher()).save(
+        str(EMPLOYEE), MAX, [InboundFile(token="t", url="https://cdn.test/t", filename="a.jpg")]
+    )
+
+    result = await EmployeeOffboarder(database, FrozenClock(NOW)).offboard(
+        str(EMPLOYEE), actor="hr"
+    )
+
+    assert result.files_deleted == 1
+    async with database.session() as session:
+        assert await session.scalar(select(func.count()).select_from(InboundFileRow)) == 0

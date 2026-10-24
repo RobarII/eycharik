@@ -63,6 +63,7 @@ async def run(settings: Settings, *, max_jobs: int) -> tuple[int, int, int]:
         audit=container.audit,
         extractor=container.extractor,
         indexer=container.indexer,
+        files=container.files,
     )
     try:
         return await tick_once(

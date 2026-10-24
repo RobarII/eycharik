@@ -17,7 +17,7 @@ from typing import Any, cast
 from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.engine import CursorResult
 
-from onboarding.app.db.models import AuditRow, FileRow, MessageRow, QuestionRow
+from onboarding.app.db.models import AuditRow, FileRow, InboundFileRow, MessageRow, QuestionRow
 from onboarding.app.db.session import Database
 from onboarding.core.retention import cutoff, redact_fields
 from onboarding.ports import Clock
@@ -27,6 +27,7 @@ from onboarding.ports import Clock
 class PurgeResult:
     questions_deleted: int
     files_deleted: int
+    inbound_files_deleted: int
     messages_deleted: int
     audit_redacted: int
 
@@ -48,6 +49,11 @@ class RetentionPurger:
             )
             files = await session.execute(
                 delete(FileRow).where(FileRow.created_at < oldest)
+            )
+            # A passport scan is kept for the retention window and no longer: it is a liability,
+            # not an archive, and the step that needed it has long moved on.
+            inbound_files = await session.execute(
+                delete(InboundFileRow).where(InboundFileRow.created_at < oldest)
             )
             messages_deleted = 0
             while True:
@@ -91,13 +97,21 @@ class RetentionPurger:
 
             questions_deleted = int(cast(CursorResult[Any], deleted).rowcount or 0)
             files_deleted = int(cast(CursorResult[Any], files).rowcount or 0)
-            if questions_deleted or files_deleted or messages_deleted or redacted:
+            inbound_files_deleted = int(cast(CursorResult[Any], inbound_files).rowcount or 0)
+            if (
+                questions_deleted
+                or files_deleted
+                or inbound_files_deleted
+                or messages_deleted
+                or redacted
+            ):
                 session.add(
                     AuditRow(
                         name="retention_purged",
                         fields={
                             "questions_deleted": questions_deleted,
                             "files_deleted": files_deleted,
+                            "inbound_files_deleted": inbound_files_deleted,
                             "messages_deleted": messages_deleted,
                             "audit_redacted": redacted,
                             "cutoff": oldest.isoformat(),
@@ -107,6 +121,7 @@ class RetentionPurger:
             return PurgeResult(
                 questions_deleted=questions_deleted,
                 files_deleted=files_deleted,
+                inbound_files_deleted=inbound_files_deleted,
                 messages_deleted=messages_deleted,
                 audit_redacted=redacted,
             )

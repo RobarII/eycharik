@@ -122,6 +122,7 @@ async def test_run_builds_the_graph_and_closes_it(monkeypatch: pytest.MonkeyPatc
         audit: object = field(default_factory=object)
         extractor: object = field(default_factory=object)
         indexer: object = field(default_factory=object)
+        files: object = field(default_factory=object)
         database: object = field(default_factory=object)
 
         async def aclose(self) -> None:

@@ -7,10 +7,12 @@ one builds the full graph: models, retrieval, extraction, the outbox, and the sc
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 import httpx
 
 from onboarding.app.channels.max.client import MaxClient
+from onboarding.app.channels.max.files import MaxFiles
 from onboarding.app.channels.telegram.client import TelegramClient
 from onboarding.app.channels.vk.client import VkClient
 from onboarding.app.composition import (
@@ -29,6 +31,8 @@ from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import DatabaseQuestionLog, DatabaseRunRepository
 from onboarding.app.db.scheduler import ReminderScheduler
+from onboarding.app.files.crypto import load_key
+from onboarding.app.files.intake import InboundFileIntake
 from onboarding.app.knowledge.extract.ocr import build_ocr
 from onboarding.app.knowledge.extract.pdf import PdfReader
 from onboarding.app.knowledge.extract.pptx import PptxReader
@@ -75,6 +79,7 @@ class Container(Common):
     scheduler: ReminderScheduler
     extractor: DocumentExtractor
     indexer: DocumentIndexer
+    files: InboundFileIntake
 
     async def aclose(self) -> None:
         await self.http.aclose()
@@ -115,9 +120,7 @@ def build_container(settings: Settings) -> Container:
     llm = build_llm(settings, common.clock, http)
     embedder = build_embedder(settings, http)
     assert_embedding_width(embedder.dim)
-    knowledge = PostgresKnowledgeBase(
-        common.database, embedder, bm25=settings.bm25_enabled
-    )
+    knowledge = PostgresKnowledgeBase(common.database, embedder, bm25=settings.bm25_enabled)
     prompts = PromptLibrary(settings.prompts_dir)
     copy = load_copy(settings.copy_path)
 
@@ -152,6 +155,18 @@ def build_container(settings: Settings) -> Container:
         )
 
     outbox = OutboxMessaging(common.database, senders, common.profiles)
+    files = InboundFileIntake(
+        database=common.database,
+        fetcher=MaxFiles(
+            client=http,
+            token=settings.max_bot_token,
+            platform_host=urlsplit(settings.max_base_url).hostname or "",
+            max_bytes=settings.inbound_files_max_bytes,
+        ),
+        audit=common.audit,
+        key=load_key(settings.inbound_files_key.get_secret_value()),
+        max_bytes=settings.inbound_files_max_bytes,
+    )
     reranker = build_reranker(settings, http)
     answerer = Answerer(
         knowledge=knowledge,
@@ -239,4 +254,5 @@ def build_container(settings: Settings) -> Container:
         scheduler=ReminderScheduler(common.database),
         extractor=extractor,
         indexer=indexer,
+        files=files,
     )

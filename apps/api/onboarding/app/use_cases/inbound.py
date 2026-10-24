@@ -120,6 +120,19 @@ class AcceptInbound:
                 "file_id": inbound.event.file_id,
             },
         }
+        if inbound.files:
+            # The webhook never downloads anything: the worker fetches and stores the bytes, so the
+            # messenger gets its 200 within the delivery timeout even for a 10 MB scan.
+            payload["files"] = [
+                {
+                    "token": file.token,
+                    "url": file.url,
+                    "filename": file.filename,
+                    "media_type": file.media_type,
+                    "size": file.size,
+                }
+                for file in inbound.files
+            ]
         await self._sink.accept(
             dedupe_key=inbound.dedupe_key,
             job_kind=kind,

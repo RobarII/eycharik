@@ -40,7 +40,7 @@ PUBLIC_URL="$(sed -n 's/^PUBLIC_URL=//p' "$ENV_FILE" | tail -n 1)"
 PUBLIC_URL="${PUBLIC_URL:-https://bot.state3407.space}"
 
 COMPOSE=(docker compose --project-directory "$ROOT" -f "$COMPOSE_FILE" -f "$PROD_FILE" --env-file "$ENV_FILE")
-export TAG="$SHA"
+export TAG="sha-$SHA"
 
 # Set once the database schema may already be newer than `PREV`; the rollback refuses while it is 1.
 SCHEMA_TOUCHED=0
@@ -88,7 +88,7 @@ EOF
     echo "deploy: rolling back to $PREV" >&2
     # Keep the current compose files: a rollback changes the image tag, not the infrastructure
     # definition. An older commit may not understand the current .env.prod.
-    TAG="$PREV" "${COMPOSE[@]}" up -d --no-deps --remove-orphans worker api admin || true
+    TAG="sha-$PREV" "${COMPOSE[@]}" up -d --no-deps --remove-orphans worker api admin || true
     ./scripts/smoke.sh "$PUBLIC_URL" || true
 }
 
@@ -146,9 +146,9 @@ done
 # Keep the compose environment in step with the running tag so an operator's `docker compose`
 # command does not silently target the previous release.
 if grep -q '^TAG=' "$ENV_FILE"; then
-    sed -i "s/^TAG=.*/TAG=$SHA/" "$ENV_FILE"
+    sed -i "s/^TAG=.*/TAG=sha-$SHA/" "$ENV_FILE"
 else
-    printf 'TAG=%s\n' "$SHA" >>"$ENV_FILE"
+    printf 'TAG=sha-%s\n' "$SHA" >>"$ENV_FILE"
 fi
 
 printf '%s\n' "$SHA" > .deployed_sha.tmp

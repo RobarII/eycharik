@@ -13,38 +13,43 @@ last_verified: 2026-10-24
 Всё работает без ключа модели и без токена MAX: ответы собирает детерминированный
 extractive-провайдер из тех же фрагментов, что получила бы модель.
 
-## Подготовка (один раз, до защиты)
+## Подготовка
+
+Ничего готовить не нужно, кроме Docker с compose v2. `make demo` поднимает Postgres, накатывает
+миграции, индексирует `knowledge/` и наполняет демо-набор. Файл `.env` не нужен: умолчания
+compose — уже офлайн-профиль.
+
+Если `make` нет (частое дело на Windows), те же шаги делает `demo-data.cmd` после
+`docker compose up -d --build`.
+
+## Запуск
 
 ```bash
-cp .env.example .env
+make demo   # стек, миграции, ingest, 3 сотрудника, три вопроса, два риска
+```
+
+Открыть <http://localhost:3000>, вставить токен `dev-hr-token` (рекрутёрский скоуп —
+`dev-recruiter-token`). `make verify-demo` делает то же самое и дополнительно сверяет числа через
+admin API.
+
+### Без compose (локальный Python)
+
+Нужно, если правите код с перезагрузкой:
+
+```bash
 make install
 make admin-install
 docker run -d --name onboarding-pg \
   -e POSTGRES_PASSWORD=onboarding -e POSTGRES_USER=onboarding \
   -e POSTGRES_DB=onboarding -p 5432:5432 pgvector/pgvector:pg16
-make migrate
+make migrate   # DATABASE_URL из .env.example: localhost:5432
+make demo-data
+make run       # терминал 1: API на :8000
+make worker    # терминал 2: события и таймеры
+make admin-dev # терминал 3: кабинет на :5173
 ```
 
-Заменить в `.env` три значения на офлайн-режим (ключ модели не нужен):
-
-```dotenv
-LLM_PROVIDER=extractive
-EMBED_PROVIDER=hashing
-MAX_BOT_TOKEN=demo-token
-MAX_WEBHOOK_SECRET=dev-secret
-ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
-```
-
-## Запуск
-
-```bash
-make demo-data  # ingest + 3 сотрудника, ответы третьего дня, три вопроса в очереди
-make run         # терминал 1: API на :8000
-make worker      # терминал 2: обработка событий и таймеров
-make admin-dev   # терминал 3: кабинет на :5173
-```
-
-Открыть <http://localhost:5173>, вставить токен `dev-recruiter-token`.
+Compose публикует свою базу на `55432` именно затем, чтобы этот контейнер на `5432` ему не мешал.
 
 ## Что показывать
 
@@ -101,14 +106,18 @@ make admin-dev   # терминал 3: кабинет на :5173
 
 | Симптом | Причина | Действие |
 |---|---|---|
-| В кабинете пусто | `make demo-data` не выполнялся или другой `DATABASE_URL` | `make demo-data`, проверить `.env` |
+| В кабинете пусто | `make demo` не выполнялся или другой `DATABASE_URL` | `make demo`, затем `make verify-demo` |
 | `make demo-data` отказывается работать | `ENVIRONMENT` не `local` | выставить `ENVIRONMENT=local` |
-| Риски пусты | не было ответов на опросы | `make demo-data` заново, проверить вкладку «Все» |
+| `Bind for 0.0.0.0:55432 failed` | порт занят другим Postgres | `make nuke`, затем `make demo` |
+| `migrate` падает с `Name or service not known` | postgres не поднялся из-за занятого порта | `docker compose rm -sf postgres`, затем `make demo` |
+| Риски пусты | не было ответов на опросы | `make demo` заново, проверить вкладку «Все» |
 | Вопросы падают в `no_sources` | не выполнен `make ingest` | `make ingest`, затем `make demo-data` |
-| `401` в кабинете | токен не совпадает с `ADMIN_TOKENS` | вставить `dev-recruiter-token` |
+| `401` в кабинете | токен не совпадает с `ADMIN_TOKENS` | вставить `dev-hr-token` |
+| `knowledge index was built with ...` | базу индексировали другим эмбеддером | `make demo-data` |
 | Ответ пришёл без цитаты | это баг grounding | не показывать, зафиксировать в `docs/incidents/` |
 
-После защиты: `docker rm -f onboarding-pg` (демо-набор больше не нужен).
+После защиты: `make nuke` сносит compose-том и локальную демо-базу. Это удаляет и
+проиндексированный корпус, поэтому не запускайте его на том, что вам дорого.
 
 ## Что сказать про продакшен
 

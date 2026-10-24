@@ -69,8 +69,10 @@
 ```bash
 make install                       # uv sync, создаёт .venv
 make check                         # ruff, mypy, pytest, docs, admin
+make verify                        # гейт: check + интеграционный тир + покрытие (нужна база)
+make verify-demo                   # стек, демо-набор и сверка чисел через admin API
 make eval                          # поиск, генерация, эскалация на golden set
-make eval-retrieval                # только поиск, ключ провайдера не нужен
+make eval-retrieval                # только поиск; на hashing это диагностика, гейты не применяются
 make run                           # uvicorn на :8000
 make up / make down                # docker compose
 make docs                          # индекс, глоссарий, мёртвые ссылки, маршруты
@@ -109,7 +111,7 @@ export HTTPS_PROXY=socks5h://127.0.0.1:1080
 
 ## Определение готовности
 
-1. `make check` проходит.
+1. `make verify` проходит (он же гоняется в CI; `make check` — его офлайн-часть).
 2. У нового поведения есть тест в `apps/api/tests/` или кейс в `docs/evals/golden.yaml`.
 3. Затронутый документ обновлён; новый документ попал в индекс через frontmatter, а не руками.
 4. Принятые ADR не тронуты — они заменены новыми.

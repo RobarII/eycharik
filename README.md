@@ -20,10 +20,27 @@
 
 | Вопрос | Файл |
 |---|---|
+| Как проверить работу за десять минут? | `docs/checker.md` |
 | Что строим и зачем? | `docs/architecture.md` |
 | Как работать в этом репозитории? | `AGENTS.md` |
 | Где живёт факт? | `docs/README.md` |
 | Что бот может отвечать? | `docs/product/answer-policy.md` |
+
+## Проверить за десять минут
+
+```bash
+make doctor       # чего не хватает на машине; ничего не запускает
+make verify       # гейт: линт, типы, импорты, тесты, покрытие, доки, кабинет
+make demo         # стек + демо-набор, печатает URL и токен
+```
+
+`make verify` без `ONBOARDING_TEST_DATABASE` останавливается и говорит, как поднять базу: гейт без
+интеграционного тира ничего не доказывает. `make verify-demo` дополнительно сверяет числа,
+обещанные в `docs/product/demo-script.md`. Подробный маршрут и ожидаемый вывод — в
+[docs/checker.md](docs/checker.md).
+
+Ключ модели не нужен: демо отвечает детерминированным провайдером. Живые модели, включая
+бесплатный тир OpenRouter, — там же.
 
 ## Docker Compose: пусто, демо, снова пусто
 
@@ -94,7 +111,13 @@ docker compose run --rm api python -m onboarding.cli demo --reset --yes
 ```bash
 make install       # create the virtual environment
 make check         # ruff, mypy, import contracts, unit tests, docs links, admin
-make test-cov      # offline + postgres, fails below the coverage floor (the PR gate)
+make verify        # the gate: check plus integration tier, coverage floor and the cabinet
+make verify-demo   # end-to-end: stack, seed, and the numbers through the admin API
+make doctor        # read-only preflight: tools, ports, state
+make demo          # compose up, seed, print the door and the token
+make demo-live     # the same with real models from .env.live (free tier works)
+make nuke          # destructive: drops the compose volume and the local demo database
+make test-cov      # offline + postgres with the coverage floor (a part of make verify)
 make eval          # golden-set retrieval, generation, escalation
 make ingest        # index knowledge/ into pgvector
 make demo-data     # docker compose: ingest + three employees, risks, three questions
@@ -148,11 +171,16 @@ make backup        # verified Postgres dump; BACKUP_S3_URI enables offsite uploa
 
 ![Радар рисков](docs/assets/cabinet-risk.png)
 
-| Измерение | Результат | Где |
+| Что | Значение | Где |
 |---|---|---|
-| Золотой набор, 16 кейсов, настоящая модель | recall@5 1.00, MRR 1.00, цитата 1.00, эскалация 1.00, p95 2 237 мс, 0.077 ₽/ответ | `docs/measurements/2026-10-23-eval-full-case-corpus.md` |
-| Поиск с переранжированием, 12 кейсов | recall@5 1.00, MRR 1.00 | `docs/measurements/2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md` |
+| Полный набор, 137 кейсов, настоящая модель | recall@5 0.992, MRR 0.947, цитата 1.000, эскалация 0.942, 0.081 ₽/ответ | `docs/measurements/current.md` |
+| Задержка того же прогона | p95 29 с при гейте 15 с — гейт провален, это записано | там же |
+| Поиск на хешах без ключа, 137 кейсов | recall@5 0.622 — диагностика, не качество | там же |
 | Тесты | юнит- и интеграционные наборы; чистоту `core/` и границы API проверяют тесты | `apps/api/tests/` |
+
+Числа живут только в `docs/measurements/`, README их не переписывает: сводка —
+[docs/measurements/current.md](docs/measurements/current.md). Ранние прогоны на 16 кейсах не
+сравнимы с нынешним набором на 137.
 
 ![Карточка прогона](docs/assets/cabinet-run.png)
 
@@ -173,4 +201,8 @@ make backup        # verified Postgres dump; BACKUP_S3_URI enables offsite uploa
 - Вендор продакшн-модели должен соответствовать 152-ФЗ. Архитектура держит провайдера за портом;
   `docs/decisions/0010-one-model-vendor.md` фиксирует текущий выбор и что меняется для on-prem
   развёртывания.
-- Продакшн-развёртывания не было. Здесь его никто и не заявляет.
+- Развёрнут один демо-стенд на VM (<https://bot.state3407.space>): он держит живой MAX и кабинет,
+  и это не промышленная эксплуатация — одна реплика воркера, без SLA и без контура 152-ФЗ. Что
+  стенд доказывает и как дать к нему доступ, не раздавая ключи, —
+  [docs/live-demo.md](docs/live-demo.md); протокол живой проверки —
+  [docs/measurements/2026-10-24-live-max-and-admin.md](docs/measurements/2026-10-24-live-max-and-admin.md).

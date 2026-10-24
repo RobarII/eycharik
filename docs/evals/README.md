@@ -26,6 +26,9 @@ one provider call is a lie with a decimal point.
 | `answer_contains` | cases with expected fragments that contain all of them | = 1.00 |
 | `answer_excludes` | cases whose answer quotes no phrase from a competing edition | = 1.00 |
 | `escalation_correctness` | cases whose escalation flag and reason match | ≥ 0.90 |
+| `escalation_recall` | of the cases that had to escalate, how many did | ≥ 0.90 |
+| `escalation_precision` | of the escalations raised, how many were required | ≥ 0.90 |
+| `reason_accuracy` | of the escalations with a required reason, how many named it | ≥ 0.90 |
 | `leak_rate` | guarded cases where a forbidden document reached the top 5 | = 0.00 |
 | `case_errors` | cases that never returned (outage, dead embedder) | = 0 |
 | `p95_completion_ms` | p95 of the **provider call only** | ≤ 8000 |
@@ -37,6 +40,13 @@ one provider call is a lie with a decimal point.
 (`--retrieval-only` skips them). `leak_rate` appears whenever the set has a guarded case, and it is
 measured in both modes: a document the viewer may not see is a confidentiality and validity
 failure, not a recall gap.
+
+`escalation_correctness` is averaged over every case, which is why it cannot carry the decision on
+its own: one missed crisis in 137 answers costs it 0.7 and the gate still passes. The three metrics
+below it use the deciding cases as the denominator — `escalation_recall` over the cases that had to
+escalate, `escalation_precision` over the escalations actually raised, `reason_accuracy` over the
+cases carrying an `expect_reason`. A missed crisis and a false alarm are both failures; a refusal is
+not a safe default.
 
 `cost_completion_rub` is the completion alone. Embedding and rerank cost is not reported by the
 adapters yet, so the true cost of an answer is higher; the name is the disclaimer.
@@ -151,17 +161,41 @@ Two mutants exist because they caught real holes:
 
 ## Determinism
 
-A hosted embedding endpoint is not required to be deterministic, and one of them is not: Qwen3
-Embedding 8B behind OpenRouter returned cosine 0.997 between two calls with identical input. On the
-132-case set that moved `recall@5` between 0.992 and 1.000 across runs and flipped a single case
-(`company-products`) between 0.00 and 1.00.
+A hosted embedding endpoint is not required to be deterministic, and this one is not: Qwen3
+Embedding 8B behind OpenRouter returned cosine 0.997 between two calls with identical input. The
+question is not "is it deterministic" but "how much movement is noise", and that has now been
+measured rather than guessed.
 
-The reranker was stable across three repeats on the same input. The embedder is the noisy leg.
+Measured 2026-10-24 at commit `332d88b`: three identical retrieval-only runs of the 137-case set,
+no provider call between them changed anything.
+
+```bash
+make eval-retrieval ARGS="--label noise-r1"   # and -r2, -r3
+```
+
+| run | `recall_at_5` | `mrr` |
+|---|---|---|
+| noise-r1 | 1.000 | 0.842 |
+| noise-r2 | 1.000 | 0.845 |
+| noise-r3 | 1.000 | 0.842 |
+
+Artifacts: `docs/measurements/2026-10-24-eval-retrieval-noise-r{1,2,3}.jsonl`. The retrieved list
+differed on 19–27 of 137 cases — order, not membership — `recall_at_5` never flipped, and the
+largest adjacent `mrr` delta was +0.0027 with a paired 95% interval of [−0.011, +0.003],
+`p(delta <= 0) = 0.37`.
+
+The noise floor that follows: at this set size a `recall_at_5` change is a real membership change,
+and anything under ±0.01 in `mrr` is the embedder breathing.
+
+An earlier observation disagrees and is kept: on the 132-case set the same embedder moved
+`recall_at_5` between 0.992 and 1.000 and flipped `company-products` between 0.00 and 1.00. That
+run predates the metric renames and used a different set, which is exactly why the rules below
+start with "repeat the run".
 
 Rules that follow:
 
-- a delta below ~0.02 in `recall_at_5` on this set is inside provider noise; repeat the run before
-  claiming it;
+- a delta under ±0.01 in `mrr` is inside provider noise; repeat before claiming it;
+- a changed `recall_at_5` is a case that changed sides — name it, do not average it away;
 - never compare two embedders using one run each — use `--compare` and the paired interval;
 - when a case flips between runs, the measurement says so rather than reporting the friendlier run.
 
@@ -191,6 +225,31 @@ make eval-baseline        # run + write docs/evals/baseline.json (gate = Wilson 
 From then on every run is checked against it, per stratum where the stratum holds at least ten
 cases. Regenerating the baseline is a decision, and it belongs in the measurement note: it lowers
 the bar for everything downstream.
+
+## The ACL matrix
+
+The golden set carries ten hand-written ACL cases. That proves the predicate works for ten pairs;
+it cannot prove it works for the corpus. The predicate is one SQL clause (`DocumentRow.audience ?|
+viewer`), shared by both retrievers, and a single typo in it discloses a whole audience.
+
+```bash
+make eval-acl        # every (viewer, document) pair, retrieval-only, no key, no generation
+```
+
+The run builds 345 cases from `knowledge/` — 69 active documents × 5 viewers (`all`, `hr_only`,
+`dept:it`, `dept:sales`, `dept:production`) — and asks each document a sentence from its own body.
+A title would measure relevance; a body sentence only fails when visibility is wrong.
+
+Two failures, both gated:
+
+- `leak_rate` — a document the viewer may not see reached the top 5. Includes expired editions:
+  `hr/leave-policy-2025` is `valid_to: 2025-12-31`, so it is in every viewer's guard list.
+- `recall_at_5` — an allowed document did not come back. Over-restriction is quiet: the assistant
+  then refuses a question it should answer, and no leak metric notices.
+
+The first run (2026-10-24, commit `332d88b`) found this useful without any ACL bug: `leak_rate`
+0.000 over 345 cases, and `recall_at_5` 0.966, with every miss on two documents whose *title* was
+a poor query — which is why the question is now a body sentence, not a title.
 
 ## Adding a case
 
@@ -309,3 +368,14 @@ profile and model, the embedder, the metrics, the strata, and a link to its JSON
 profile name is the thing a later reader can re-run: `LLM_PROFILE=<name> make eval`. Use `--note`
 for a caveat that must travel with the numbers. A measurement without a commit is not a
 measurement.
+
+The `retrieval:` line names every switch that changed the list: the embedder and its width, the
+reranker or `none`, `bm25:on|off` (ADR 0012), and `contextual:off|v<n>` (ADR 0016). Two arms of an
+experiment differ in that line and nowhere else, so a reader can tell them apart without trusting a
+filename:
+
+```bash
+BM25_ENABLED=1 make eval-retrieval ARGS="--label bm25-on"
+CONTEXTUAL_RETRIEVAL=1 make ingest && make eval-retrieval ARGS="--label contextual-on"
+make eval-retrieval ARGS="--compare docs/measurements/<the-other-arm>.jsonl"
+```

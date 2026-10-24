@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types arch test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e
+.PHONY: install check lint types arch test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e
 
 install:
 	uv sync
@@ -33,16 +33,19 @@ test-live:
 	$(PY) pytest -m "integration or eval"
 
 eval:
-	$(PY) python -m onboarding.evals --write
+	$(PY) python -m onboarding.evals --write $(ARGS)
 
 eval-retrieval:
-	$(PY) python -m onboarding.evals --retrieval-only --write
+	$(PY) python -m onboarding.evals --retrieval-only --write $(ARGS)
+
+eval-acl:                           # every (viewer, document) pair; no provider key, no generation
+	$(PY) python -m onboarding.evals.acl --write $(ARGS)
 
 eval-lint:                          # the set matches its contract and every gate has a mutant
 	$(PY) pytest apps/api/tests/test_golden.py apps/api/tests/test_eval_gates_have_power.py apps/api/tests/test_eval_stats.py
 
 eval-baseline:                      # pin this run: gate = Wilson lower bound of what it measured
-	$(PY) python -m onboarding.evals --write-baseline --write
+	$(PY) python -m onboarding.evals --write-baseline --write $(ARGS)
 
 eval-ocr:                          # extraction quality; needs no database and no provider key
 	$(PY) python -m onboarding.evals.ocr $(ARGS)

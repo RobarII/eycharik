@@ -177,6 +177,8 @@ async def test_an_unknown_command_is_not_a_step_confirmation() -> None:
     assert messaging.sent[-1].text == COPY.unknown_command
     assert "command_handled" in audit.names()
 
+
+async def test_choosing_informal_tone_changes_the_next_message() -> None:
     service, runs, messaging, _, _ = build()
     await service.start(EMPLOYEE, ADDRESS)
 

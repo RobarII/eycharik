@@ -1,20 +1,29 @@
-# <What was measured>
+---
+title: "Шаблон измерения"
+summary: 'Каркас файла измерения: команда, коммит, окружение, таблица метрик, заметки.'
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- **Command**: `<exact command>`
-- **Commit**: `<sha>`
-- **Date**: `<YYYY-MM-DD>`
-- **Environment**: `<local | staging | production>`, `<cpu/memory>`, `<model profile, model id, version>`
-- **Dataset**: `<name and size>`
+# <Что измеряли>
 
-## Result
+- дата: `<ГГГГ-ММ-ДД>`
+- окружение: `<local | staging | production>`, `<cpu/memory>`, `<профиль модели, id модели, версия>`
+- коммит: `<sha>`
+- команда: `<точная команда>`
+- набор: `<название и размер>`
 
-| Metric | Value | Gate | Pass |
+## Результат
+
+| метрика | значение | гейт | проход |
 |---|---|---|---|
-| `recall@5` | 0.00 | ≥ 0.90 | no |
-| `p95_completion_ms` | 0 | ≤ 8000 | no |
-| `p95_answer_ms` | 0 | ≤ 15000 | no |
-| `cost_completion_rub` | 0.000 | recorded | n/a |
+| `recall@5` | 0.00 | ≥ 0.90 | нет |
+| `p95_completion_ms` | 0 | ≤ 8000 | нет |
+| `p95_answer_ms` | 0 | ≤ 15000 | нет |
+| `cost_completion_rub` | 0.000 | записано | н/д |
 
-## Notes
+## Заметки
 
-What changed since the previous measurement. What this number must not be compared with.
+Что изменилось с прошлого измерения. С чем это число сравнивать нельзя.

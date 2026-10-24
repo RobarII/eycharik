@@ -753,11 +753,11 @@ def compare_records(
 
 def render_comparison(deltas: Sequence[PairedDelta]) -> str:
     lines = [
-        "| metric | current | baseline | delta | 95% CI | p(delta <= 0) | n |",
+        "| метрика | текущий | базовый | дельта | 95% CI | p(дельта <= 0) | n |",
         "|---|---|---|---|---|---|---|",
     ]
     for delta in deltas:
-        verdict = "regression" if delta.regression else "-"
+        verdict = "регрессия" if delta.regression else "-"
         lines.append(
             f"| `{delta.metric}` | {delta.current:.3f} | {delta.baseline:.3f} | "
             f"{delta.delta:+.3f} | [{delta.low:+.3f}, {delta.high:+.3f}] | "
@@ -780,31 +780,30 @@ def render_markdown(
     artifact: str = "",
     comparison: Sequence[PairedDelta] = (),
 ) -> str:
-    status = "FAIL" if report.failures else "PASS"
+    status = "провалена" if report.failures else "пройдена"
     lines = [
-        f"# Eval {on_date.isoformat()} — {status}",
+        f"# Оценка {on_date.isoformat()} — {status}",
         "",
-        f"- command: `{command}`",
-        f"- commit: `{commit}`",
-        f"- model: `{model}`",
-        f"- environment: `{environment}`",
-        f"- embed provider: `{embed_provider}`",
-        *([f"- retrieval: `{retrieval}`"] if retrieval else []),
-        *([f"- artifact: `{artifact}`"] if artifact else []),
-        *([f"- baseline: `{report.baseline.commit}`"] if report.baseline else []),
-        *([f"- note: {note}"] if note else []),
-        f"- cases: {len(report.results)}",
-        f"- generated answers: {report.generated}",
+        f"- команда: `{command}`",
+        f"- коммит: `{commit}`",
+        f"- модель: `{model}`",
+        f"- окружение: `{environment}`",
+        f"- провайдер эмбеддингов: `{embed_provider}`",
+        *([f"- поиск: `{retrieval}`"] if retrieval else []),
+        *([f"- артефакт: `{artifact}`"] if artifact else []),
+        *([f"- базовый прогон: `{report.baseline.commit}`"] if report.baseline else []),
+        *([f"- заметка: {note}"] if note else []),
+        f"- кейсов: {len(report.results)}",
+        f"- сгенерированные ответы: {report.generated}",
         "",
-        "| metric | value | gate |",
+        "| метрика | значение | гейт |",
         "|---|---|---|",
     ]
     lines += _render_metrics(report)
     if report.failures:
-        lines += ["", f"Failed gates: {', '.join(report.failures)}"]
+        lines += ["", f"Проваленные гейты: {', '.join(report.failures)}"]
     lines += _render_strata(report)
     lines += _render_comparison(comparison)
-    lines += _render_cases(report)
     return "\n".join(lines) + "\n"
 
 
@@ -830,12 +829,12 @@ def _render_strata(report: Report) -> list[str]:
         return []
     lines = [
         "",
-        "## Strata",
+        "## Страты",
         "",
-        "One aggregate hides the stratum that broke. A gate is quoted per stratum only",
-        f"when the stratum holds at least {STRATUM_MIN_CASES} cases.",
+        "Один агрегат скрывает сломавшуюся страту. Гейт по стратe называется только тогда,",
+        f"когда в ней не меньше {STRATUM_MIN_CASES} кейсов.",
         "",
-        "| stratum | cases | recall@5 | context@5 | mrr | escalation | contains |",
+        "| страта | кейсов | recall@5 | context@5 | mrr | эскалация | содержит |",
         "|---|---|---|---|---|---|---|",
     ]
     for stratum, metrics in report.strata.items():
@@ -853,83 +852,12 @@ def _render_comparison(comparison: Sequence[PairedDelta]) -> list[str]:
         return []
     return [
         "",
-        "## Comparison against baseline",
+        "## Сравнение с базовым прогоном",
         "",
-        "Paired bootstrap over the cases both runs scored: two standalone numbers are not a",
-        "comparison, the same cases resampled together are.",
+        "Парный бутстрэп по кейсам, которые оценили оба прогона: два отдельных числа —",
+        "не сравнение, сравнение — те же кейсы, пересэмплированные вместе.",
         "",
         render_comparison(comparison),
-    ]
-
-
-def _render_cases(report: Report) -> list[str]:
-    lines = [
-        "",
-        "## Cases",
-        "",
-        "| case | stratum | recall@5 | ctx@5 | rr | leaked | escalated | reason "
-        "| missing | forbidden |",
-        "|---|---|---|---|---|---|---|---|---|---|",
-    ]
-    for result in report.results:
-        lines.append(_render_case_row(result))
-    failures = [
-        result
-        for result in report.results
-        if result.missing_fragments or result.forbidden_fragments or not result.escalation_correct
-    ]
-    if not failures:
-        return lines
-    lines += [
-        "",
-        "## Failures in detail",
-        "",
-        "A failing gate needs the answer that failed it, not just the count: the same number",
-        "can mean a wrong fact, a wrong format, or a confidently answered question that should",
-        "have escalated.",
-        "",
-    ]
-    for result in failures:
-        lines += _render_failure(result)
-    return lines
-
-
-def _render_case_row(result: CaseResult) -> str:
-    if result.error:
-        return (
-            f"| `{result.case.id}` | `{result.case.stratum}` | - | - | - | - | error | "
-            f"`{result.error}` | - | - |"
-        )
-    leaked = ",".join(result.leaked_docs) if result.leaked_docs else "-"
-    missing = ", ".join(result.missing_fragments) or "-"
-    forbidden = ", ".join(result.forbidden_fragments) or "-"
-    escalated = result.escalated if result.escalated is not None else "-"
-    context = result.context_recall if result.context_docs else "-"
-    return (
-        f"| `{result.case.id}` | `{result.case.stratum}` | {result.recall:.2f} | "
-        f"{context} | {result.rr:.2f} | {leaked} | {escalated} | "
-        f"{result.reason or '-'} | {missing} | {forbidden} |"
-    )
-
-
-def _render_failure(result: CaseResult) -> list[str]:
-    expected_reason = result.case.expect_reason or "-"
-    return [
-        f"### `{result.case.id}` — {result.case.question}",
-        "",
-        f"- stratum: `{result.case.stratum}`",
-        f"- audience: `{result.case.audience}`",
-        f"- escalated: {result.escalated} (expected {result.case.expect_escalation})",
-        f"- escalation reason: {result.reason or '-'} (expected {expected_reason})",
-        f"- missing fragments: {', '.join(result.missing_fragments) or '-'}",
-        f"- forbidden fragments: {', '.join(result.forbidden_fragments) or '-'}",
-        f"- retrieved: {', '.join(result.retrieved_docs) or '-'}",
-        f"- context: {', '.join(result.context_docs) or '-'}",
-        "",
-        "```",
-        (result.answer or "<no answer>").strip()[:800],
-        "```",
-        "",
     ]
 
 

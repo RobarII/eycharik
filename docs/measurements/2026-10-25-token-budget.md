@@ -1,9 +1,21 @@
-# Measurement 2026-10-25 — token budget of one answer, per tokenizer
+---
+title: 'Оценка 2026-10-25: бюджет токенов'
+summary: 'Сколько токенов стоит один ответ по промпту v7 у шести моделей: у каждой свой токенизатор. Отсюда цена ответа и прогона оценки.'
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- Date: 2026-10-25
-- Commit: `8ea934f`
-- Environment: local macOS, `uv run --with tokenizers`, tokenizer files from the model repositories
-- Commands:
+# Оценка 2026-10-25 — пройдена
+
+- дата: `2026-10-25`
+- окружение: `local` macOS, `uv run --with tokenizers`, файлы токенизаторов из репозиториев моделей
+- коммит: `8ea934f`
+- команда: `uv run --with tokenizers python scripts/token_budget.py --tokenizer $HUB/models--ai-sage--GigaChat3.1-10B-A1.8B/snapshots/*/tokenizer.json --tokenizer $HUB/models--Qwen--Qwen3.5-9B/snapshots/*/tokenizer.json --tokenizer $HUB/models--t-tech--T-lite-it-2.1/snapshots/*/tokenizer.json --tokenizer $HUB/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/*/tokenizer.json --tokenizer $HUB/models--zai-org--GLM-5.3-flash/snapshots/*/tokenizer.json --tokenizer $HUB/models--openai--gpt-oss-120b/snapshots/*/tokenizer.json --rerank-tokenizer $HUB/models--BAAI--bge-reranker-v2-m3/snapshots/*/tokenizer.json --prompt docs/prompts/answer/v7.md --chunks 5 --completion-chars 700`
+- токенизаторы: шесть моделей плюс переранжировщик; скачивание файлов — в блоке ниже
+
+Скачивание:
 
 ```bash
 HUB=~/.cache/huggingface/hub
@@ -15,19 +27,9 @@ hf download zai-org/GLM-5.3-flash tokenizer.json
 hf download openai/gpt-oss-120b tokenizer.json
 hf download BAAI/bge-reranker-v2-m3 tokenizer.json
 hf download BAAI/bge-m3 tokenizer.json
-
-uv run --with tokenizers python scripts/token_budget.py \
-  --tokenizer $HUB/models--ai-sage--GigaChat3.1-10B-A1.8B/snapshots/*/tokenizer.json \
-  --tokenizer $HUB/models--Qwen--Qwen3.5-9B/snapshots/*/tokenizer.json \
-  --tokenizer $HUB/models--t-tech--T-lite-it-2.1/snapshots/*/tokenizer.json \
-  --tokenizer $HUB/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/*/tokenizer.json \
-  --tokenizer $HUB/models--zai-org--GLM-5.3-flash/snapshots/*/tokenizer.json \
-  --tokenizer $HUB/models--openai--gpt-oss-120b/snapshots/*/tokenizer.json \
-  --rerank-tokenizer $HUB/models--BAAI--bge-reranker-v2-m3/snapshots/*/tokenizer.json \
-  --prompt docs/prompts/answer/v7.md --chunks 5 --completion-chars 700
 ```
 
-- Output:
+Что показал прогон:
 
 ```text
 prompt docs/prompts/answer/v7.md, 89 chunks from 71 files
@@ -43,41 +45,41 @@ zai-org--GLM-5.3-flash                                 1211    256   2491   170 
 openai--gpt-oss-120b                                   1196    251   2451   169   2620
 ```
 
-Embedding token count for the corpus, with `BAAI/bge-m3`'s tokenizer: **20 785 tokens** over the
-same 89 chunks; a sample question («Как получить доступ к корпоративному порталу?») is 11 tokens.
+Токенов эмбеддинга по корпусу с токенизатором `BAAI/bge-m3`: 20 785 токенов на тех же
+89 фрагментах. Пример вопроса («Как получить доступ к корпоративному порталу?») — 11 токенов.
 
-## What this measures
+## Что измеряется
 
-- The answer prompt ([v7](../prompts/answer/v7.md)) and five retrieved chunks, chunked by the
-  production chunker (`DEFAULT_MAX_CHARS = 1200`) over the current `knowledge/` corpus.
-- The completion, as a **fixed-length Russian fragment of 700 characters** measured with each
-  tokenizer. This makes models comparable without pretending we know the future answers.
-- What the reranker sees: 30 candidate chunks plus the question, with the reranker's own tokenizer.
+- Промпт ответа ([v7](../prompts/answer/v7.md)) и пять найденных фрагментов, нарезанных
+  производственной нарезкой (`DEFAULT_MAX_CHARS = 1200`) по текущему корпусу `knowledge/`.
+- Ответ — фиксированный русский фрагмент длиной 700 символов, посчитанный каждым токенизатором.
+  Так модели сравнимы без догадок о будущих ответах.
+- Что видит переранжировщик: 30 фрагментов-кандидатов плюс вопрос, его собственным токенизатором.
 
-## What this does not measure
+## Что не измеряется
 
-- **The actual answers.** 700 characters is a budget chosen from the answer policy's tone
-  ("two to four sentences plus a link"), not an average of real completions. The profile ceiling is
-  700 tokens, which is four times the measured 175, so the worst case is bounded, not observed.
-- **The retrieval fan-out on a real query.** The 30 candidates are the first 30 corpus chunks, not
-  the fused list of a live question. The token count per chunk is what matters and it is stable.
-- **Throughput or latency.** Token counts say nothing about time to first token.
-- **Quality.** Only [golden.yaml](../evals/golden.yaml) says whether an answer is right.
+- Настоящие ответы. 700 символов — бюджет из тона политики ответов («два-четыре предложения
+  плюс ссылка»), не среднее по реальным ответам. Потолок профиля — 700 токенов, вчетверо больше
+  измеренных 175, то есть худший случай ограничен, но не измерен.
+- Веер поиска на живом запросе. 30 кандидатов — первые 30 фрагментов корпуса, не слитый список
+  живого вопроса. Здесь важен счёт токенов на фрагмент, и он устойчив.
+- Пропускная способность и задержка. Счёт токенов ничего не говорит о времени до первого токена.
+- Качество. Право на ответ даёт только [golden.yaml](../evals/golden.yaml).
 
-## Why this replaced a single-tokenizer number
+## Почему это заменило число по одному токенизатору
 
-The previous revision of this measurement used only the GigaChat tokenizer and priced five models
-with it. The spread between tokenizers on the same Russian prompt is **1 078 → 1 316 tokens (+22%)**
-and on the same corpus chunk **226 → 282 (+25%)**. Applying one number to another vendor's price
-understates Qwen by 14% and DeepSeek by 23%. That is the size of a discount negotiation, so the
-measurement now carries one row per tokenizer.
+Прошлая редакция измерения брала только токенизатор GigaChat и оценивала им пять моделей. Разброс
+между токенизаторами на одном русском промпте — от 1 078 до 1 316 токенов (+22%), на одном
+фрагменте корпуса — от 226 до 282 (+25%). Одно число, приложенное к цене другого вендора, занижает Qwen на 14%,
+а DeepSeek на 23%. Это размер скидки на переговорах, поэтому теперь в измерении своя строка
+на каждый токенизатор.
 
-## Derived numbers
+## Производные числа
 
-Per answer: `(input × price_in + completion × price_out) / 1e6`, per model, with the prices and the
-class of each price in [vendor-comparison.md](../product/vendor-comparison.md).
+На ответ: `(input × price_in + completion × price_out) / 1e6` для каждой модели; цены и класс
+каждой цены — в [vendor-comparison.md](../product/vendor-comparison.md).
 
-| Model | Input | Completion | ₽/answer including rerank |
+| модель | вход | выход | ₽/ответ с переранжированием |
 |---|---|---|---|
 | `GigaChat3-10B-A1.8B` | 2 208 | 175 | 0.0306 |
 | `gpt-oss-120b` | 2 451 | 169 | 0.0507 |
@@ -85,5 +87,6 @@ class of each price in [vendor-comparison.md](../product/vendor-comparison.md).
 | `Qwen-3.8-Flash-Next` | 2 516 | 178 | 0.0649 |
 | `GLM-5.3-flash` | 2 491 | 170 | 0.2297 |
 
-A full eval run (137 cases) is ≈ 4 ₽ on the cheapest model: the evals are not the expense, the
-traffic is.
+Полный прогон оценки (137 кейсов) ≈ 4 ₽ на самой дешёвой модели: расход не в оценках, а в трафике.
+
+Кейсы по одному — в артефакте `2026-10-25-token-budget.jsonl` рядом с этим файлом.

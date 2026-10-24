@@ -93,7 +93,7 @@ async def test_a_run_reports_its_measured_spend() -> None:
     assert report.input_tokens == 200
     assert report.cost_rub == 0.1
     assert report.cost_per_1k_calls == 100.0
-    assert "## Cost" in render_markdown(report, command="cmd", note="")
+    assert "## Стоимость" in render_markdown(report, command="cmd", note="")
 
 
 async def test_the_provider_reported_cost_is_the_number_that_is_reported() -> None:

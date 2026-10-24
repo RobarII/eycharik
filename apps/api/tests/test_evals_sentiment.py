@@ -238,7 +238,7 @@ def test_markdown_reports_an_interval_next_to_a_share() -> None:
 
     assert "95% CI" in markdown
     assert re.search(r"\[\d\.\d\d, \d\.\d\d\]", markdown)
-    assert "Confusion matrix" in markdown
+    assert "Матрица ошибок" in markdown
 
 
 # --- comparison is paired, not two standalone numbers ------------------------

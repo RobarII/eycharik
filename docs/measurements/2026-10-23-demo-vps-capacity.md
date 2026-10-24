@@ -1,15 +1,20 @@
-# Demo VPS capacity
+---
+title: 'Оценка 2026-10-23: ёмкость демо-VPS'
+summary: "Демо-стек с лимитами compose демо-VPS тянет, пилот с персональными данными — нет; хост в Нидерландах."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- Date: 2026-10-23
-- Host: the `vps` alias, Ubuntu 22.04.5 LTS, Docker 29.5.3, Compose v5.1.4
-- Commit: `91bbfb2`
-- Command:
+# Оценка 2026-10-23 — пройдена
 
-```bash
-ssh vps 'nproc; free -m; df -h /; docker --version; docker compose version; . /etc/os-release && echo "$PRETTY_NAME"'
-```
+- дата: `2026-10-23`
+- окружение: алиас `vps`, Ubuntu 22.04.5 LTS, Docker 29.5.3, Compose v5.1.4
+- коммит: `91bbfb2`
+- команда: `ssh vps 'nproc; free -m; df -h /; docker --version; docker compose version; . /etc/os-release && echo "$PRETTY_NAME"'`
 
-- Output:
+Что ответил хост:
 
 ```text
 1
@@ -23,10 +28,12 @@ Docker Compose version v5.1.4
 Ubuntu 22.04.5 LTS
 ```
 
-The host has one vCPU, 921 MiB of RAM, 511 MiB of swap, and 9.4 GiB free on `/`. That is enough
-for the demo stack with the compose memory limits, but not for a pilot that stores real personal
-data: it has no headroom for a second API replica, a local reranker, or a large corpus ingest.
-The deployment runbook records the same constraint.
+На хосте один vCPU, 921 MiB RAM, 511 MiB swap и 9.4 GiB свободно на `/`. Демо-стеку с лимитами
+памяти в compose этого хватает. Пилоту, который хранит настоящие персональные данные, — нет.
+Запаса не остаётся ни на вторую реплику api, ни на локальный реранкер, ни на загрузку большого
+корпуса. Ранбук развёртывания фиксирует то же ограничение.
 
-The host is in the Netherlands, so the demo does not satisfy the localisation requirement of
-152-ФЗ for Russian personal data. Treat it as a demo with synthetic or public data only.
+Хост стоит в Нидерландах, поэтому демо не проходит требование локализации персональных данных
+по 152-ФЗ. Это демо только на синтетике или открытых материалах.
+
+Кейсы по одному — в артефакте `2026-10-23-demo-vps-capacity.jsonl` рядом с этим файлом.

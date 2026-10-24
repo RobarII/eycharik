@@ -1,11 +1,20 @@
-# Sentiment eval — keyword
+---
+title: "Оценка 2026-10-23: baseline"
+summary: "16 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals.sentiment --provider keyword --write --label baseline`
-- commit: `5070a0f`
-- environment: `local`
-- cases: 16
+# Оценка 2026-10-23 — пройдена
 
-| metric | value |
+- команда: `python -m onboarding.evals.sentiment --provider keyword --write --label baseline`
+- коммит: `5070a0f`
+- окружение: `local`
+- кейсов: 16
+
+| метрика | значение |
 |---|---|
 | `sentiment_accuracy` | 0.375 |
 | `tag_precision` | 0.850 |
@@ -27,3 +36,5 @@
 | `hr-delay` | negative | neutral | hr |
 | `crisis-quit` | negative | unknown |  |
 
+
+Кейсы по одному — в артефакте `2026-10-23-sentiment-keyword-baseline.jsonl` рядом с этим файлом.

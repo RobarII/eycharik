@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import platform
 import shutil
 import subprocess
@@ -275,7 +276,7 @@ def _refused(case: Case, reason: RejectionReason | None, *, confidence: float) -
 
 
 def _table(report: Report) -> str:
-    lines = [f"{'metric':<24}{'value':>10}", "-" * 34]
+    lines = [f"{'метрика':<24}{'значение':>10}", "-" * 34]
     lines.append(f"{'character_error_rate':<24}{report.character_error_rate:>10.4f}")
     lines.append(f"{'verdict_correctness':<24}{report.verdict_correctness:>10.3f}")
     accepted = [item for item in report.outcomes if item.accepted]
@@ -283,15 +284,15 @@ def _table(report: Report) -> str:
         mean = sum(item.confidence for item in accepted) / len(accepted)
         lines.append(f"{'mean_confidence':<24}{mean:>10.3f}")
     lines.append("")
-    lines.append(f"{'case':<26}{'verdict':>12}{'cer':>9}{'word errors':>13}")
+    lines.append(f"{'кейс':<26}{'вердикт':>12}{'cer':>9}{'ошибок в словах':>17}")
     for item in report.outcomes:
-        verdict = "accepted" if item.accepted else (item.reason.value if item.reason else "refused")
+        verdict = "принят" if item.accepted else (item.reason.value if item.reason else "отказ")
         errors = f"{item.word_errors}/{item.words}"
         lines.append(f"{item.case.id:<26}{verdict:>12}{item.cer:>9.4f}{errors:>13}")
     if report.failures:
-        lines.append(f"{'FAILED':<24}{', '.join(report.failures)}")
+        lines.append(f"{'ПРОВАЛЕНО':<24}{', '.join(report.failures)}")
     else:
-        lines.append(f"{'status':<24}{'PASS':>10}")
+        lines.append(f"{'итог':<24}{'ПРОЙДЕНО':>10}")
     return "\n".join(lines)
 
 
@@ -302,41 +303,53 @@ def _write(report: Report, args: argparse.Namespace) -> None:
     path = args.out_dir / f"{on_date.isoformat()}-eval-ocr{suffix}.md"
     command = " ".join(["python -m onboarding.evals.ocr", *sys.argv[1:]]).strip()
     note = args.note.strip() or (
-        "the cases are rendered from known text with a system font, so this is a floor for the "
-        "recognizer: it measures the router, the language route, and acceptance, not accuracy on "
-        "photographs of paper"
+        "кейсы отрисованы известным текстом системным шрифтом, поэтому это нижняя граница для "
+        "распознавания: проверяются маршрут, языковой путь и приёмка, а не точность на фотографиях "
+        "бумаги"
     )
     limits = (
         f"`min_confidence={report.thresholds['min_confidence']}`, "
         f"`min_chars={int(report.thresholds['min_chars'])}`"
     )
-    rows = "\n".join(
-        f"| `{item.case.id}` | "
-        f"{'accepted' if item.accepted else (item.reason.value if item.reason else 'refused')} | "
-        f"{item.cer:.4f} | {item.word_errors}/{item.words} |"
-        for item in report.outcomes
+    directory = args.out_dir
+    artifact = directory / f"{on_date.isoformat()}-eval-ocr{suffix}.jsonl"
+    artifact.write_text(
+        "\n".join(
+            json.dumps(
+                {
+                    "id": item.case.id,
+                    "verdict": "accepted"
+                    if item.accepted
+                    else (item.reason.value if item.reason else "refused"),
+                    "cer": round(item.cer, 4),
+                    "word_errors": item.word_errors,
+                    "words": item.words,
+                    "confidence": round(item.confidence, 4),
+                },
+                ensure_ascii=False,
+            )
+            for item in report.outcomes
+        )
+        + "\n",
+        encoding="utf-8",
     )
     path.write_text(
-        f"""# Eval {on_date.isoformat()} — {"FAIL" if report.failures else "PASS"}
+        f"""# Оценка {on_date.isoformat()} — {"провалена" if report.failures else "пройдена"}
 
-- command: `{command}`
-- commit: `{_commit()}`
-- engine: `{report.engine}` ({_platform()})
-- profile: `{report.profile}`
-- thresholds: {limits}
-- cases: {len(report.outcomes)}
-- note: {note}
+- команда: `{command}`
+- коммит: `{_commit()}`
+- окружение: `{_platform()}`
+- движок: `{report.engine}`
+- профиль: `{report.profile}`
+- пороги: {limits}
+- артефакт: `{artifact.name}`
+- кейсов: {len(report.outcomes)}
+- заметка: {note}
 
-| metric | value | gate |
+| метрика | значение | гейт |
 |---|---|---|
 | `character_error_rate` | {report.character_error_rate:.4f} | <= {CER_GATE:.2f} |
 | `verdict_correctness` | {report.verdict_correctness:.3f} | = {VERDICT_GATE:.2f} |
-
-## Cases
-
-| case | verdict | cer | word errors |
-|---|---|---|---|
-{rows}
 """,
         encoding="utf-8",
     )

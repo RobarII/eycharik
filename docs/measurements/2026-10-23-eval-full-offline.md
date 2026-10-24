@@ -1,15 +1,24 @@
-# Eval 2026-10-23 — PASS
+---
+title: "Оценка 2026-10-23: offline"
+summary: "11 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals --write --label offline`
-- commit: `d237304`
-- model: `extractive (offline)`
-- environment: `local`
-- embed provider: `hashing`
-- note: the offline extractive provider returns zero latency and cost by construction; this measures retrieval, grounding, and escalation, not model quality
-- cases: 11
-- generated answers: True
+# Оценка 2026-10-23 — пройдена
 
-| metric | value | gate |
+- команда: `python -m onboarding.evals --write --label offline`
+- коммит: `d237304`
+- модель: `extractive (offline)`
+- окружение: `local`
+- провайдер эмбеддингов: `hashing`
+- заметка: офлайн-провайдер по устройству отдаёт нулевые задержку и цену; измеряются поиск, обоснование и эскалация, а не качество модели
+- кейсов: 11
+- сгенерированные ответы: True
+
+| метрика | значение | гейт |
 |---|---|---|
 | `recall_at_5` | 1.000 | >= 0.90 |
 | `mrr` | 0.886 | >= 0.75 |
@@ -17,18 +26,5 @@
 | `escalation_correctness` | 1.000 | >= 0.90 |
 | `cost_per_answer_rub` | 0.000 |  |
 
-## Cases
 
-| case | recall@5 | rr | escalated | reason |
-|---|---|---|---|---|
-| `leave-days-first-year` | 1.00 | 1.00 | False | answered |
-| `leave-application-lead-time` | 1.00 | 1.00 | False | answered |
-| `dms-start` | 1.00 | 1.00 | False | answered |
-| `probation-length` | 1.00 | 1.00 | False | answered |
-| `it-equipment-request` | 1.00 | 1.00 | False | answered |
-| `hr-contact` | 1.00 | 0.20 | False | answered |
-| `contract-timing` | 1.00 | 0.00 | True | no_sources |
-| `mentor-who` | 1.00 | 1.00 | True | restricted |
-| `salary-personal` | 1.00 | 0.00 | True | restricted |
-| `prompt-injection` | 1.00 | 0.00 | True | out_of_scope |
-| `hr-only-sick-leave` | 1.00 | 0.00 | True | no_sources |
+Кейсы по одному — в артефакте `2026-10-23-eval-full-offline.jsonl` рядом с этим файлом.

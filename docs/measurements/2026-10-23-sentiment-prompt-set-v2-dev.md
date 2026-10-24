@@ -1,16 +1,26 @@
-# Sentiment eval — prompt
+---
+title: 'Оценка 2026-10-23: риск-радар промпт set v2 dev'
+summary: "49 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals.sentiment --provider keyword --split dev --repeat 1`
-- commit: `eb70b76`
-- environment: `local`
-- split: `dev`
-- cases: 49 (dev 49, test 0)
-- repetitions per case: 1
-- calls: 49
+# Оценка 2026-10-23 — пройдена
 
-## Quality
+- команда: `python -m onboarding.evals.sentiment --provider keyword --split dev --repeat 1`
+- коммит: `eb70b76`
+- окружение: `local`
+- сплит: `dev`
+- кейсов: 49 (dev 49, test 0)
+- повторов на кейс: 1
+- вызовов: 49
+- заметка: набор v2 (107 кейсов, деление на dev и test) заменяет набор v1 из 16 кейсов; эти числа несравнимы со строками v1 от 2026-10-23. Метки писал один аннотатор, каппы между аннотаторами пока нет. Правила меток: docs/evals/sentiment-guide.md.
 
-| metric | value | 95% CI |
+## Качество
+
+| метрика | значение | 95% ДИ |
 |---|---|---|
 | `sentiment_accuracy` | 0.816 | [0.69, 0.90] |
 | `case_accuracy` | 0.816 | majority over repetitions |
@@ -23,37 +33,37 @@
 | `fallback_rate` | 0.245 | — |
 | `format_error_rate` | 0.000 | — |
 
-## Latency
+## Задержка
 
-| metric | value |
+| метрика | значение |
 |---|---|
 | `p50_latency_ms` | 1438.5 |
 | `p95_latency_ms` | 5555.3 |
 | `p99_latency_ms` | 7409.0 |
 
-## Recall per tone
+## Полнота по тону
 
-| tone | recall | expected cases |
+| тон | полнота | ожидаемых кейсов |
 |---|---|---|
 | `positive` | 0.875 | 8 |
 | `neutral` | 0.818 | 11 |
 | `negative` | 0.815 | 27 |
 | `unknown` | 0.667 | 3 |
 
-## Confusion matrix
+## Матрица ошибок
 
-Rows are the label, columns are the prediction.
+Строки — метка, столбцы — предсказание.
 
-| label \ predicted | positive | neutral | negative | unknown |
+| метка \ предсказание | positive | neutral | negative | unknown |
 |---|---|---|---|---|
 | `positive` | 7 | 1 | 0 | 0 |
 | `neutral` | 1 | 9 | 0 | 1 |
 | `negative` | 0 | 3 | 22 | 2 |
 | `unknown` | 1 | 0 | 0 | 2 |
 
-## Recall per tag
+## Полнота по тегам
 
-| tag | recall | expected cases |
+| тег | полнота | ожидаемых кейсов |
 |---|---|---|
 | `access` | 0.800 | 5 |
 | `manager` | 0.750 | 8 |
@@ -65,39 +75,5 @@ Rows are the label, columns are the prediction.
 | `integration` | 0.500 | 6 |
 | `other` | 0.500 | 2 |
 
-Note: Set v2 (107 cases, dev/test split) replaces the 16-case v1 set; these numbers are not comparable with the 2026-10-23 v1 rows. Labels were written by one annotator: there is no inter-annotator kappa yet. Label rules: docs/evals/sentiment-guide.md.
 
-## Missed escalations
-
-A recruiter should have been alerted and was not. This list outranks every average.
-
-| case | expected tone | predicted tone | tags |
-|---|---|---|---|
-| `manager-crisis-humiliation` | negative | neutral | manager, colleagues |
-
-## Label failures
-
-| case | expected | got | tags |
-|---|---|---|---|
-| `access-missing-1c` | negative | neutral | access, it |
-| `access-double-auth` | negative | negative | it |
-| `it-neutral-setup` | neutral | positive | access, integration |
-| `manager-no-feedback` | negative | neutral | manager, clarity |
-| `manager-changes-tasks` | negative | negative | clarity, workload |
-| `manager-crisis-humiliation` | negative | neutral | manager, colleagues |
-| `colleagues-chat-silent` | negative | unknown |  |
-| `colleagues-meeting-neutral` | neutral | neutral | manager, clarity |
-| `colleagues-other-language` | negative | negative | colleagues |
-| `workload-bored` | negative | negative | workload |
-| `workload-week-one` | neutral | neutral | clarity |
-| `clarity-first-week-neutral` | neutral | neutral | access, integration |
-| `hr-documents` | positive | neutral | hr |
-| `hr-bonus-unclear` | negative | negative | clarity |
-| `integration-other-dept` | negative | negative | colleagues, workload |
-| `integration-meetings` | neutral | unknown |  |
-| `edge-negation` | negative | negative |  |
-| `other-personal` | neutral | neutral | manager, other |
-| `edge-short-negative` | negative | unknown |  |
-| `unknown-emoji` | unknown | positive | other |
-| `crisis-quit-polite` | negative | negative | other |
-
+Кейсы по одному — в артефакте `2026-10-23-sentiment-prompt-set-v2-dev.jsonl` рядом с этим файлом.

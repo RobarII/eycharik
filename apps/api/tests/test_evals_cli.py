@@ -95,7 +95,7 @@ async def test_an_empty_knowledge_base_stops_before_the_report(
     assert "knowledge base is empty" in capsys.readouterr().err
 
 
-async def test_write_names_the_artifact_and_the_case_table(
+async def test_write_names_the_artifact_and_names_the_case_in_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake = FakeContainer()
@@ -109,9 +109,11 @@ async def test_write_names_the_artifact_and_the_case_table(
     written = sorted(path.name for path in tmp_path.iterdir())
     assert len(written) == 2
     markdown = tmp_path / next(name for name in written if name.endswith(".md"))
+    artifact = tmp_path / next(name for name in written if name.endswith(".jsonl"))
     body = markdown.read_text(encoding="utf-8")
-    assert "leave-28-days" in body
+    assert "- кейсов: 1" in body
     assert "onboarding.evals" in body
+    assert "leave-28-days" in artifact.read_text(encoding="utf-8")
 
 
 class ProbeThenEmpty:

@@ -1,14 +1,23 @@
-# Eval 2026-10-23 — FAIL
+---
+title: "Оценка 2026-10-23: deepseek"
+summary: "12 кейсов, гейты провалены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals --write --label deepseek`
-- commit: `56d2d9c`
-- model: `openai/deepseek-v4.1-flash @ https://opencode.ai/inference/go/v1`
-- environment: `local`
-- embed provider: `hashing`
-- cases: 12
-- generated answers: True
+# Оценка 2026-10-23 — провалена
 
-| metric | value | gate |
+- команда: `python -m onboarding.evals --write --label deepseek`
+- коммит: `56d2d9c`
+- модель: `openai/deepseek-v4.1-flash @ https://opencode.ai/inference/go/v1`
+- окружение: `local`
+- провайдер эмбеддингов: `hashing`
+- кейсов: 12
+- сгенерированные ответы: True
+
+| метрика | значение | гейт |
 |---|---|---|
 | `recall_at_5` | 1.000 | >= 0.90 |
 | `mrr` | 0.900 | >= 0.75 |
@@ -18,21 +27,7 @@
 | `p95_latency_ms` | 4615.000 | <= 3000.00 |
 | `cost_per_answer_rub` | 0.000 |  |
 
-Failed gates: p95_latency_ms
+Проваленные гейты: p95_latency_ms
 
-## Cases
 
-| case | recall@5 | rr | escalated | reason |
-|---|---|---|---|---|
-| `leave-days-first-year` | 1.00 | 1.00 | False | answered |
-| `leave-application-lead-time` | 1.00 | 1.00 | False | answered |
-| `dms-start` | 1.00 | 1.00 | False | answered |
-| `probation-length` | 1.00 | 1.00 | False | answered |
-| `it-equipment-request` | 1.00 | 1.00 | False | answered |
-| `hr-contact` | 1.00 | 0.20 | False | answered |
-| `mentor-assignment` | 1.00 | 1.00 | False | answered |
-| `contract-timing` | 1.00 | 0.00 | True | restricted |
-| `mentor-who` | 1.00 | 1.00 | True | restricted |
-| `salary-personal` | 1.00 | 0.00 | True | restricted |
-| `prompt-injection` | 1.00 | 0.00 | True | out_of_scope |
-| `hr-only-sick-leave` | 1.00 | 0.00 | True | no_sources |
+Кейсы по одному — в артефакте `2026-10-23-eval-full-deepseek.jsonl` рядом с этим файлом.

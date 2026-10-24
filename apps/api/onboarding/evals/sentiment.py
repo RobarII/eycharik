@@ -551,21 +551,21 @@ def render_markdown(
         "escalation_recall": report.escalation_recall_ci,
     }
     lines = [
-        f"# Sentiment eval — {report.provider}",
+        f"# Оценка риска — {report.provider}",
         "",
-        f"- command: `{command}`",
-        f"- commit: `{_commit()}`",
-        f"- environment: `{Settings().environment}`",
-        f"- split: `{report.split}`",
-        f"- model: `{report.model or 'deterministic'}`",
-        f"- rubric: `{report.rubric or '—'}`",
-        f"- cases: {len(cases)} ({_split_counts(cases)})",
-        f"- repetitions per case: {report.repeat}",
-        f"- calls: {len(report.results)}",
+        f"- команда: `{command}`",
+        f"- коммит: `{_commit()}`",
+        f"- окружение: `{Settings().environment}`",
+        f"- выборка: `{report.split}`",
+        f"- модель: `{report.model or 'deterministic'}`",
+        f"- рубрика: `{report.rubric or '—'}`",
+        f"- кейсов: {len(cases)} ({_split_counts(cases)})",
+        f"- повторов на кейс: {report.repeat}",
+        f"- вызовов: {len(report.results)}",
         "",
-        "## Quality",
+        "## Качество",
         "",
-        "| metric | value | 95% CI |",
+        "| метрика | значение | 95% CI |",
         "|---|---|---|",
         f"| `sentiment_accuracy` | {report.sentiment_accuracy:.3f} | "
         f"{intervals['sentiment_accuracy'].render()} |",
@@ -580,9 +580,9 @@ def render_markdown(
         f"| `fallback_rate` | {report.fallback_rate:.3f} | — |",
         f"| `format_error_rate` | {report.format_error_rate:.3f} | — |",
         "",
-        "## Cost",
+        "## Стоимость",
         "",
-        "| metric | value |",
+        "| метрика | значение |",
         "|---|---|",
         f"| `cost_rub_total` | {report.cost_rub:.4f} |",
         f"| `cost_rub_per_1k_calls` | {report.cost_per_1k_calls:.4f} |",
@@ -592,17 +592,17 @@ def render_markdown(
         f"| `cost_usd_per_1k_calls` | {report.cost_usd_per_1k_calls:.6f} |",
         f"| `priced_calls` | {report.priced_calls} / {len(report.results)} |",
         "",
-        "## Latency",
+        "## Задержка",
         "",
-        "| metric | value |",
+        "| метрика | значение |",
         "|---|---|",
         f"| `p50_latency_ms` | {report.p50_latency_ms:.1f} |",
         f"| `p95_latency_ms` | {report.p95_latency_ms:.1f} |",
         f"| `p99_latency_ms` | {report.p99_latency_ms:.1f} |",
         "",
-        "## Recall per tone",
+        "## Полнота по тону",
         "",
-        "| tone | recall | expected cases |",
+        "| тон | полнота | кейсов с меткой |",
         "|---|---|---|",
     ]
     for sentiment, recall in report.per_class_recall.items():
@@ -610,11 +610,11 @@ def render_markdown(
         lines.append(f"| `{sentiment.value}` | {recall:.3f} | {expected} |")
     lines += [
         "",
-        "## Confusion matrix",
+        "## Матрица ошибок",
         "",
-        "Rows are the label, columns are the prediction.",
+        "Строки — метка, столбцы — предсказание.",
         "",
-        "| label \\ predicted | " + " | ".join(item.value for item in Sentiment) + " |",
+        "| метка \\ предсказание | " + " | ".join(item.value for item in Sentiment) + " |",
         "|---|" + "---|" * len(Sentiment),
     ]
     for label in Sentiment:
@@ -622,26 +622,26 @@ def render_markdown(
         lines.append(f"| `{label.value}` | " + " | ".join(row) + " |")
     lines += [
         "",
-        "## Recall per tag",
+        "## Полнота по тегу",
         "",
-        "| tag | recall | expected cases |",
+        "| тег | полнота | кейсов с меткой |",
         "|---|---|---|",
     ]
     for tag, recall in report.per_tag_recall.items():
         expected = sum(1 for result in report.results if tag in result.case.tags)
         lines.append(f"| `{tag.value}` | {recall:.3f} | {expected} |")
     if note:
-        lines += ["", f"Note: {note}"]
+        lines += ["", f"Заметка: {note}"]
     if comparison is not None:
-        lines += ["", "## Comparison", "", _comparison_markdown(comparison)]
+        lines += ["", "## Сравнение", "", _comparison_markdown(comparison)]
     if report.flaky_cases:
         lines += [
             "",
-            "## Unstable cases",
+            "## Нестабильные кейсы",
             "",
-            "A case whose verdict changed between repetitions. A gate cannot be tighter than this.",
+            "Кейс, вердикт которого сменился между повторами. Гейт не может быть строже этого.",
             "",
-            "| case | verdicts |",
+            "| кейс | вердикты |",
             "|---|---|",
         ]
         for case_id in report.flaky_cases:
@@ -656,11 +656,12 @@ def render_markdown(
     if report.missed_escalations:
         lines += [
             "",
-            "## Missed escalations",
+            "## Пропущенные эскалации",
             "",
-            "A recruiter should have been alerted and was not. This list outranks every average.",
+            "Рекрутёра надо было предупредить, а его не предупредили. Этот список важнее",
+            "любого среднего.",
             "",
-            "| case | expected tone | predicted tone | tags |",
+            "| кейс | ожидаемый тон | предсказанный тон | теги |",
             "|---|---|---|---|",
         ]
         for result in report.missed_escalations:
@@ -672,9 +673,9 @@ def render_markdown(
     if report.failures:
         lines += [
             "",
-            "## Label failures",
+            "## Ошибки разметки",
             "",
-            "| case | expected | got | tags |",
+            "| кейс | ожидалось | получено | теги |",
             "|---|---|---|---|",
         ]
         for failure in report.failures:
@@ -689,19 +690,19 @@ def render_markdown(
 
 def _comparison_markdown(comparison: Comparison) -> str:
     verdict = (
-        "the difference is not distinguishable from noise"
+        "разница неотличима от шума"
         if comparison.interval.low <= 0.0 <= comparison.interval.high
-        else ("candidate is better" if comparison.delta > 0 else "candidate is worse")
+        else ("кандидат лучше" if comparison.delta > 0 else "кандидат хуже")
     )
     return "\n".join(
         [
-            f"- metric: `{comparison.metric}`",
-            f"- paired cases: {comparison.paired_cases}",
-            f"- baseline: {comparison.baseline:.3f}",
-            f"- candidate: {comparison.candidate:.3f}",
-            f"- delta: {comparison.delta:+.3f} (95% bootstrap CI {comparison.interval.render()})",
-            f"- p(delta <= 0): {comparison.p_value:.3f}",
-            f"- reading: {verdict}",
+            f"- метрика: `{comparison.metric}`",
+            f"- парных кейсов: {comparison.paired_cases}",
+            f"- базовый: {comparison.baseline:.3f}",
+            f"- кандидат: {comparison.candidate:.3f}",
+            f"- дельта: {comparison.delta:+.3f} (95% бутстрэп-CI {comparison.interval.render()})",
+            f"- p(дельта <= 0): {comparison.p_value:.3f}",
+            f"- чтение: {verdict}",
         ]
     )
 

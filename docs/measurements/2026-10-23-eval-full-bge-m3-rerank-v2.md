@@ -1,16 +1,25 @@
-# Eval 2026-10-23 — PASS
+---
+title: "Оценка 2026-10-23: bge-m3-rerank-v2"
+summary: "12 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals --write --label bge-m3-rerank-v2 --note LLM cost from token prices; the reranker adds 0.001 USD (~0.09 RUB) per answered question and is recorded separately`
-- commit: `37be26e`
-- model: `openai/deepseek-v4.1-flash @ https://opencode.ai/inference/go/v1`
-- environment: `local`
-- embed provider: `openai`
-- retrieval: `openai/baai/bge-m3 + rerank:cohere/rerank-v3.5`
-- note: LLM cost from token prices; the reranker adds 0.001 USD (~0.09 RUB) per answered question and is recorded separately
-- cases: 12
-- generated answers: True
+# Оценка 2026-10-23 — пройдена
 
-| metric | value | gate |
+- команда: `python -m onboarding.evals --write --label bge-m3-rerank-v2 --note LLM cost from token prices; the reranker adds 0.001 USD (~0.09 RUB) per answered question and is recorded separately`
+- коммит: `37be26e`
+- модель: `openai/deepseek-v4.1-flash @ https://opencode.ai/inference/go/v1`
+- окружение: `local`
+- провайдер эмбеддингов: `openai`
+- поиск: `openai/baai/bge-m3 + rerank:cohere/rerank-v3.5`
+- заметка: цена модели по токенам; реранкер добавляет 0.001 USD (~0.09 ₽) на отвеченный вопрос и записан отдельно
+- кейсов: 12
+- сгенерированные ответы: True
+
+| метрика | значение | гейт |
 |---|---|---|
 | `recall_at_5` | 1.000 | >= 0.90 |
 | `mrr` | 1.000 | >= 0.75 |
@@ -20,19 +29,5 @@
 | `p95_latency_ms` | 6603.000 | <= 8000.00 |
 | `cost_per_answer_rub` | 0.036 |  |
 
-## Cases
 
-| case | recall@5 | rr | escalated | reason |
-|---|---|---|---|---|
-| `leave-days-first-year` | 1.00 | 1.00 | False | answered |
-| `leave-application-lead-time` | 1.00 | 1.00 | False | answered |
-| `dms-start` | 1.00 | 1.00 | False | answered |
-| `probation-length` | 1.00 | 1.00 | False | answered |
-| `it-equipment-request` | 1.00 | 1.00 | False | answered |
-| `hr-contact` | 1.00 | 1.00 | False | answered |
-| `mentor-assignment` | 1.00 | 1.00 | False | answered |
-| `contract-timing` | 1.00 | 0.00 | True | restricted |
-| `mentor-who` | 1.00 | 1.00 | True | restricted |
-| `salary-personal` | 1.00 | 0.00 | True | restricted |
-| `prompt-injection` | 1.00 | 0.00 | True | out_of_scope |
-| `hr-only-sick-leave` | 1.00 | 0.00 | True | no_sources |
+Кейсы по одному — в артефакте `2026-10-23-eval-full-bge-m3-rerank-v2.jsonl` рядом с этим файлом.

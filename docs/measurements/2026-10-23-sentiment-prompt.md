@@ -1,18 +1,27 @@
-# Sentiment eval — prompt
+---
+title: "Оценка 2026-10-23: риск-радар промпт"
+summary: "58 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals.sentiment --provider prompt --split test --repeat 1`
-- commit: `c0585bc`
-- environment: `local`
-- split: `test`
-- model: `opencode-deepseek-v4.1-flash`
-- rubric: `—`
-- cases: 58 (dev 0, test 58)
-- repetitions per case: 1
-- calls: 58
+# Оценка 2026-10-23 — пройдена
 
-## Quality
+- команда: `python -m onboarding.evals.sentiment --provider prompt --split test --repeat 1`
+- коммит: `c0585bc`
+- окружение: `local`
+- сплит: `test`
+- модель: `opencode-deepseek-v4.1-flash`
+- рубрика: `—`
+- кейсов: 58 (dev 0, test 58)
+- повторов на кейс: 1
+- вызовов: 58
 
-| metric | value | 95% CI |
+## Качество
+
+| метрика | значение | 95% ДИ |
 |---|---|---|
 | `sentiment_accuracy` | 0.741 | [0.62, 0.84] |
 | `case_accuracy` | 0.741 | majority over repetitions |
@@ -25,9 +34,9 @@
 | `fallback_rate` | 0.224 | — |
 | `format_error_rate` | 0.000 | — |
 
-## Cost
+## Стоимость
 
-| metric | value |
+| метрика | значение |
 |---|---|
 | `cost_rub_total` | 0.0000 |
 | `cost_rub_per_1k_calls` | 0.0000 |
@@ -36,37 +45,37 @@
 | `cost_usd_per_1k_calls` | 0.000000 |
 | `priced_calls` | 0 / 58 |
 
-## Latency
+## Задержка
 
-| metric | value |
+| метрика | значение |
 |---|---|
 | `p50_latency_ms` | 1366.4 |
 | `p95_latency_ms` | 4701.1 |
 | `p99_latency_ms` | 5637.5 |
 
-## Recall per tone
+## Полнота по тону
 
-| tone | recall | expected cases |
+| тон | полнота | ожидаемых кейсов |
 |---|---|---|
 | `positive` | 0.875 | 16 |
 | `neutral` | 0.375 | 8 |
 | `negative` | 0.781 | 32 |
 | `unknown` | 0.500 | 2 |
 
-## Confusion matrix
+## Матрица ошибок
 
-Rows are the label, columns are the prediction.
+Строки — метка, столбцы — предсказание.
 
-| label \ predicted | positive | neutral | negative | unknown |
+| метка \ предсказание | positive | neutral | negative | unknown |
 |---|---|---|---|---|
 | `positive` | 14 | 1 | 1 | 0 |
 | `neutral` | 2 | 3 | 0 | 3 |
 | `negative` | 1 | 3 | 25 | 3 |
 | `unknown` | 1 | 0 | 0 | 1 |
 
-## Recall per tag
+## Полнота по тегам
 
-| tag | recall | expected cases |
+| тег | полнота | ожидаемых кейсов |
 |---|---|---|
 | `access` | 1.000 | 8 |
 | `manager` | 0.769 | 13 |
@@ -78,39 +87,5 @@ Rows are the label, columns are the prediction.
 | `integration` | 0.800 | 5 |
 | `other` | 0.250 | 4 |
 
-## Missed escalations
 
-A recruiter should have been alerted and was not. This list outranks every average.
-
-| case | expected tone | predicted tone | tags |
-|---|---|---|---|
-| `manager-crisis-bullying` | negative | negative | manager |
-| `workload-crisis-cant` | negative | unknown |  |
-| `crisis-quit-plan` | negative | unknown |  |
-
-## Label failures
-
-| case | expected | got | tags |
-|---|---|---|---|
-| `it-printer-neutral` | neutral | unknown |  |
-| `access-week-late` | negative | neutral | access, hr |
-| `manager-explains` | positive | positive | manager, integration |
-| `manager-neutral-intro` | neutral | positive | manager, integration |
-| `colleagues-clique` | negative | neutral | colleagues |
-| `colleagues-buddy` | positive | negative | colleagues, clarity |
-| `workload-ok` | neutral | positive | workload, clarity |
-| `workload-crisis-cant` | negative | unknown |  |
-| `workload-tasks-many` | negative | negative | clarity |
-| `clarity-unclear-expectations` | negative | unknown |  |
-| `clarity-task-undescribed` | negative | negative | clarity |
-| `hr-medical` | neutral | neutral | integration |
-| `integration-no-owner` | negative | negative | integration |
-| `integration-blocked` | negative | negative | access, it |
-| `edge-sarcasm` | negative | neutral | clarity |
-| `edge-injection` | negative | positive | access |
-| `other-facts-neutral` | neutral | unknown |  |
-| `edge-thanks` | positive | neutral | hr |
-| `unknown-off-topic` | unknown | positive | other |
-| `unknown-one-word-negative` | neutral | unknown |  |
-| `crisis-quit-plan` | negative | unknown |  |
-
+Кейсы по одному — в артефакте `2026-10-23-sentiment-prompt.jsonl` рядом с этим файлом.

@@ -84,9 +84,9 @@ def test_the_report_carries_its_strata_and_artifact() -> None:
         artifact="2026-10-24-eval-full.jsonl",
     )
 
-    assert "## Strata" in markdown
+    assert "## Страты" in markdown
     assert "| `fact` | 1 |" in markdown
-    assert "artifact: `2026-10-24-eval-full.jsonl`" in markdown
+    assert "- артефакт: `2026-10-24-eval-full.jsonl`" in markdown
 
 
 def test_the_report_quotes_the_pinned_baseline_commit() -> None:
@@ -107,8 +107,8 @@ def test_the_report_quotes_the_pinned_baseline_commit() -> None:
         on_date=date(2026, 10, 24),
     )
 
-    assert "baseline: `deadbee`" in markdown
-    assert "note: caveat travels" in markdown
+    assert "- базовый прогон: `deadbee`" in markdown
+    assert "- заметка: caveat travels" in markdown
 
 
 def test_a_comparison_is_rendered_with_its_interval() -> None:
@@ -126,8 +126,8 @@ def test_a_comparison_is_rendered_with_its_interval() -> None:
         comparison=(delta,),
     )
 
-    assert "## Comparison against baseline" in markdown
-    assert "p(delta <= 0)" in markdown
+    assert "## Сравнение с базовым прогоном" in markdown
+    assert "p(дельта <= 0)" in markdown
 
 
 def _settings(**overrides: object) -> Settings:

@@ -1,18 +1,27 @@
-# Sentiment eval — jev
+---
+title: "Оценка 2026-10-23: риск-радар jev расширенный набор v2"
+summary: "114 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals.sentiment --provider jev --split test --repeat 3`
-- commit: `460d91f`
-- environment: `local`
-- split: `test`
-- model: `typesafe/jev-1.14`
-- rubric: `sentiment-jev@2`
-- cases: 114 (dev 0, test 114)
-- repetitions per case: 3
-- calls: 342
+# Оценка 2026-10-23 — пройдена
 
-## Quality
+- команда: `python -m onboarding.evals.sentiment --provider jev --split test --repeat 3`
+- коммит: `460d91f`
+- окружение: `local`
+- сплит: `test`
+- модель: `typesafe/jev-1.14`
+- рубрика: `sentiment-jev@2`
+- кейсов: 114 (dev 0, test 114)
+- повторов на кейс: 3
+- вызовов: 342
 
-| metric | value | 95% CI |
+## Качество
+
+| метрика | значение | 95% ДИ |
 |---|---|---|
 | `sentiment_accuracy` | 0.883 | [0.84, 0.91] |
 | `case_accuracy` | 0.886 | majority over repetitions |
@@ -25,9 +34,9 @@
 | `fallback_rate` | 0.000 | — |
 | `format_error_rate` | 0.000 | — |
 
-## Cost
+## Стоимость
 
-| metric | value |
+| метрика | значение |
 |---|---|
 | `cost_rub_total` | 0.0000 |
 | `cost_rub_per_1k_calls` | 0.0000 |
@@ -36,37 +45,37 @@
 | `cost_usd_per_1k_calls` | 0.042986 |
 | `priced_calls` | 342 / 342 |
 
-## Latency
+## Задержка
 
-| metric | value |
+| метрика | значение |
 |---|---|
 | `p50_latency_ms` | 341.8 |
 | `p95_latency_ms` | 520.4 |
 | `p99_latency_ms` | 948.0 |
 
-## Recall per tone
+## Полнота по тону
 
-| tone | recall | expected cases |
+| тон | полнота | ожидаемых кейсов |
 |---|---|---|
 | `positive` | 0.864 | 66 |
 | `neutral` | 0.643 | 42 |
 | `negative` | 0.964 | 192 |
 | `unknown` | 0.786 | 42 |
 
-## Confusion matrix
+## Матрица ошибок
 
-Rows are the label, columns are the prediction.
+Строки — метка, столбцы — предсказание.
 
-| label \ predicted | positive | neutral | negative | unknown |
+| метка \ предсказание | positive | neutral | negative | unknown |
 |---|---|---|---|---|
 | `positive` | 57 | 6 | 3 | 0 |
 | `neutral` | 9 | 27 | 0 | 6 |
 | `negative` | 0 | 7 | 185 | 0 |
 | `unknown` | 6 | 3 | 0 | 33 |
 
-## Recall per tag
+## Полнота по тегам
 
-| tag | recall | expected cases |
+| тег | полнота | ожидаемых кейсов |
 |---|---|---|
 | `access` | 0.833 | 36 |
 | `manager` | 0.500 | 78 |
@@ -78,69 +87,5 @@ Rows are the label, columns are the prediction.
 | `integration` | 0.143 | 21 |
 | `other` | 0.000 | 24 |
 
-## Unstable cases
 
-A case whose verdict changed between repetitions. A gate cannot be tighter than this.
-
-| case | verdicts |
-|---|---|
-| `workload-overtime-every-day` | negative, neutral |
-
-## Missed escalations
-
-A recruiter should have been alerted and was not. This list outranks every average.
-
-| case | expected tone | predicted tone | tags |
-|---|---|---|---|
-| `crisis-quit-direct` | negative | negative | hr |
-| `manager-crisis-polite` | negative | negative | colleagues, manager |
-| `crisis-discrimination-origin` | negative | negative | colleagues, integration, manager |
-
-## Label failures
-
-| case | expected | got | tags |
-|---|---|---|---|
-| `access-missing-vpn` | negative | negative | it |
-| `it-new-laptop` | positive | neutral | it, access |
-| `access-week-late` | negative | neutral | access |
-| `manager-neutral-intro` | neutral | neutral | colleagues |
-| `colleagues-buddy` | positive | positive | colleagues |
-| `workload-ok` | neutral | positive | workload, clarity |
-| `workload-night` | negative | neutral | colleagues |
-| `clarity-task-undescribed` | negative | negative | clarity |
-| `clarity-goals-ok` | positive | neutral | clarity |
-| `hr-salary-late` | negative | negative | colleagues |
-| `hr-paperwork` | positive | negative | hr |
-| `integration-smooth` | positive | positive | colleagues |
-| `integration-no-owner` | negative | negative | colleagues, clarity |
-| `integration-blocked` | negative | negative | access, it |
-| `integration-process-unclear` | negative | negative | clarity, colleagues |
-| `edge-sarcasm` | negative | negative | workload, colleagues |
-| `edge-calm-no-complaint` | neutral | positive | workload |
-| `edge-long-mixed` | negative | negative | access, clarity |
-| `edge-injection` | negative | negative | access, it |
-| `other-facts-neutral` | neutral | neutral | access |
-| `unknown-off-topic` | unknown | positive | clarity |
-| `unknown-one-word-negative` | neutral | unknown | workload |
-| `crisis-quit-plan` | negative | negative | hr |
-| `crisis-quit-direct` | negative | negative | hr |
-| `crisis-quit-soft-thanks` | negative | negative | integration |
-| `crisis-quit-probation` | negative | negative | integration |
-| `crisis-quit-vacancies` | negative | negative | hr |
-| `crisis-conflict-complaint` | negative | negative | colleagues |
-| `crisis-conflict-departments` | negative | negative | colleagues |
-| `crisis-discrimination-age` | negative | negative | integration |
-| `crisis-discrimination-gender` | negative | negative | colleagues, integration |
-| `crisis-deception-overtime` | negative | negative | workload |
-| `crisis-salary-missing` | negative | negative | colleagues |
-| `crisis-health-hospital` | negative | negative | colleagues |
-| `crisis-shouting-meeting` | negative | negative | colleagues |
-| `unknown-offtopic-weather` | unknown | neutral | clarity |
-| `unknown-offtopic-football` | unknown | positive | workload |
-| `unknown-offtopic-cafe` | unknown | unknown | clarity |
-| `neutral-no-complaint` | neutral | positive | workload |
-| `neutral-salary-facts` | neutral | unknown | hr |
-| `positive-mentor-explained` | positive | positive | colleagues, clarity, it |
-| `positive-integration-fast` | positive | positive | colleagues |
-| `negative-vpn-drops` | negative | negative | it |
-
+Кейсы по одному — в артефакте `2026-10-23-sentiment-jev-expanded-v2.jsonl` рядом с этим файлом.

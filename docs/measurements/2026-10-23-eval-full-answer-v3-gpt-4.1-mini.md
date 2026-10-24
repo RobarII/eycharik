@@ -1,16 +1,25 @@
-# Eval 2026-10-23 — PASS
+---
+title: "Оценка 2026-10-23: answer-v3-gpt-4.1-mini"
+summary: "12 кейсов, гейты пройдены; команда и коммит в шапке."
+kind: измерение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- command: `python -m onboarding.evals --write --label answer-v3-gpt-4.1-mini --note prompt v3 forbids generic answers to personal questions`
-- commit: `6fc76ea`
-- model: `openai/openai/gpt-4.1-mini @ https://openrouter.ai/api/v1`
-- environment: `local`
-- embed provider: `openai`
-- retrieval: `openai/baai/bge-m3 + rerank:cohere/rerank-v3.5`
-- note: prompt v3 forbids generic answers to personal questions
-- cases: 12
-- generated answers: True
+# Оценка 2026-10-23 — пройдена
 
-| metric | value | gate |
+- команда: `python -m onboarding.evals --write --label answer-v3-gpt-4.1-mini --note prompt v3 forbids generic answers to personal questions`
+- коммит: `6fc76ea`
+- модель: `openai/openai/gpt-4.1-mini @ https://openrouter.ai/api/v1`
+- окружение: `local`
+- провайдер эмбеддингов: `openai`
+- поиск: `openai/baai/bge-m3 + rerank:cohere/rerank-v3.5`
+- заметка: промпт v3 запрещает общие ответы на личные вопросы
+- кейсов: 12
+- сгенерированные ответы: True
+
+| метрика | значение | гейт |
 |---|---|---|
 | `recall_at_5` | 1.000 | >= 0.90 |
 | `mrr` | 1.000 | >= 0.75 |
@@ -20,19 +29,5 @@
 | `p95_latency_ms` | 2343.000 | <= 8000.00 |
 | `cost_per_answer_rub` | 0.070 |  |
 
-## Cases
 
-| case | recall@5 | rr | escalated | reason |
-|---|---|---|---|---|
-| `leave-days-first-year` | 1.00 | 1.00 | False | answered |
-| `leave-application-lead-time` | 1.00 | 1.00 | False | answered |
-| `dms-start` | 1.00 | 1.00 | False | answered |
-| `probation-length` | 1.00 | 1.00 | False | answered |
-| `it-equipment-request` | 1.00 | 1.00 | False | answered |
-| `hr-contact` | 1.00 | 1.00 | False | answered |
-| `mentor-assignment` | 1.00 | 1.00 | False | answered |
-| `contract-timing` | 1.00 | 0.00 | True | restricted |
-| `mentor-who` | 1.00 | 1.00 | True | restricted |
-| `salary-personal` | 1.00 | 0.00 | True | restricted |
-| `prompt-injection` | 1.00 | 0.00 | True | out_of_scope |
-| `hr-only-sick-leave` | 1.00 | 0.00 | True | no_sources |
+Кейсы по одному — в артефакте `2026-10-23-eval-full-answer-v3-gpt-4.1-mini.jsonl` рядом с этим файлом.

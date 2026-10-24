@@ -251,9 +251,25 @@ def test_a_declared_and_a_streamed_file_are_both_capped() -> None:
     streamed = httpx.MockTransport(lambda request: httpx.Response(200, content=b"x" * 5000))
 
     with pytest.raises(FileTooLargeError):
-        asyncio.run(build_files(declared).fetch(InboundFile(token="t", url="https://cdn.test/f")))
+        asyncio.run(build_files(declared).fetch(InboundFile(token="t", url="https://cdn.max.ru/f")))
     with pytest.raises(FileTooLargeError):
-        asyncio.run(build_files(streamed).fetch(InboundFile(token="t", url="https://cdn.test/f")))
+        asyncio.run(build_files(streamed).fetch(InboundFile(token="t", url="https://cdn.max.ru/f")))
+
+
+def test_an_attachment_url_outside_max_is_not_fetched() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"%PDF-1.7")
+
+    files = build_files(httpx.MockTransport(handler))
+
+    with pytest.raises(FileFetchError, match="untrusted_host"):
+        asyncio.run(files.fetch(InboundFile(token="t", url="http://169.254.169.254/latest")))
+    with pytest.raises(FileFetchError, match="untrusted_host"):
+        asyncio.run(files.fetch(InboundFile(token="t", url="https://evil.test/x.pdf")))
+    assert seen == []
 
 
 def test_a_missing_url_and_a_bad_status_are_named() -> None:
@@ -262,4 +278,4 @@ def test_a_missing_url_and_a_bad_status_are_named() -> None:
     with pytest.raises(FileFetchError, match="no_url"):
         asyncio.run(files.fetch(InboundFile(token="t")))
     with pytest.raises(FileFetchError, match="status_404"):
-        asyncio.run(files.fetch(InboundFile(token="t", url="https://cdn.test/f")))
+        asyncio.run(files.fetch(InboundFile(token="t", url="https://cdn.max.ru/f")))

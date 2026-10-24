@@ -42,11 +42,19 @@ class MaxFiles:
         self._platform_host = platform_host
         self._max_bytes = max_bytes
 
+    def _trusted(self, host: str) -> bool:
+        return host in (self._platform_host, "max.ru") or host.endswith(".max.ru")
+
     async def fetch(self, file: InboundFile) -> bytes:
         if file.url is None:
             raise FileFetchError("no_url")
+        host = urlsplit(file.url).hostname or ""
+        if not self._trusted(host):
+            # The URL comes from a webhook body. Fetching an arbitrary host would turn the worker
+            # into a probe of the deployment's own network.
+            raise FileFetchError("untrusted_host")
         headers = {}
-        if urlsplit(file.url).hostname == self._platform_host:
+        if host == self._platform_host:
             headers["Authorization"] = self._token.get_secret_value()
         try:
             async with self._client.stream("GET", file.url, headers=headers) as response:

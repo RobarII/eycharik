@@ -338,10 +338,9 @@ class MaxUpdates:
     channel = "max"
     text_limit = 4000
     secret_header = "X-Max-Bot-Api-Secret"  # noqa: S105 - a header name
-    # MAX inbound attachments are not parsed yet: docs/contracts/max-api.md pins outbound only.
-    # A scenario step that waits for a file therefore cannot be driven through this channel, and
-    # ``drive`` reports that gap instead of waiting for a timeout that names nothing.
-    supports_files = False
+    # MAX delivers an attachment in message.body.attachments; the parser turns the first one into a
+    # file event, so a step that waits for documents is drivable here too.
+    supports_files = True
     non_json_status = 400
 
     def __init__(
@@ -404,7 +403,18 @@ class MaxUpdates:
         )
 
     def payload_document(self) -> dict[str, Any]:
-        raise NotImplementedError("MAX does not deliver inbound files; see supports_files")
+        message = self.message_object()
+        message["body"]["attachments"] = [
+            {
+                "type": "file",
+                "payload": {
+                    "token": f"smoke-file-{next(self._ids)}",
+                    "filename": "passport.pdf",
+                    "size": 1024,
+                },
+            }
+        ]
+        return self.envelope("message_created", user=self.sender(), message=message)
 
     def payload_button(self, button_id: str) -> dict[str, Any]:
         return self.envelope(

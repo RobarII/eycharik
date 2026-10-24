@@ -90,6 +90,6 @@ def test_max_capabilities_match_what_the_contract_promises() -> None:
     assert max_updates.secret_header == "X-Max-Bot-Api-Secret"
     # The secret rides in a header, so a broken body is named as such, not refused as unsigned.
     assert max_updates.non_json_status == 400
-    assert max_updates.supports_files is False
+    assert max_updates.supports_files is True
     assert smoke.Updates.supports_files is True
     assert smoke.VkUpdates.supports_files is True

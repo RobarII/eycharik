@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import AsyncIterator, Mapping
 from datetime import date
 from typing import Any
@@ -80,6 +81,7 @@ class FakeMax:
         self.violations: list[str] = []
         self.uploads = 0
         self.uploaded_bytes = 0
+        self.uploaded_files: list[str] = []
         self.fail_sends = 0
 
     def transport(self) -> httpx.MockTransport:
@@ -95,8 +97,14 @@ class FakeMax:
         if request.method == "POST" and request.url.path == "/upload/1":
             body = request.read()
             self.uploaded_bytes += len(body)
-            if b'filename="welcome.jpg"' not in body:
-                self.violations.append("upload is not welcome.jpg")
+            match = re.search(rb'filename="([^"]+)"', body)
+            if match is None:
+                self.violations.append("upload has no filename")
+            else:
+                name = match.group(1).decode()
+                self.uploaded_files.append(name)
+                if not name.endswith(".jpg"):
+                    self.violations.append(f"upload is not a jpeg: {name}")
             return httpx.Response(200, json={"token": f"media-{self.uploads}"})
         if request.method == "POST" and request.url.path == "/messages":
             return self._send(request)
@@ -297,6 +305,62 @@ async def test_a_bot_start_becomes_a_delivered_welcome(database: Database) -> No
         assert "документы" in fake.messages[1]["body"]["text"].lower()
         assert fake.messages[1]["body"]["attachments"][0]["payload"]["token"] == "media-2"
         assert fake.uploads == 2
+
+    finally:
+        await container.aclose()
+
+
+async def test_a_photo_is_a_receipt_at_the_documents_step(database: Database) -> None:
+    fake = FakeMax()
+    config = settings()
+    app = create_app(config)
+    container = build_container(config)
+    container.senders[Channel.MAX] = max_client(fake)
+    try:
+        async with app.router.lifespan_context(app):
+            assert await post(app, start_payload()) == 200
+            await pump(container)
+            assert await post(app, callback_payload()) == 200
+            await pump(container)
+            async with database.session() as session:
+                run = await session.scalar(select(RunRow))
+            assert run is not None
+            assert run.step_id == "documents_checklist"
+
+            # A passport photo with no caption is the receipt this step asks for: the run moves on.
+            assert (
+                await post(
+                    app,
+                    {
+                        "update_type": "message_created",
+                        "timestamp": 1_766_000_003_000,
+                        "chat_id": CHAT,
+                        "user": {"user_id": CHAT},
+                        "message": {
+                            "sender": {"user_id": CHAT},
+                            "recipient": {"chat_id": CHAT},
+                            "body": {
+                                "mid": "mid-photo",
+                                "attachments": [
+                                    {"type": "image", "payload": {"token": "photo-token-1"}}
+                                ],
+                            },
+                        },
+                    },
+                )
+                == 200
+            )
+            await pump(container)
+
+        async with database.session() as session:
+            run = await session.scalar(select(RunRow))
+            files = await session.scalar(
+                select(func.count()).select_from(EventRow).where(EventRow.key == "max:mid-photo")
+            )
+        assert run is not None
+        assert run.step_id == "day_before"
+        assert files == 1
+        assert fake.violations == []
     finally:
         await container.aclose()
 

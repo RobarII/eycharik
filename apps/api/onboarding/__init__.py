@@ -1,1 +1,1 @@
-"""Onboarding assistant for the MAX messenger."""
+"""Эйчарик — ИИ-ассистент адаптации в MAX."""

@@ -56,6 +56,18 @@ class ActionExecutor:
     def unknown_command_text(self) -> str:
         return self._copy.unknown_command
 
+    def ask_question_text(self) -> str:
+        return self._copy.ask_question
+
+    def no_next_stage_text(self) -> str:
+        return self._copy.no_next_stage
+
+    def stage_scheduled_text(self, stage: str, when: str) -> str:
+        return self._copy.stage_scheduled.format(stage=stage, when=when)
+
+    def stage_waiting_text(self, stage: str, when: str) -> str:
+        return self._copy.stage_waiting.format(stage=stage, when=when)
+
     async def execute(self, action: Action, context: ActionContext) -> None:
         match action.kind:
             case ActionKind.SEND:

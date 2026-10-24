@@ -61,6 +61,7 @@ Content-Type: application/json
 | `GET` | `/admin/api/v1/questions?status=unanswered&limit=50&cursor=&assignee=any` | вопросы по статусу: `unanswered`, `answered`, `all`, постранично; `assignee` — `any`, `me` или `unassigned` |
 | `PATCH` | `/admin/api/v1/questions/{question_id}/assignee` | взять открытый вопрос, передать его другому администратору или снять владельца |
 | `POST` | `/admin/api/v1/questions/{question_id}/resolve` | ответить на эскалированный вопрос в MAX и закрыть его |
+| `POST` | `/admin/api/v1/questions/{question_id}/decline` | закрыть вопрос без ответа: сотруднику ничего не отправляется |
 | `GET` | `/admin/api/v1/employees?limit=50&cursor=&status=all&q=` | справочник, сначала новые, постранично; `status` — `active`, `left` или `all`, `q` ищет по id, имени, роли и подразделению |
 | `GET` | `/admin/api/v1/employees/{employee_id}` | один человек вместе с привязанными к нему аккаунтами мессенджеров |
 | `POST` | `/admin/api/v1/employees` | HR добавляет новичка; id — тот, что компания уже использует |
@@ -235,6 +236,7 @@ Content-Type: application/json
   "employee_name": "Анна Смирнова",
   "text": "Сколько дней отпуска?",
   "answered": false,
+  "declined": false,
   "reason": "no_sources",
   "citations": [],
   "asked_at": "2026-10-23T07:12:00Z",
@@ -261,12 +263,30 @@ Content-Type: application/json
   "id": 42,
   "employee_id": "1001",
   "answered": true,
+  "declined": false,
   "resolved_at": "2026-10-23T09:30:00Z",
   "resolved_by": "rec-1"
 }
 ```
 
 Ответ пишется в outbox в той же транзакции, что закрывает вопрос: так отправка через MAX сохраняет свой темп и повторы at-least-once. В журнал аудита попадает `question_resolved` с id вопроса, id сотрудника, актором и длиной ответа — никогда сам текст ответа. Вопрос вне скоупа вызывающего отвечает `404`; решение уже закрытого вопроса — `409`. `text` обрезается по краям; пустой ответ отвечает `422`.
+
+`POST /admin/api/questions/{question_id}/decline` закрывает вопрос без ответа и без записи в outbox.
+Сотруднику ничего не отправляется. Ответ `200`:
+
+```json
+{
+  "id": 42,
+  "employee_id": "1001",
+  "answered": true,
+  "declined": true,
+  "resolved_at": "2026-10-23T09:30:00Z",
+  "resolved_by": "rec-1"
+}
+```
+
+В журнал попадает `question_declined` с id вопроса, id сотрудника и актором. Повторный отказ или
+ответ на уже закрытый вопрос — `409`; вопрос вне скоупа — `404`.
 
 `AnalyticsOverview`:
 

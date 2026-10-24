@@ -1,189 +1,54 @@
-# Ассистент онбординга в MAX
+# Эйчарик
 
-ИИ-ассистент онбординга сотрудников в мессенджере MAX: сценарии онбординга для новичков,
-кабинет рекрутёра и ассистент по базе знаний компании, который отвечает только обоснованно.
+ИИ-ассистент адаптации сотрудников в мессенджере MAX. Сделан для кейса «ИИ-ассистент в MAX»
+(ООО «Группа ПОЛИПЛАСТИК»).
 
-Сделан для кейса «ИИ-ассистент в MAX» (ООО «Группа ПОЛИПЛАСТИК»).
+## Ссылки
 
-## Проверяющему
-
-> Один вход: **`make review`**. Поднимает стек, наполняет демо и сверяет числа через admin API.
-> Кабинет — <http://localhost:3000>, токен `dev-hr-token`.
-
-| Время | Что запустить | Что увидеть |
-|---|---|---|
-| 3 мин | `make review` | `verify-demo: ok`, адрес кабинета и токен |
-| +5 мин | `make verify` | гейт CI: линт, типы, импорты, тесты, покрытие, доки, кабинет |
-| 10 мин | [docs/checker.md](docs/checker.md) | маршрут по экранам, ожидаемый вывод, чего здесь нет |
-
-`make verify` нужна отдельная тестовая база: без `ONBOARDING_TEST_DATABASE` он останавливается и
-говорит, как её поднять. `make review` проверяет только демо-счётчики, не качество ответов: для
-качества нужен `make eval` с ключом. Живой стенд без запуска — <https://bot.state3407.space>,
-доступ по [инструкции](docs/live-demo.md).
-
-![Кабинет рекрутёра: радар рисков](docs/assets/cabinet-risk.png)
-
-## Карта
-
-| Путь | Что | Меняется |
-|---|---|---|
-| `docs/` | архитектура, контракты, решения, прогоны, оценки | да |
-| `knowledge/` | закрытый корпус компании, из которого отвечает ассистент | да, с проверкой владельца |
-| `apps/api/` | сервис: webhook API, движок сценариев, RAG, admin API | да |
-| `apps/admin/` | кабинет рекрутёра | да |
-| `docs/evals/` | золотой набор и контракт его прогонщика | да |
-| `infra/demo/` | демо-сотрудники для `make seed` | да |
-
-## Куда смотреть
-
-| Вопрос | Файл |
+| Что | Где |
 |---|---|
-| Что строим и зачем? | `docs/architecture.md` |
-| Что бот может отвечать? | `docs/product/answer-policy.md` |
-| Где живут числа? | `docs/measurements/current.md` |
-| Как работать в этом репозитории? | `AGENTS.md` |
-| Где живёт факт? | `docs/README.md` |
+| **Зеркало на VPS, где живёт сайт** | <https://bot.state3407.space> |
+| **Кабинет HR — очередь вопросов** | <https://bot.state3407.space/#/questions> |
+| **Бот в MAX** | <https://max.ru/id9729381390_3_bot> |
 
-Ключ модели не нужен: демо отвечает детерминированным провайдером. Живые модели, включая
-бесплатный тир OpenRouter, — в [checker.md](docs/checker.md).
+## Что умеет
 
-## Docker Compose: пусто, демо, снова пусто
+- ведёт новичка по сценарию адаптации в MAX: документы, первый день, доступы, третий день,
+  две недели, второй месяц и испытательный срок;
+- отвечает на вопросы по закрытой базе знаний компании;
+- если ответа в базе нет или вопрос личный — передаёт его HR и показывает в кабинете;
+- даёт HR очередь вопросов: можно ответить сотруднику или закрыть вопрос без ответа;
+- показывает прогресс сотрудников и риск-сигналы после опросов.
 
-`docker compose up -d --build` поднимает PostgreSQL, миграции, api, воркер и статический
-кабинет. Сидов нет намеренно: база пустая, поэтому после входа кабинет показывает нулевые
-счётчики и пустые списки.
+## Быстрый просмотр
 
-Откройте <http://localhost:3000> и войдите с `dev-hr-token` (или `dev-recruiter-token` для
-скоупа рекрутёра).
+Откройте стенд и кабинет по ссылкам выше. Для входа в кабинет нужен токен, его выдаёт
+администратор стенда; в локальной демонстрации используется `dev-hr-token`.
 
-Умолчания compose — локальный офлайн-профиль (ответы от `extractive`-провайдера, хеширующие
-эмбеддинги) и демо-токены администратора. Для потока «пусто/демо» файл `.env` не нужен. Чтобы
-включить настоящие модели и MAX, скопируйте `.env.example` в `.env` и задайте ключи.
-
-### Наполнить демо-данными
-
-Из корня репозитория:
+## Локальный запуск
 
 ```bash
-make demo-data
+make review
 ```
 
-Если `make` не установлен (частое дело на Windows), возьмите обёртку:
+Команда поднимает стек, наполняет демо-данными и печатает адрес кабинета. Кабинет —
+<http://localhost:3000>, токен `dev-hr-token`. На Windows без `make` используйте
+`.\demo-data.cmd`.
 
-```powershell
-.\demo-data.cmd
-```
-
-Обе команды запускают `ingest` и демо-сид внутри образа api, поэтому нужен Docker Compose, а
-локальное окружение Python не нужно. Сид создаёт трёх сотрудников, их прогоны и риски, три
-вопроса и индексирует `knowledge/`.
-
-### Убрать демо-данные
+Полный локальный гейт:
 
 ```bash
-make demo-data-del
+make verify
 ```
 
-На Windows без `make`:
+Для него нужна отдельная тестовая база PostgreSQL; без `ONBOARDING_TEST_DATABASE` команда
+остановится и покажет, как её поднять. Ключ модели для демо не нужен: локальный профиль отвечает
+детерминированным провайдером. Живые модели описаны в [docs/checker.md](docs/checker.md).
 
-```powershell
-.\demo-data-del.cmd
-```
+## Документация
 
-Обе команды чистят runtime-таблицы, удаляют демо-сотрудников с `1001` по `1003` и очищают
-проиндексированную базу знаний (SQL лежит в `scripts/demo-data-del.sql`). Кабинет возвращается
-в пустое состояние. Это локальный сброс для демо: он уносит и документы базы знаний, и
-runtime-строки, поэтому не запускайте его на том, что вам дорого.
-
-### Полный сброс
-
-```bash
-docker compose down -v
-docker compose up -d --build
-```
-
-`-v` удаляет том PostgreSQL; следующий старт снова пустой. Миграции идут автоматически.
-
-Если `make` не установлен, команда наполнения такая:
-
-```bash
-docker compose run --rm api python -m onboarding.cli ingest
-docker compose run --rm api python -m onboarding.cli demo --reset --yes
-```
-
-## Быстрые команды
-
-```bash
-make install       # create the virtual environment
-make check         # ruff, mypy, import contracts, unit tests, docs links, admin
-make verify        # the gate: check plus integration tier, coverage floor and the cabinet
-make verify-demo   # end-to-end: stack, seed, and the numbers through the admin API
-make security      # pip-audit, npm audit, actionlint, shellcheck, hadolint, gitleaks
-make admin-e2e-stack  # the cabinet against the running stack, not the fixture
-make doctor        # read-only preflight: tools, ports, state
-make demo          # compose up, seed, print the door and the token
-make demo-live     # the same with real models from .env.live (free tier works)
-make nuke          # destructive: drops the compose volume and the local demo database
-make test-cov      # offline + postgres with the coverage floor (a part of make verify)
-make eval          # golden-set retrieval, generation, escalation
-make ingest        # index knowledge/ into pgvector
-make demo-data     # docker compose: ingest + three employees, risks, three questions
-make demo-data-del # docker compose: return the cabinet to empty
-make run           # api with reload on :8000
-make worker        # job loop, outbox dispatcher, reminder tick
-make cron          # one scheduler pass for reminders and the outbox (crontab-friendly)
-make admin-install # cabinet dependencies
-make admin-dev     # recruiter cabinet on :5173
-make up            # postgres + migrate + api + worker + cabinet, no demo seed
-make prod-config   # validate docker-compose.prod.yml with .env.prod
-make smoke         # public health, webhook, cabinet headers, metrics exposure
-make backup        # verified Postgres dump; BACKUP_S3_URI enables offsite upload
-```
-
-## Состояние
-
-Работает от начала до конца на локальном Postgres с pgvector и внешней моделью через OpenRouter:
-
-- **Вебхук MAX**: проверка секрета, дедупликация `events`, надёжная постановка задачи в
-  очередь, `200` за миллисекунды.
-- **Движок сценариев**: версионированный YAML, закреплённый за прогоном, кнопки, напоминания,
-  опросы со шкалой на 10 баллов, эскалация по таймауту. Двадцать шагов от приветствия до конца
-  испытательного срока. Ветку выбирает строка сотрудника, поэтому заводской вариант
-  (`onboarding_plant`) живой, а не мёртвый контент: свой текст про транспорт и без вопроса про
-  удалённую работу. Приветствие спрашивает «ты» или «вы»; выбор хранится в прогоне и
-  переключает текст следующих шагов.
-- **Поиск**: корпус с frontmatter и JSON Schema, детерминированная нарезка, pgvector HNSW плюс
-  русский `tsvector`, RRF, внешнее переранжирование, аудитория и срок как предикаты SQL. Каждый
-  ответ несёт цитату из найденного набора или уходит в эскалацию.
-- **Ответы**: один вызов модели, JSON-контракт, версия промпта `v7`; личные вопросы («кто мой
-  наставник», зарплата, договор) уходят в эскалацию, а не получают ответ общей политикой.
-- **Радар рисков**: после каждого опроса ответ классифицируется (внешняя модель с
-  детерминированным запасным вариантом по совпадению слов), правила превращают сигналы в
-  уровень, теги и русские причины, а журнал аудита пишет `risk_assessed` / `risk_escalated`.
-  Кабинет показывает обзор за семь дней и недельный дайджест сигналов, которым нужен человек.
-- **Кабинет рекрутёра**: прогоны, карточка сотрудника с хронологией аудита, очередь вопросов со
-  скоупом по рекрутёру, менеджеру (по подразделению) или HR; ответ закрывает вопрос и уходит
-  через `outbox`; HR может вывести сотрудника; HR может загрузить, открыть и править документ
-  базы знаний с проверкой frontmatter.
-- **Сроки хранения**: просроченные вопросы, загрузки, сообщения `outbox` и персональные поля
-  аудита чистит воркер раз в час; политика задаётся `DATA_RETENTION_DAYS`; вывод сотрудника
-  мгновенный и попадает в аудит. Арендованная строка `outbox` держит аренду, поэтому упавший
-  воркер не теряет сообщение.
-- **Планировщик**: cron-точка входа делит строительные блоки с воркером, поэтому напоминания и
-  `outbox` разбираются, даже когда работает только периодическая задача.
-
-| Что | Где смотреть |
-|---|---|
-| Качество и цена полного набора, настоящая модель | [docs/measurements/current.md](docs/measurements/current.md) |
-| Задержка: оба гейта провалены, это записано | там же |
-| Поиск на хешах без ключа — диагностика, не качество | там же |
-| Тесты | `apps/api/tests/` |
-
-Числа живут только в `docs/measurements/`: README их не переписывает, поэтому и не врёт, когда
-прогон обновится. Ранние прогоны на маленьком наборе несравнимы с нынешним.
-
-![Карточка прогона](docs/assets/cabinet-run.png)
-
-![Список прогонов](docs/assets/cabinet-runs.png)
-
-![База знаний](docs/assets/cabinet-knowledge.png)
+- [Маршрут проверяющего](docs/checker.md) — что открыть и что увидеть.
+- [Живой стенд](docs/live-demo.md) — доступ, токены и ручная проверка.
+- [Политика ответов](docs/product/answer-policy.md) — что бот может и чего не может.
+- [Архитектура](docs/architecture.md) — как устроен продукт.
+- [Текущие измерения](docs/measurements/current.md) — качество и стоимость на реальной модели.

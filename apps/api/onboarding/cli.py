@@ -424,14 +424,21 @@ async def _drive(
     """Walk the scenario with synthetic replies until ``target`` or the terminal step."""
 
     runs = DatabaseRunRepository(container.database)
-    for _ in range(12):
+    for _ in range(60):
         stored = await runs.find_active_by_employee(employee)
         if stored is None:
             if target is not None:
                 raise SystemExit(f"demo run for {employee} ended before {target}")
             return
         if stored.state.step_id == target:
+            if stored.scheduled is not None:
+                await service.next_stage(employee, address)
+                continue
             return
+        if stored.scheduled is not None:
+            # The demo driver is a fast-forward: do not wait for the real delay_hours.
+            await service.next_stage(employee, address)
+            continue
         scenario = container.catalog.get(stored.state.scenario_id, stored.state.scenario_version)
         step = scenario.step(stored.state.step_id)
         if step.expects is Expects.FILE:

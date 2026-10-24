@@ -88,6 +88,11 @@
           "minLength": 1,
           "maxLength": 4000
         },
+        "delay_hours": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Сколько часов ждать перед показом шага. Шаг выбирается сразу, но сообщение и таймаут начинаются, когда планировщик дойдёт до due_at."
+        },
         "keyboard": {
           "type": "array",
           "maxItems": 3,

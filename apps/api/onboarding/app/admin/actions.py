@@ -34,6 +34,13 @@ from onboarding.core.models import Address, Channel, ChatId
 from onboarding.core.retention import redact_fields
 from onboarding.ports import Clock
 
+HR_REPLY_KEYBOARD = [
+    [
+        {"id": "hr_continue", "text": "Продолжить"},
+        {"id": "hr_ask", "text": "Ещё вопрос"},
+    ]
+]
+
 
 class QuestionNotFoundError(Exception):
     """The question does not exist or belongs to an employee outside the caller's scope."""
@@ -84,6 +91,7 @@ class Resolution:
     address: Address
     resolved_at: datetime
     resolved_by: str
+    declined: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -223,7 +231,16 @@ class QuestionResolver:
                 raise QuestionAlreadyResolvedError(f"question {question_id} already resolved")
 
             session.add(
-                MessageRow(channel=row.channel, chat_id=row.chat_id, text=text)
+                MessageRow(
+                    channel=row.channel,
+                    chat_id=row.chat_id,
+                    text=(
+                        f"HR ответил на ваш вопрос:\n«{row.text}»\n\n{text}\n\n"
+                        "Чтобы продолжить, нажмите «Продолжить» или отправьте /nextStage. "
+                        "Если остались вопросы — нажмите «Ещё вопрос» или просто напишите их."
+                    ),
+                    keyboard=HR_REPLY_KEYBOARD,
+                )
             )
             session.add(
                 AuditRow(
@@ -242,6 +259,72 @@ class QuestionResolver:
                 address=Address(channel=Channel(row.channel), chat_id=ChatId(row.chat_id)),
                 resolved_at=now,
                 resolved_by=actor,
+            )
+
+    async def decline(
+        self,
+        question_id: int,
+        *,
+        actor: str,
+        recruiter_id: str | None,
+        department: str | None,
+    ) -> Resolution:
+        """Close a question without a reply.
+
+        The employee receives nothing. The row is still closed and audited, so the same card cannot
+        be answered twice and the cabinet can tell a deliberate refusal from a real answer.
+        """
+        now = self._clock.now()
+        scope = select(EmployeeRow.id).where(
+            *employee_scope_filters(recruiter_id, department)
+        )
+        async with self._database.session() as session:
+            row = (
+                await session.execute(
+                    update(QuestionRow)
+                    .where(
+                        QuestionRow.id == question_id,
+                        QuestionRow.answered.is_(False),
+                        QuestionRow.employee_id.in_(scope),
+                    )
+                    .values(
+                        answered=True,
+                        declined=True,
+                        resolved_at=now,
+                        resolved_by=actor,
+                        resolution=None,
+                    )
+                    .returning(QuestionRow)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                visible = await session.scalar(
+                    select(QuestionRow.id).where(
+                        QuestionRow.id == question_id,
+                        QuestionRow.employee_id.in_(scope),
+                    )
+                )
+                if visible is None:
+                    raise QuestionNotFoundError(f"question {question_id} not found")
+                raise QuestionAlreadyResolvedError(f"question {question_id} already resolved")
+
+            session.add(
+                AuditRow(
+                    name="question_declined",
+                    fields={
+                        "question_id": row.id,
+                        "employee_id": row.employee_id,
+                        "by": actor,
+                    },
+                )
+            )
+            return Resolution(
+                question_id=row.id,
+                employee_id=row.employee_id or "",
+                address=Address(channel=Channel(row.channel), chat_id=ChatId(row.chat_id)),
+                resolved_at=now,
+                resolved_by=actor,
+                declined=True,
             )
 
 

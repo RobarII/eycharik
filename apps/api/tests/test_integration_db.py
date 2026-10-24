@@ -323,6 +323,24 @@ async def test_scheduler_enqueues_a_due_reminder(database: Database) -> None:
     assert jobs[0].payload["employee_id"] == str(EMPLOYEE)
 
 
+async def test_scheduler_enqueues_a_delayed_step(database: Database) -> None:
+    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
+    await service.start(EMPLOYEE, MAX)
+    async with database.session() as session:
+        await session.execute(
+            text(
+                "UPDATE runs SET reminder_at = NULL, next_send_at = now() - interval '1 minute', "
+                "next_send_step = 'day_before'"
+            )
+        )
+
+    assert await ReminderScheduler(database).tick() == 1
+    jobs = await JobQueue(database).claim()
+    assert [job.kind for job in jobs] == ["send_step"]
+    assert jobs[0].payload["run_id"]
+    assert jobs[0].payload["step_id"] == "day_before"
+
+
 async def test_transition_is_persisted(database: Database) -> None:
     messaging = RecordingMessaging()
     service = build_service(database, messaging=messaging, knowledge=FakeKnowledgeBase())
@@ -866,10 +884,64 @@ async def test_admin_resolves_a_question_and_queues_the_reply(database: Database
         reply = await session.scalar(select(MessageRow).where(MessageRow.chat_id == 1))
         assert reply is not None
         assert reply.status == "pending"
+        assert reply.text.startswith("HR ответил на ваш вопрос:")
+        assert "«" in reply.text
+        assert reply.keyboard[0][0]["id"] == "hr_continue"
         audit = await session.scalar(select(AuditRow).where(AuditRow.name == "question_resolved"))
         assert audit is not None
         assert audit.fields["question_id"] == question_id
         assert "text" not in audit.fields
+
+
+async def test_admin_declines_a_question_without_a_reply(database: Database) -> None:
+    question_id = await seed_question(database, "ыыы")
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        response = await http.post(
+            f"/admin/api/questions/{question_id}/decline",
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["id"] == question_id
+        assert body["declined"] is True
+        assert body["answered"] is True
+        assert body["resolved_by"] == "rec-1"
+
+        second = await http.post(
+            f"/admin/api/questions/{question_id}/decline",
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert second.status_code == 409
+
+        foreign = await http.post(
+            f"/admin/api/questions/{question_id}/decline",
+            headers={"Authorization": "Bearer other"},
+        )
+        assert foreign.status_code == 404
+
+        answered = await http.get(
+            "/admin/api/questions?status=answered",
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert answered.status_code == 200, answered.text
+        card = next(item for item in answered.json()["items"] if item["id"] == question_id)
+        assert card["declined"] is True
+
+    async with database.session() as session:
+        question = await session.get(QuestionRow, question_id)
+        assert question is not None
+        assert question.answered
+        assert question.declined
+        assert question.resolution is None
+        assert await session.scalar(select(func.count()).select_from(MessageRow)) == 0
+        audit = await session.scalar(select(AuditRow).where(AuditRow.name == "question_declined"))
+        assert audit is not None
+        assert audit.fields["question_id"] == question_id
+        assert audit.fields["by"] == "rec-1"
 
 
 async def test_manager_scope_and_expired_token(database: Database) -> None:

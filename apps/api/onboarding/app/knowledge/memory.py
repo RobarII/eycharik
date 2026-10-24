@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from onboarding.core.access import holds, predicates, subject_of
 from onboarding.core.chunking import split_document
 from onboarding.core.models import Chunk, Document, ScoredChunk
+from onboarding.core.query import expand_query
 from onboarding.core.retrieval import RetrievalPolicy
 from onboarding.ports import Embedder, SearchQuery
 
@@ -89,8 +90,9 @@ class InMemoryKnowledgeBase:
             return ()
 
         policy = self._policy
-        query_tokens = _tokens(query.text)
-        query_vector = (await self._embedder.embed([query.text]))[0]
+        search_text = expand_query(query.text)
+        query_tokens = _tokens(search_text)
+        query_vector = (await self._embedder.embed([search_text]))[0]
         covered = {str(entry.chunk.id): len(entry.tokens & query_tokens) for entry in allowed}
         admitted = [
             entry

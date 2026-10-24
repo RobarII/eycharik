@@ -49,6 +49,7 @@ steps:
       action: remind
 
   - id: day_before
+    delay_hours: 24
     image: reminder.jpg
     kind: wait
     title: Готовность к первому дню
@@ -64,12 +65,26 @@ steps:
           text: Есть вопросы
     routes:
       ready: first_day
-      not_ready: first_day
+      not_ready: day_before_questions
+    timeout:
+      after_hours: 24
+      action: remind
+
+  - id: day_before_questions
+    kind: wait
+    title: Вопросы перед первым днём
+    message: >-
+      Напишите вопрос, который остался перед первым днём. Я отвечу по базе знаний или передам
+      его HR. Когда будете готовы продолжить, отправьте «готово» или /nextStage.
+    expects: message
+    routes:
+      default: first_day
     timeout:
       after_hours: 24
       action: remind
 
   - id: first_day
+    delay_hours: 24
     image: party.jpg
     kind: send
     title: Первый день
@@ -82,6 +97,7 @@ steps:
     next: access_check
 
   - id: access_check
+    delay_hours: 1
     image: support.jpg
     kind: wait
     title: Проверка доступов
@@ -108,8 +124,8 @@ steps:
     kind: wait
     title: Проблема с доступами
     message: >-
-      Напишите, пожалуйста, что именно не открывается и какую ошибку видите. Я передам заявку
-      в ИТ-поддержку и вернусь с ответом.
+      Напишите, пожалуйста, что именно не открывается и какую ошибку видите. Я передам вопрос
+      в HR и поддержку и вернусь с ответом.
     expects: message
     routes:
       default: territory_map
@@ -119,6 +135,7 @@ steps:
       next: territory_map
 
   - id: territory_map
+    delay_hours: 1
     kind: send
     title: Территория
     message: >-
@@ -127,6 +144,7 @@ steps:
     next: lunch
 
   - id: lunch
+    delay_hours: 0.5
     image: lunch.jpg
     kind: send
     title: Обед
@@ -136,6 +154,7 @@ steps:
     next: contacts
 
   - id: contacts
+    delay_hours: 0.5
     image: contacts.jpg
     kind: send
     title: Контакты
@@ -145,6 +164,7 @@ steps:
     next: presentation
 
   - id: presentation
+    delay_hours: 2
     kind: send
     title: О компании
     message: >-
@@ -153,6 +173,7 @@ steps:
     next: first_day_end
 
   - id: first_day_end
+    delay_hours: 3
     image: progress.jpg
     kind: send
     title: Итог первого дня
@@ -162,6 +183,7 @@ steps:
     next: day_three_plan
 
   - id: day_three_plan
+    delay_hours: 48
     image: calm.jpg
     kind: send
     title: План адаптации
@@ -171,6 +193,7 @@ steps:
     next: day_three_survey
 
   - id: day_three_survey
+    delay_hours: 1
     image: questions.jpg
     kind: survey
     title: Опрос третьего дня
@@ -190,7 +213,7 @@ steps:
             text: Нет
       - id: first_days_score
         kind: scale
-        prompt: Оцените первые дни от 1 до 10
+        prompt: Оцените, насколько комфортными были первые дни, от 1 до 10
         low_threshold: 8
         reason_prompt: Что повлияло на оценку? Напишите пару слов.
       - id: what_helps
@@ -202,6 +225,7 @@ steps:
       action: remind
 
   - id: week_two_plan
+    delay_hours: 264
     image: calm.jpg
     kind: send
     title: Вторая неделя
@@ -211,6 +235,7 @@ steps:
     next: week_two_survey
 
   - id: week_two_survey
+    delay_hours: 1
     kind: survey
     title: Опрос двух недель
     message: >-
@@ -218,47 +243,47 @@ steps:
     questions:
       - id: tasks_clear
         kind: scale
-        prompt: Задачи понятны?
+        prompt: Оцените, насколько задачи понятны, от 1 до 10
         low_threshold: 8
         reason_prompt: Что стоит уточнить в задачах?
       - id: info_access
         kind: scale
-        prompt: Хватает информации для работы?
+        prompt: Оцените, насколько вам хватает информации для работы, от 1 до 10
         low_threshold: 8
         reason_prompt: Какой информации не хватает?
       - id: manager_available
         kind: scale
-        prompt: Руководитель доступен для вопросов?
+        prompt: Оцените, насколько руководитель доступен для вопросов, от 1 до 10
         low_threshold: 8
         reason_prompt: Что мешает общению с руководителем?
       - id: feedback
         kind: scale
-        prompt: Получаете обратную связь по работе?
+        prompt: Оцените, насколько регулярно вы получаете обратную связь, от 1 до 10
         low_threshold: 8
         reason_prompt: Какой обратной связи не хватает?
       - id: colleagues
         kind: scale
-        prompt: Команда помогает освоиться?
+        prompt: Оцените, насколько команда помогает вам освоиться, от 1 до 10
         low_threshold: 8
         reason_prompt: Что происходит в команде?
       - id: it_support
         kind: scale
-        prompt: ИТ-поддержка решает вопросы?
+        prompt: Оцените, насколько ИТ-поддержка решает ваши вопросы, от 1 до 10
         low_threshold: 8
         reason_prompt: Что не работает или долго решается?
       - id: access_speed
         kind: scale
-        prompt: Доступы выдали вовремя?
+        prompt: Оцените, насколько вовремя вам выдали доступы, от 1 до 10
         low_threshold: 8
         reason_prompt: Каких доступов не хватает?
       - id: hr_support
         kind: scale
-        prompt: Поддержка HR достаточна?
+        prompt: Оцените, насколько вам хватает поддержки HR, от 1 до 10
         low_threshold: 8
         reason_prompt: Что HR стоит улучшить?
       - id: overall
         kind: scale
-        prompt: Общая оценка адаптации
+        prompt: Оцените общую адаптацию от 1 до 10
         low_threshold: 8
         reason_prompt: Что больше всего мешает?
     next: month_two_plan
@@ -267,6 +292,7 @@ steps:
       action: remind
 
   - id: month_two_plan
+    delay_hours: 336
     image: congrats.jpg
     kind: send
     title: Второй месяц
@@ -276,6 +302,7 @@ steps:
     next: month_two_survey
 
   - id: month_two_survey
+    delay_hours: 1
     image: questions.jpg
     kind: survey
     title: Опрос второго месяца
@@ -284,7 +311,7 @@ steps:
     questions:
       - id: mood
         kind: scale
-        prompt: Настроение на работе от 1 до 10
+        prompt: Оцените настроение на работе от 1 до 10
         low_threshold: 8
         reason_prompt: Что влияет на настроение?
       - id: who_helps
@@ -302,6 +329,7 @@ steps:
       action: remind
 
   - id: probation_reminder
+    delay_hours: 720
     image: reminder.jpg
     kind: send
     title: Испытательный срок
@@ -311,6 +339,7 @@ steps:
     next: probation_survey
 
   - id: probation_survey
+    delay_hours: 1
     image: thanks.jpg
     kind: survey
     title: Итоги испытательного срока
@@ -343,7 +372,7 @@ steps:
         prompt: Что бы вы посоветовали новому сотруднику на вашем месте?
       - id: overall
         kind: scale
-        prompt: Общая удовлетворённость работой от 1 до 10
+        prompt: Оцените общую удовлетворённость работой от 1 до 10
         low_threshold: 8
         reason_prompt: Что повлияло на оценку?
     next: done

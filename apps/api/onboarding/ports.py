@@ -31,6 +31,7 @@ from onboarding.core.models import (
     ReminderPlan,
     RiskSignal,
     RunId,
+    ScheduledEntry,
     ScoredChunk,
     StepState,
 )
@@ -359,6 +360,7 @@ class StoredRun:
     reminder: ReminderPlan
     address: Address
     active: bool = True
+    scheduled: ScheduledEntry | None = None
 
 
 @runtime_checkable

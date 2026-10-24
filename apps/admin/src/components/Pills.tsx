@@ -8,7 +8,16 @@ export function StatusPill({ status }: { status: "active" | "completed" }) {
   );
 }
 
-export function AnswerPill({ answered }: { answered: boolean }) {
+export function AnswerPill({
+  answered,
+  declined = false,
+}: {
+  answered: boolean;
+  declined?: boolean;
+}) {
+  if (declined) {
+    return <span className="pill pill-muted">Отклонён</span>;
+  }
   return (
     <span className={`pill ${answered ? "pill-done" : "pill-warn"}`}>
       {answered ? "Отвечен" : "Ждёт ответа"}

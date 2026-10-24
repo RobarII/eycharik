@@ -21,6 +21,21 @@ def inline_citations(answer: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(token for token in tokens if "#" in token or "/" in token))
 
 
+def with_citations(answer: str, citations: Collection[ChunkId]) -> str:
+    """Make every accepted citation visible in the message the employee receives.
+
+    The model is asked to write ``[id]`` inline, but a provider may put ids only in the JSON
+    ``citations`` field. An answer without an inline source is still grounded; hiding that source
+    from the employee is not acceptable, so the missing ids are appended once.
+    """
+    seen = frozenset(inline_citations(answer))
+    missing = tuple(dict.fromkeys(citation for citation in citations if citation not in seen))
+    if not missing:
+        return answer
+    suffix = " ".join(f"[{citation}]" for citation in missing)
+    return f"{answer.rstrip()} {suffix}"
+
+
 def judge(
     draft: AnswerDraft,
     retrieved: Collection[ChunkId],

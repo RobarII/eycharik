@@ -206,6 +206,7 @@ class Question(BaseModel):
     employee_name: str
     text: str
     answered: bool
+    declined: bool = False
     reason: str
     citations: list[str]
     asked_at: datetime
@@ -240,6 +241,7 @@ class ResolvedQuestion(BaseModel):
     id: int
     employee_id: str
     answered: bool
+    declined: bool = False
     resolved_at: datetime
     resolved_by: str
 

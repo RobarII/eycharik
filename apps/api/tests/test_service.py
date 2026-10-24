@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -10,7 +11,7 @@ from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 from onboarding.app.worker.actions import ActionExecutor
-from onboarding.app.worker.service import OnboardingService
+from onboarding.app.worker.service import OnboardingService, _relative_due
 from onboarding.core.models import (
     Address,
     Channel,
@@ -486,3 +487,200 @@ async def test_the_classifier_labels_free_text_answers(tmp_path: Path) -> None:
     assert result.escalated
     escalated = next(fields for name, fields in audit.events if name == "risk_escalated")
     assert escalated["to"] == "recruiter"
+
+
+async def test_next_stage_skips_to_the_next_delayed_stage() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/nextStage"),
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert result.handled
+    assert stored.state.step_id == "day_before"
+    assert messaging.sent[-1].text.startswith("Завтра")
+
+
+def test_relative_due_is_readable_and_never_points_to_the_past() -> None:
+    now = datetime(2026, 10, 24, 18, 30, tzinfo=UTC)
+
+    assert _relative_due(now + timedelta(minutes=30), now) == "через 30 минут"
+    assert _relative_due(now + timedelta(hours=1), now) == "через 1 час"
+    assert _relative_due(now + timedelta(hours=24), now) == "через 1 день"
+    assert _relative_due(now + timedelta(hours=48), now) == "через 2 дня"
+    assert _relative_due(now + timedelta(hours=264), now) == "через 11 дней"
+    assert _relative_due(now + timedelta(hours=720), now) == "через 30 дней"
+    assert _relative_due(now - timedelta(minutes=1), now) == "сейчас"
+
+
+async def test_reboot_starts_a_fresh_run() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/reboot"),
+    )
+
+    assert result.handled
+    assert len(runs.runs) == 2
+    active = next(run for run in runs.runs.values() if run.active)
+    assert active.state.step_id == "welcome"
+    assert messaging.sent[-1].text.startswith("Здравствуйте! Меня зовут Корсик")
+    assert any(not run.active for run in runs.runs.values())
+
+
+async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    before = len(messaging.sent)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+    assert stored.state.step_id == "day_before"
+    assert stored.scheduled is not None
+    assert len(messaging.sent) == before + 1
+    assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "через" in messaging.sent[-1].text
+    assert "UTC" not in messaging.sent[-1].text
+    assert "Принял" not in messaging.sent[-1].text
+    assert "Бот работает" not in messaging.sent[-1].text
+
+    run_id = stored.state.run_id
+    result = await service.resume_scheduled(run_id, "day_before")
+
+    assert result.handled
+    assert messaging.sent[-1].text.startswith("Завтра")
+    assert next(iter(runs.runs.values())).scheduled is None
+
+
+async def test_a_question_while_scheduled_reaches_the_assistant() -> None:
+    service, runs, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="А что будет дальше?"),
+    )
+
+    assert result.handled
+    assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
+    assert answerer.calls == [("А что будет дальше?", NOW.date())]
+    assert messaging.sent[-1].text == "Ответ ассистента"
+
+
+async def test_a_button_while_scheduled_gets_a_stage_status() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="ready"),
+    )
+
+    assert result.handled
+    assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
+    assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "через" in messaging.sent[-1].text
+    assert "UTC" not in messaging.sent[-1].text
+    assert "Бот работает" not in messaging.sent[-1].text
+
+
+async def test_not_ready_offers_a_question_step() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+    await service.resume_scheduled(stored.state.run_id, "day_before")
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="not_ready"),
+    )
+
+    current = next(iter(runs.runs.values()))
+    assert result.handled
+    assert current.state.step_id == "day_before_questions"
+    assert messaging.sent[-1].text.startswith("Напишите вопрос")
+
+
+async def test_a_problem_report_does_not_skip_the_timeline() -> None:
+    service, runs, _, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    stored = next(iter(runs.runs.values()))
+    runs.runs[stored.state.run_id] = replace(
+        stored,
+        state=replace(stored.state, step_id="access_help", entered_at=NOW),
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(
+            kind=EventKind.MESSAGE_RECEIVED,
+            at=NOW,
+            text="Не включается компьютер",
+        ),
+    )
+
+    current = next(iter(runs.runs.values()))
+    assert result.handled
+    assert current.state.step_id == "access_help"
+    assert current.scheduled is None

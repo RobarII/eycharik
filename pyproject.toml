@@ -1,7 +1,7 @@
 [project]
 name = "onboarding-assistant"
 version = "0.1.0"
-description = "Onboarding assistant for the MAX messenger"
+description = "Эйчарик — ИИ-ассистент адаптации в MAX"
 requires-python = ">=3.12"
 dependencies = [
   "alembic>=1.13",

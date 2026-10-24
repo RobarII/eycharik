@@ -88,7 +88,7 @@ jobs:
         # Reporting, not gating: a scanner that blocks on day one blocks on the base image, not on
         # our code. It becomes a gate when a baseline of accepted findings exists. See ADR 0028.
         continue-on-error: true
-        uses: aquasecurity/trivy-action@v0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}-${{ matrix.name }}:sha-${{ steps.rev.outputs.sha }}
           severity: CRITICAL

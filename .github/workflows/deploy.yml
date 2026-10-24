@@ -27,6 +27,7 @@ on:
 permissions:
   contents: read
   packages: read
+  checks: read
 
 concurrency:
   group: deploy-production
@@ -77,8 +78,8 @@ jobs:
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           prefix=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
           for name in api admin; do
-            if ! docker manifest inspect "ghcr.io/$prefix-$name:$SHA" > /dev/null; then
-              echo "ghcr.io/$prefix-$name:$SHA is not published: push that commit to main first" >&2
+            if ! docker manifest inspect "ghcr.io/$prefix-$name:sha-$SHA" > /dev/null; then
+              echo "ghcr.io/$prefix-$name:sha-$SHA is not published: push that commit to main first" >&2
               exit 1
             fi
           done

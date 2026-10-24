@@ -3,7 +3,13 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { assignQuestion, fetchQuestions, fetchRuns, resolveQuestion } from "../api";
+import {
+  assignQuestion,
+  declineQuestion,
+  fetchQuestions,
+  fetchRuns,
+  resolveQuestion,
+} from "../api";
 import type { Question, RunSummary } from "../types";
 import { SessionProvider, sessionFor } from "../session";
 import { QuestionsPage } from "./QuestionsPage";
@@ -22,6 +28,7 @@ function session(capabilities: Tested[]) {
 
 vi.mock("../api", () => ({
   assignQuestion: vi.fn(),
+  declineQuestion: vi.fn(),
   fetchQuestions: vi.fn(),
   fetchRuns: vi.fn(),
   resolveQuestion: vi.fn(),
@@ -48,6 +55,7 @@ const question: Question = {
   employee_name: "Анна Петрова",
   text: "Когда начнёт действовать ДМС?",
   answered: false,
+  declined: false,
   reason: "no_sources",
   citations: [],
   asked_at: "2026-10-24T09:00:00Z",
@@ -78,6 +86,15 @@ beforeEach(() => {
     id: 7,
     employee_id: "e-1",
     answered: true,
+    declined: false,
+    resolved_at: "2026-10-24T10:00:00Z",
+    resolved_by: "rec-1",
+  });
+  vi.mocked(declineQuestion).mockResolvedValue({
+    id: 7,
+    employee_id: "e-1",
+    answered: true,
+    declined: true,
     resolved_at: "2026-10-24T10:00:00Z",
     resolved_by: "rec-1",
   });
@@ -130,6 +147,20 @@ describe("QuestionsPage", () => {
     expect(resolveQuestion).not.toHaveBeenCalled();
   });
 
+  it("closes a question without sending a reply", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Отказаться отвечать" }),
+    );
+
+    await waitFor(() => {
+      expect(declineQuestion).toHaveBeenCalledWith(7);
+    });
+    expect(resolveQuestion).not.toHaveBeenCalled();
+  });
+
   it("shows the resolution instead of the form once the question is closed", async () => {
     vi.mocked(fetchQuestions).mockResolvedValue({
       total: 1,
@@ -148,6 +179,27 @@ describe("QuestionsPage", () => {
 
     expect(await screen.findByText(/Закрыт/)).toBeInTheDocument();
     expect(screen.getByText(/rec-1/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ответить в MAX" })).not.toBeInTheDocument();
+  });
+
+  it("shows a declined question as closed without a reply", async () => {
+    vi.mocked(fetchQuestions).mockResolvedValue({
+      total: 1,
+      next_cursor: null,
+      items: [
+        {
+          ...question,
+          answered: true,
+          declined: true,
+          resolved_at: "2026-10-24T10:00:00Z",
+          resolved_by: "rec-1",
+        },
+      ],
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Отклонён")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ответить в MAX" })).not.toBeInTheDocument();
   });
 

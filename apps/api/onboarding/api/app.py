@@ -43,7 +43,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await app.state.container.aclose()
 
     app = FastAPI(
-        title="Onboarding assistant",
+        title="Эйчарик",
         version="0.1.0",
         docs_url="/docs" if docs_enabled else None,
         redoc_url=None,

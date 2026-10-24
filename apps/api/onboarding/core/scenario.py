@@ -49,6 +49,7 @@ _STEP_KEYS = {
     "outcome",
     "informal_message",
     "tone",
+    "delay_hours",
 }
 _REQUIRED_BY_KIND = {
     StepKind.SEND: {"message", "next"},
@@ -68,6 +69,7 @@ _FORBIDDEN_BY_KIND = {
         "next",
         "timeout",
         "questions",
+        "delay_hours",
     },
 }
 _QUESTION_KEYS = {"id", "kind", "prompt", "options", "low_threshold", "reason_prompt"}
@@ -142,6 +144,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
     questions = _questions(raw, path) if kind is StepKind.SURVEY else ()
     routes = _routes(raw, path)
     timeout = _timeout(raw, path)
+    delay = _delay(raw, path)
     tone_routes = _tone_routes(raw, path)
     expects = Expects(raw["expects"]) if "expects" in raw else None
     outcome = Outcome(raw["outcome"]) if "outcome" in raw else None
@@ -182,6 +185,7 @@ def _parse_step(raw: Mapping[str, Any], path: str, button_ids: set[str]) -> Step
         outcome=outcome,
         informal_message=informal_message,
         tone_routes=tone_routes,
+        delay=delay,
     )
 
 
@@ -240,6 +244,15 @@ def _tone_routes(raw: Mapping[str, Any], path: str) -> Mapping[str, Tone]:
                 f"{path}.tone[{key!r}] must be one of {[tone.value for tone in Tone]}"
             ) from None
     return MappingProxyType(tones)
+
+
+def _delay(raw: Mapping[str, Any], path: str) -> timedelta | None:
+    if "delay_hours" not in raw:
+        return None
+    hours = raw["delay_hours"]
+    if isinstance(hours, bool) or not isinstance(hours, int | float) or hours <= 0:
+        raise ScenarioError(f"{path}.delay_hours must be a positive number")
+    return timedelta(hours=float(hours))
 
 
 def _timeout(raw: Mapping[str, Any], path: str) -> Timeout | None:

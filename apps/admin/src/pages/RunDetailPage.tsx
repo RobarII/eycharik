@@ -145,9 +145,19 @@ export function RunDetailPage({
                       <p className="question-text">{question.text}</p>
                       <p className="question-meta">
                         <span
-                          className={`pill ${question.answered ? "pill-done" : "pill-warn"}`}
+                          className={`pill ${
+                            question.declined
+                              ? "pill-muted"
+                              : question.answered
+                                ? "pill-done"
+                                : "pill-warn"
+                          }`}
                         >
-                          {question.answered ? "Отвечен" : reasonLabel(question.reason)}
+                          {question.declined
+                            ? "Отклонён"
+                            : question.answered
+                              ? "Отвечен"
+                              : reasonLabel(question.reason)}
                         </span>
                         <time dateTime={question.asked_at}>
                           {formatDateTime(question.asked_at)}

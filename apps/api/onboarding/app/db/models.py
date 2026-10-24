@@ -78,6 +78,8 @@ class RunRow(Base):
     entered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     reminder_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reminder_action: Mapped[str | None] = mapped_column(String(16))
+    next_send_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_send_step: Mapped[str | None] = mapped_column(String(64))
     answers: Mapped[list[dict[str, object]]] = mapped_column(
         JSONB, server_default=sql_text("'[]'::jsonb")
     )
@@ -99,6 +101,7 @@ class RunRow(Base):
             postgresql_where=sql_text("status = 'active'"),
         ),
         Index("runs_reminder_idx", "reminder_at", postgresql_where=sql_text("status = 'active'")),
+        Index("runs_send_idx", "next_send_at", postgresql_where=sql_text("status = 'active'")),
         Index("runs_status_idx", "status"),
     )
 
@@ -189,6 +192,7 @@ class QuestionRow(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
     answered: Mapped[bool] = mapped_column(Boolean)
+    declined: Mapped[bool] = mapped_column(Boolean, server_default=sql_text("false"))
     reason: Mapped[str] = mapped_column(String(32))
     citations: Mapped[list[str]] = mapped_column(JSONB, server_default=sql_text("'[]'::jsonb"))
     latency_ms: Mapped[int | None] = mapped_column(Integer)

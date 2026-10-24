@@ -18,7 +18,7 @@ from onboarding.app.llm.output import AnswerFormatError, parse_answer
 from onboarding.app.observability import metrics
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
-from onboarding.core.grounding import judge
+from onboarding.core.grounding import judge, with_citations
 from onboarding.core.models import (
     ChunkId,
     EmployeeProfile,
@@ -26,6 +26,7 @@ from onboarding.core.models import (
     ScoredChunk,
     Verdict,
 )
+from onboarding.core.query import expand_query
 from onboarding.ports import (
     LLM,
     AuditLog,
@@ -104,7 +105,7 @@ class Answerer:
             return self._report(self._escalate(EscalationReason.NO_SOURCES, ()), timings)
 
         started = perf_counter()
-        retrieved = await self._rerank(normalized, retrieved)
+        retrieved = await self._rerank(expand_query(normalized), retrieved)
         timings["rerank"] = perf_counter() - started
 
         started = perf_counter()
@@ -212,7 +213,7 @@ class Answerer:
 
         if verdict.accepted and not draft.escalate:
             return AnswerOutcome(
-                text=verdict.answer,
+                text=with_citations(verdict.answer, verdict.citations),
                 escalated=False,
                 reason=verdict.reason,
                 citations=verdict.citations,

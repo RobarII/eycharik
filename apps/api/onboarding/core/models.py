@@ -121,6 +121,19 @@ class Timeout:
 
 
 @dataclass(frozen=True, slots=True)
+class ScheduledEntry:
+    """A step that is already selected but is not shown until ``due_at``.
+
+    The run stays on ``step_id`` while waiting, so the cabinet can say which stage is next and a
+    scheduler tick is the only thing that can move it. A zero delay is never stored: the normal
+    transition emits the step immediately.
+    """
+
+    step_id: str
+    due_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class Step:
     id: str
     kind: StepKind
@@ -137,6 +150,7 @@ class Step:
     outcome: Outcome | None = None
     informal_message: str | None = None
     tone_routes: Mapping[str, Tone] = field(default_factory=dict)
+    delay: timedelta | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,6 +249,7 @@ class Transition:
     state: StepState
     actions: tuple[Action, ...]
     reminder: ReminderPlan
+    scheduled: ScheduledEntry | None = None
 
 
 @dataclass(frozen=True, slots=True)

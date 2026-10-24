@@ -421,6 +421,32 @@ async def resolve_question(
 
 
 @router.post(
+    "/questions/{question_id}/decline",
+    response_model=ResolvedQuestion,
+)
+async def decline_question(
+    request: Request,
+    principal: Admin,
+    question_id: int,
+) -> ResolvedQuestion:
+    """Close one question without sending anything to the employee."""
+    resolution = await request.app.state.container.admin.decline_question(
+        question_id,
+        actor=principal.subject,
+        recruiter_id=_scope(principal),
+        department=_department(principal),
+    )
+    return ResolvedQuestion(
+        id=resolution.question_id,
+        employee_id=resolution.employee_id,
+        answered=True,
+        declined=True,
+        resolved_at=resolution.resolved_at,
+        resolved_by=resolution.resolved_by,
+    )
+
+
+@router.post(
     "/identities",
     status_code=status.HTTP_204_NO_CONTENT,
 )
@@ -667,6 +693,7 @@ def _question(record: QuestionRecord) -> Question:
         employee_name=record.employee_name,
         text=record.text,
         answered=record.answered,
+        declined=record.declined,
         reason=record.reason,
         citations=record.citations,
         asked_at=record.asked_at,

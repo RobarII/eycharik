@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import shutil
-import subprocess
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -19,6 +17,7 @@ from pathlib import Path
 from onboarding.app.container import build_container
 from onboarding.app.llm.profiles import answer_profile, embedding_profile, rerank_profile
 from onboarding.app.settings import Settings
+from onboarding.evals.artifact import commit_hash
 from onboarding.evals.runner import (
     Case,
     GoldenSetError,
@@ -153,7 +152,7 @@ async def _run(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
         if refusal is not None:
             print(f"not pinning: {refusal}", file=sys.stderr)
             return 1
-        pinned = derive_baseline(report, commit=_commit())
+        pinned = derive_baseline(report, commit=commit_hash())
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
         args.baseline.write_text(baseline_json(pinned), encoding="utf-8")
         print(f"wrote baseline {args.baseline} (commit {pinned.commit})")
@@ -229,7 +228,7 @@ def _write(
         render_markdown(
             report,
             command=command,
-            commit=_commit(),
+            commit=commit_hash(),
             model=_model_label(settings, retrieval_only=args.retrieval_only),
             environment=settings.environment,
             embed_provider=settings.embed_provider,
@@ -271,21 +270,6 @@ def retrieval_label(settings: Settings) -> str:
         f"{embed.name} ({embed.model}, dim {embed.dim}) + rerank:{ranking} "
         f"+ bm25:{bm25} + contextual:{contextual}"
     )
-
-
-def _commit() -> str:
-    git = shutil.which("git")
-    if git is None:
-        return "unknown"
-    try:
-        return subprocess.run(  # noqa: S603 - resolved binary, fixed argv, no shell
-            [git, "rev-parse", "--short", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 if __name__ == "__main__":

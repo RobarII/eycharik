@@ -25,7 +25,6 @@ import asyncio
 import json
 import math
 import random
-import subprocess
 import sys
 import time
 from collections import Counter
@@ -44,6 +43,7 @@ from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.core.models import RiskLevel, RiskSignal, Sentiment, SignalTag
 from onboarding.core.risk import assess
+from onboarding.evals.artifact import commit_hash
 from onboarding.ports import AuditLog, SentimentAnalysis
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -558,7 +558,7 @@ def render_markdown(
         f"# Оценка риска — {report.provider}",
         "",
         f"- команда: `{command}`",
-        f"- коммит: `{_commit()}`",
+        f"- коммит: `{commit_hash()}`",
         f"- окружение: `{Settings().environment}`",
         f"- выборка: `{report.split}`",
         f"- модель: `{report.model or 'deterministic'}`",
@@ -831,7 +831,7 @@ def render_artifact(report: Report, *, command: str) -> str:
         "provider": report.provider,
         "split": report.split,
         "repeat": report.repeat,
-        "commit": _commit(),
+        "commit": commit_hash(),
         "environment": Settings().environment,
         "prompt_version": report.prompt_version,
         "rubric": report.rubric or None,
@@ -869,19 +869,6 @@ def render_artifact(report: Report, *, command: str) -> str:
             )
         )
     return "\n".join(lines) + "\n"
-
-
-def _commit() -> str:
-    try:
-        return subprocess.run(
-            ["/usr/bin/env", "git", "rev-parse", "--short", "HEAD"],
-            cwd=ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def main(argv: list[str] | None = None) -> int:

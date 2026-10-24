@@ -22,7 +22,10 @@ from onboarding.evals.acl import (
     principal_audiences,
     visible,
 )
+from onboarding.evals.artifact import commit_hash
 from onboarding.evals.runner import Report
+
+from .fakes import FakeKnowledgeBase
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -156,16 +159,24 @@ def test_an_audience_without_a_viewer_stops_the_matrix(
 def test_a_pass_renders_and_writes_its_measurement(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    class Container:
+        knowledge = FakeKnowledgeBase(chunks=())
+
+        async def aclose(self) -> None:
+            return None
+
     async def passing_run(
-        cases: tuple[object, ...], settings: Settings, on_date: date
+        cases: tuple[object, ...], knowledge: object, *, on_date: date
     ) -> Report:
-        del cases, settings, on_date
+        # The wiring test lives in ``test_eval_harness``: here only the artifact is under test.
+        del cases, knowledge, on_date
         return Report(
             metrics={"recall_at_5": 1.0, "mrr": 1.0, "leak_rate": 0.0},
             results=(),
             generated=False,
         )
 
+    monkeypatch.setattr(acl, "build_container", lambda _settings: Container())
     monkeypatch.setattr(acl, "run", passing_run)
 
     code = acl.main(["--write", "--out-dir", str(tmp_path), "--label", "unit"])
@@ -177,7 +188,7 @@ def test_a_pass_renders_and_writes_its_measurement(
 
 
 def test_the_commit_is_a_short_sha_or_the_honest_unknown() -> None:
-    commit = acl._commit()
+    commit = commit_hash()
 
     valid = len(commit) == 7 and all(char in "0123456789abcdef" for char in commit)
     assert commit == "unknown" or valid

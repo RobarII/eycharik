@@ -23,8 +23,6 @@ import argparse
 import io
 import json
 import platform
-import shutil
-import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -44,6 +42,7 @@ from onboarding.core.models import (
     Rejected,
     RejectionReason,
 )
+from onboarding.evals.artifact import commit_hash
 from onboarding.ports import ExtractionProfile, ExtractionUnavailableError, Ocr
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -337,7 +336,7 @@ def _write(report: Report, args: argparse.Namespace) -> None:
         f"""# Оценка {on_date.isoformat()} — {"провалена" if report.failures else "пройдена"}
 
 - команда: `{command}`
-- коммит: `{_commit()}`
+- коммит: `{commit_hash()}`
 - окружение: `{_platform()}`
 - движок: `{report.engine}`
 - профиль: `{report.profile}`
@@ -354,25 +353,6 @@ def _write(report: Report, args: argparse.Namespace) -> None:
         encoding="utf-8",
     )
     print(f"wrote {path}")
-
-
-def _commit() -> str:
-    """Short HEAD, or "unknown" outside a checkout.
-
-    A measurement without a commit proves nothing.
-    """
-    git = shutil.which("git")
-    if git is None:
-        return "unknown"
-    try:
-        return subprocess.run(  # noqa: S603 - resolved binary, fixed argv, no shell
-            [git, "rev-parse", "--short", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 def _platform() -> str:

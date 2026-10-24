@@ -17,8 +17,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import shutil
-import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -29,6 +27,7 @@ from onboarding.app.container import build_container
 from onboarding.app.knowledge.ingest import load_corpus
 from onboarding.app.settings import Settings
 from onboarding.core.access import Subject, holds, permits, predicates
+from onboarding.evals.artifact import commit_hash
 from onboarding.evals.runner import (
     Case,
     Report,
@@ -37,6 +36,7 @@ from onboarding.evals.runner import (
     summarise,
     write_jsonl,
 )
+from onboarding.ports import KnowledgeBase
 
 ROOT = Path(__file__).resolve().parents[4]
 
@@ -142,18 +142,15 @@ def audiences_in(documents: Sequence[CorpusDocument]) -> set[str]:
     return {audience for document in documents for audience in document.audience} - {"all"}
 
 
-async def run(cases: tuple[Case, ...], settings: Settings, on_date: date) -> Report:
-    container = build_container(settings)
-    try:
-        results = await evaluate(
-            cases,
-            knowledge=container.knowledge,
-            answerer=None,
-            on_date=on_date,
-        )
-    finally:
-        await container.aclose()
+async def run(cases: tuple[Case, ...], knowledge: KnowledgeBase, *, on_date: date) -> Report:
+    """Score a case list against any knowledge backend: the matrix is a library, not a script."""
+    results = await evaluate(cases, knowledge=knowledge, answerer=None, on_date=on_date)
     return summarise(results, generated=False)
+
+
+def matrix(documents: Sequence[CorpusDocument], *, on_date: date) -> tuple[Case, ...]:
+    """The whole matrix, built offline: the cases depend on the corpus, not on a connection."""
+    return build_cases(documents, on_date)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -175,8 +172,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     on_date = datetime.now(UTC).date()
-    cases = build_cases(documents, on_date)
-    report = asyncio.run(run(cases, settings, on_date))
+    cases = matrix(documents, on_date=on_date)
+    report = asyncio.run(_run_against_the_database(cases, settings, on_date))
     print(f"cases: {len(cases)} ({len(documents)} documents x {len(VIEWERS)} viewers)")
     print(f"recall_at_5: {report.metrics.get('recall_at_5', 0.0):.3f}")
     print(f"leak_rate:   {report.metrics.get('leak_rate', 0.0):.3f}")
@@ -191,6 +188,17 @@ def main(argv: list[str] | None = None) -> int:
     return 1 if report.failures else 0
 
 
+async def _run_against_the_database(
+    cases: tuple[Case, ...], settings: Settings, on_date: date
+) -> Report:
+    """The only place the matrix touches a container: cases need a corpus, corpus needs a link."""
+    container = build_container(settings)
+    try:
+        return await run(cases, container.knowledge, on_date=on_date)
+    finally:
+        await container.aclose()
+
+
 def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date: date) -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{on_date.isoformat()}-eval-retrieval-{args.label}"
@@ -201,7 +209,7 @@ def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date
         render_markdown(
             report,
             command=" ".join(["python -m onboarding.evals.acl", *sys.argv[1:]]).strip(),
-            commit=_commit(),
+            commit=commit_hash(),
             model="n/a",
             environment=settings.environment,
             embed_provider=settings.embed_provider,
@@ -214,21 +222,6 @@ def _write(report: Report, args: argparse.Namespace, settings: Settings, on_date
     )
     print(f"wrote {path}")
     print(f"wrote {artifact}")
-
-
-def _commit() -> str:
-    git = shutil.which("git")
-    if git is None:
-        return "unknown"
-    try:
-        return subprocess.run(  # noqa: S603 - resolved binary, fixed argv, no shell
-            [git, "rev-parse", "--short", "HEAD"],
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
 
 
 if __name__ == "__main__":

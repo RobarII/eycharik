@@ -62,6 +62,9 @@ class ActionExecutor:
     def no_next_stage_text(self) -> str:
         return self._copy.no_next_stage
 
+    def not_understood_text(self) -> str:
+        return self._copy.not_understood
+
     def stage_scheduled_text(self, stage: str, when: str) -> str:
         return self._copy.stage_scheduled.format(stage=stage, when=when)
 
@@ -72,9 +75,7 @@ class ActionExecutor:
         match action.kind:
             case ActionKind.SEND:
                 assert action.text is not None
-                text = (
-                    self._copy.reminder(action.text) if action.note == "reminder" else action.text
-                )
+                text = self._resolve(action)
                 await self._messaging.send(
                     OutboundMessage(
                         address=context.address,
@@ -114,6 +115,17 @@ class ActionExecutor:
                 )
             case ActionKind.IGNORE:
                 await self._audit.record("action_ignored", employee_id=_employee(context))
+
+    def _resolve(self, action: Action) -> str:
+        """Attach a hint to a repeated survey question so the person learns what went wrong."""
+        assert action.text is not None
+        if action.note == "reminder":
+            return self._copy.reminder(action.text)
+        if action.note is not None and action.note.startswith("survey:repeat"):
+            kind = action.note.rpartition(":")[2]
+            hint = self._copy.answer_hint(kind)
+            return f"{action.text}\n\n{hint}" if hint else action.text
+        return action.text
 
     async def _answer(self, context: ActionContext) -> None:
         if context.profile is None or not context.question:

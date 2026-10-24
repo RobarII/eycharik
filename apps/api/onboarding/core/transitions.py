@@ -346,7 +346,7 @@ def _repeat(state: StepState, step: Step, question_id: str) -> Transition:
                 kind=ActionKind.SEND,
                 text=question.prompt,
                 keyboard=_question_keyboard(question),
-                note="survey:repeat",
+                note=f"survey:repeat:{question.kind.value}",
             ),
         ),
         reminder=KeepReminder(),
@@ -425,6 +425,47 @@ def _on_message(scenario: Scenario, state: StepState, event: Event) -> Transitio
     # Free text is not a button. A problem report or a question must reach the assistant, not be
     # mistaken for "готово" and skip the next month of the timeline.
     return _idle(state, ActionKind.ANSWER)
+
+
+_STAGE_QUESTIONS = (
+    "что дальше",
+    "что теперь",
+    "что мне делать",
+    "что делать",
+    "что мне сейчас",
+    "что сейчас нужно",
+    "что нужно сделать",
+    "какой сейчас этап",
+    "какой этап",
+    "на каком я этапе",
+    "на каком этапе",
+    "что по плану",
+    "что следующее",
+    "следующий шаг",
+    "текущий шаг",
+    "текущий этап",
+    "мой шаг",
+    "где я сейчас",
+)
+
+
+def asks_about_stage(text: str | None) -> bool:
+    """True when the person asks about their own onboarding step, not about the company.
+
+    The run already knows the step and its message; sending "я не нашёл ответа, передал HR" to
+    "что мне сейчас нужно сделать?" is a lie (measured live 2026-10-24).
+    """
+    if not text:
+        return False
+    normalized = " ".join(text.lower().replace("ё", "е").split())
+    return any(phrase in normalized for phrase in _STAGE_QUESTIONS)
+
+
+def has_words(text: str | None) -> bool:
+    """True when a message carries letters or digits, so an emoji is not a question for HR."""
+    if not text:
+        return False
+    return any(character.isalnum() for character in text)
 
 
 def is_question(text: str | None) -> bool:

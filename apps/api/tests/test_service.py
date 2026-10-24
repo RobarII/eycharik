@@ -748,3 +748,110 @@ async def test_a_problem_report_does_not_skip_the_timeline() -> None:
     assert result.handled
     assert current.state.step_id == "access_help"
     assert current.scheduled is None
+
+
+async def test_a_confirmation_while_scheduled_is_not_announced_again() -> None:
+    """A stage waiting for its due time must not repeat its notice per "понятно"."""
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    notices = [message.text for message in messaging.sent if message.text.startswith("Следующ")]
+
+    for _ in range(3):
+        result = await service.handle(
+            EMPLOYEE,
+            ADDRESS,
+            Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Понятно"),
+        )
+        assert result.handled
+
+    repeated = [message.text for message in messaging.sent if message.text.startswith("Следующ")]
+    assert repeated == notices
+    assert next(iter(runs.runs.values())).scheduled is not None
+
+
+async def test_an_emoji_is_not_a_question_for_hr() -> None:
+    service, _, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+
+    result = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="🙂")
+    )
+
+    assert result.handled
+    assert answerer.calls == []
+    assert messaging.sent[-1].text == COPY.not_understood
+
+
+async def test_a_question_about_the_current_stage_repeats_the_step() -> None:
+    """\"Что мне сейчас нужно сделать?\" is about the run itself, not the knowledge base."""
+    service, runs, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    welcome = messaging.sent[-1]
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Что мне сейчас нужно сделать?"),
+    )
+
+    assert result.handled
+    assert answerer.calls == []
+    assert messaging.sent[-1].text == welcome.text
+    assert messaging.sent[-1].keyboard == welcome.keyboard
+    assert next(iter(runs.runs.values())).state.step_id == "welcome"
+
+
+async def test_a_question_after_completion_still_reaches_the_assistant() -> None:
+    service, runs, messaging, audit, answerer = build()
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Какой у нас график работы?"),
+    )
+
+    assert result.handled
+    assert answerer.calls == [("Какой у нас график работы?", NOW.date())]
+    assert messaging.sent[-1].text == answerer.text
+    assert runs.runs == {}
+    assert "answer_after_completion" in audit.names()
+
+
+async def test_help_and_next_stage_work_after_completion() -> None:
+    service, _, messaging, _, _ = build()
+
+    help_result = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/help")
+    )
+    next_result = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/nextStage")
+    )
+
+    assert help_result.handled
+    assert next_result.handled
+    assert messaging.sent[-2].text == COPY.help
+    assert messaging.sent[-1].text == COPY.no_next_stage
+
+
+async def test_a_statement_after_completion_is_not_escalated() -> None:
+    service, _, messaging, audit, answerer = build()
+    sent_before = len(messaging.sent)
+
+    result = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="спасибо")
+    )
+
+    assert not result.handled
+    assert answerer.calls == []
+    assert len(messaging.sent) == sent_before
+    assert "event_without_run" in audit.names()

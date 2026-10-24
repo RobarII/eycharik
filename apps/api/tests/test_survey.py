@@ -58,6 +58,11 @@ def test_choice_accepts_a_known_option_id() -> None:
     assert parse_answer(CHOICE, option_id="bad").option_id == "bad"
 
 
+def test_choice_accepts_text_matching_option_label() -> None:
+    assert parse_answer(CHOICE, text="отлично").option_id == "great"
+    assert parse_answer(CHOICE, text="Никак").option_id == "bad"
+
+
 def test_choice_rejects_an_unknown_option() -> None:
     with pytest.raises(SurveyError, match="unknown option"):
         parse_answer(CHOICE, option_id="maybe")

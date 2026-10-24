@@ -73,7 +73,8 @@ class OutboxMessaging:
                     text=part,
                     # An image belongs to the message, not to a part: it rides on the first one.
                     image=message.image if index == 0 else None,
-                    keyboard=_keyboard_json(message.keyboard),
+                    # Buttons belong under the whole message, so they ride on its last part.
+                    keyboard=_keyboard_json(message.keyboard) if index == len(parts) - 1 else [],
                 )
                 session.add(row)
                 await session.flush()
@@ -144,6 +145,9 @@ class MessageDispatcher:
                 )
                 .returning(MessageRow)
             )
+            # ``UPDATE ... RETURNING`` returns rows in no guaranteed order, so two messages created
+            # microseconds apart reached the chat backwards (measured live 2026-10-24: the survey
+            # intro arrived after its first question). Ids are the send order.
             return tuple(
                 PendingMessage(
                     id=row.id,
@@ -156,7 +160,7 @@ class MessageDispatcher:
                     ),
                     attempts=row.attempts,
                 )
-                for row in rows
+                for row in sorted(rows, key=lambda row: row.id)
             )
 
     async def _deliver(self, channel: Channel, message: PendingMessage) -> None:

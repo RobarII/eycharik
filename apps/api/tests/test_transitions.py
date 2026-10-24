@@ -20,15 +20,22 @@ from onboarding.core.models import (
     ScheduleReminder,
     StepState,
     SurveyAnswer,
+    Timeout,
     TimeoutAction,
+    Tone,
 )
 from onboarding.core.scenario import parse_scenario
 from onboarding.core.transitions import (
     ScenarioRunError,
     StepCycleError,
+    _record_reason,
     advance,
+    asks_about_stage,
+    has_words,
     is_confirmation,
     is_question,
+    jump,
+    replay,
     resume_scheduled,
     start,
 )
@@ -511,7 +518,7 @@ def test_invalid_answer_repeats_the_question_without_progress(survey: Scenario) 
     )
 
     assert transition.state == _survey_state()
-    assert transition.actions[0].note == "survey:repeat"
+    assert transition.actions[0].note == "survey:repeat:scale"
     assert transition.actions[0].text == "Насколько доступен руководитель?"
 
 
@@ -537,3 +544,183 @@ def test_survey_timeout_repeats_the_current_question(survey: Scenario) -> None:
     assert transition.actions[0].text == "Насколько доступен руководитель?"
     assert isinstance(transition.reminder, ScheduleReminder)
     assert transition.reminder.due_at == NOW + timedelta(hours=48)
+
+
+def test_jump_to_same_step_reenters(scenario: Scenario, state: StepState) -> None:
+    transition = jump(scenario, state, state.step_id, NOW)
+    assert transition.state.step_id == state.step_id
+
+
+def test_jump_to_different_step_advances(scenario: Scenario, state: StepState) -> None:
+    transition = jump(scenario, state, "documents", NOW)
+    assert transition.state.step_id == "documents"
+    assert "checklist" in transition.state.completed_steps
+
+
+def test_replay_returns_current_step(scenario: Scenario, state: StepState) -> None:
+    transition = replay(scenario, state, NOW)
+    assert transition.state.step_id == state.step_id
+
+
+def test_button_pressed_on_non_button_step_is_ignored(scenario: Scenario, state: StepState) -> None:
+    # documents step expects MESSAGE
+    doc_state = replace(state, step_id="documents")
+    transition = advance(
+        scenario, doc_state, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="b1")
+    )
+    assert [a.kind for a in transition.actions] == [ActionKind.IGNORE]
+
+
+def test_choice_question_with_invalid_or_missing_button(survey: Scenario) -> None:
+    state = replace(_survey_state(), question_index=1)
+    t1 = advance(survey, state, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="unknown"))
+    assert t1.actions[0].note == "survey:repeat:choice"
+    t2 = advance(
+        survey, state, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="wrong_prefix")
+    )
+    assert t2.actions[0].note == "survey:repeat:choice"
+
+
+def test_informal_message_selected_when_tone_is_informal(
+    scenario: Scenario, state: StepState
+) -> None:
+    informal_step = replace(scenario.step("welcome"), informal_message="Привет!")
+    informal_scenario = replace(scenario, steps={**scenario.steps, "welcome": informal_step})
+    transition = jump(informal_scenario, replace(state, tone=Tone.INFORMAL), "welcome", NOW)
+    assert transition.actions[0].text == "Привет!"
+
+
+def test_employee_created_event_is_ignored(scenario: Scenario, state: StepState) -> None:
+    transition = advance(scenario, state, Event(kind=EventKind.EMPLOYEE_CREATED, at=NOW))
+    assert transition.state == state
+    assert [a.kind for a in transition.actions] == [ActionKind.IGNORE]
+
+
+def test_send_step_without_next_step_raises(scenario: Scenario) -> None:
+    bad_step = replace(scenario.step("welcome"), next_step=None)
+    bad_scenario = replace(scenario, steps={**scenario.steps, "welcome": bad_step})
+    with pytest.raises(ScenarioRunError, match="has no next step"):
+        start(bad_scenario, RunId("run-1"), "employee-1", NOW)
+
+
+def test_step_without_timeout_keeps_reminder(scenario: Scenario, state: StepState) -> None:
+    step_no_timeout = replace(scenario.step("checklist"), timeout=None)
+    scenario_no_timeout = replace(
+        scenario, steps={**scenario.steps, "checklist": step_no_timeout}
+    )
+    transition = jump(scenario_no_timeout, state, "checklist", NOW)
+    assert isinstance(transition.reminder, KeepReminder)
+
+
+def test_survey_ignores_file_event(survey: Scenario) -> None:
+    transition = advance(
+        survey, _survey_state(), Event(kind=EventKind.FILE_RECEIVED, at=NOW)
+    )
+    assert [a.kind for a in transition.actions] == [ActionKind.IGNORE]
+
+
+def test_empty_reason_repeats_reason_prompt(survey: Scenario) -> None:
+    reason_state = replace(_survey_state(), pending_reason="manager")
+    transition = advance(
+        survey, reason_state, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="   ")
+    )
+    assert [a.kind for a in transition.actions] == [ActionKind.SEND]
+    assert transition.actions[0].note == "survey:reason"
+
+
+def test_record_reason_without_pending_reason_raises(survey: Scenario) -> None:
+    with pytest.raises(ScenarioRunError, match="without a pending question"):
+        _record_reason(
+            survey,
+            replace(_survey_state(), pending_reason=None),
+            Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="x"),
+            survey.step("check"),
+        )
+
+
+def test_reason_without_prompt_raises(survey: Scenario) -> None:
+    step = survey.step("check")
+    bad_q = replace(step.questions[0], reason_prompt=None)
+    bad_step = replace(step, questions=(bad_q, *step.questions[1:]))
+    bad_survey = replace(survey, steps={**survey.steps, "check": bad_step})
+    reason_state = replace(_survey_state(), pending_reason="manager")
+    with pytest.raises(ScenarioRunError, match="asks for a reason without a prompt"):
+        advance(bad_survey, reason_state, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text=""))
+
+
+def test_survey_without_next_step_raises(survey: Scenario) -> None:
+    bad_step = replace(survey.step("check"), next_step=None)
+    bad_survey = replace(survey, steps={**survey.steps, "check": bad_step})
+    state = replace(_survey_state(), question_index=2)
+    with pytest.raises(ScenarioRunError, match="has no next step"):
+        advance(bad_survey, state, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="answer"))
+
+
+def test_survey_without_timeout_ignores_timeout(survey: Scenario) -> None:
+    bad_step = replace(survey.step("check"), timeout=None)
+    bad_survey = replace(survey, steps={**survey.steps, "check": bad_step})
+    transition = advance(
+        bad_survey, _survey_state(), Event(kind=EventKind.TIMEOUT, at=NOW)
+    )
+    assert [a.kind for a in transition.actions] == [ActionKind.IGNORE]
+
+
+def test_survey_timeout_escalate_without_next_step(survey: Scenario) -> None:
+    timeout = Timeout(after=timedelta(hours=1), action=TimeoutAction.ESCALATE, next_step=None)
+    bad_step = replace(survey.step("check"), timeout=timeout)
+    bad_survey = replace(survey, steps={**survey.steps, "check": bad_step})
+    transition = advance(
+        bad_survey, _survey_state(), Event(kind=EventKind.TIMEOUT, at=NOW)
+    )
+    assert [a.kind for a in transition.actions] == [ActionKind.ESCALATE]
+    assert isinstance(transition.reminder, CancelReminder)
+
+
+def test_survey_timeout_escalate_with_next_step(survey: Scenario) -> None:
+    timeout = Timeout(after=timedelta(hours=1), action=TimeoutAction.ESCALATE, next_step="done")
+    bad_step = replace(survey.step("check"), timeout=timeout)
+    bad_survey = replace(survey, steps={**survey.steps, "check": bad_step})
+    transition = advance(
+        bad_survey, _survey_state(), Event(kind=EventKind.TIMEOUT, at=NOW)
+    )
+    assert [a.kind for a in transition.actions] == [ActionKind.ESCALATE, ActionKind.COMPLETE]
+    assert transition.state.step_id == "done"
+
+
+def test_timeout_on_step_without_timeout_ignores(scenario: Scenario, state: StepState) -> None:
+    bad_step = replace(scenario.step("checklist"), timeout=None)
+    bad_scenario = replace(scenario, steps={**scenario.steps, "checklist": bad_step})
+    transition = advance(bad_scenario, state, Event(kind=EventKind.TIMEOUT, at=NOW))
+    assert [a.kind for a in transition.actions] == [ActionKind.IGNORE]
+
+
+def test_is_confirmation_edge_cases() -> None:
+    assert not is_confirmation(None)
+    assert not is_confirmation("")
+    assert not is_confirmation("   ")
+    assert not is_confirmation("пока нет")
+    assert not is_confirmation("не готов")
+    assert is_confirmation("Да, готов")
+
+
+def test_file_at_button_step_answers(scenario: Scenario, state: StepState) -> None:
+    transition = advance(scenario, state, Event(kind=EventKind.FILE_RECEIVED, at=NOW))
+    assert [a.kind for a in transition.actions] == [ActionKind.ANSWER]
+
+
+def test_asks_about_stage() -> None:
+    assert not asks_about_stage(None)
+    assert not asks_about_stage("")
+    assert not asks_about_stage("как оформить отпуск")
+    assert asks_about_stage("Что дальше?")
+    assert asks_about_stage("какой сейчас этап")
+
+
+def test_has_words() -> None:
+    assert not has_words(None)
+    assert not has_words("")
+    assert not has_words("👍😊")
+    assert has_words("hello")
+    assert has_words("123")
+
+

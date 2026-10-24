@@ -64,15 +64,33 @@ def scale_deficit(question: Question, answer: SurveyAnswer) -> int:
 
 
 def _choice(question: Question, option_id: str | None, text: str | None) -> SurveyAnswer:
+    """Accept both a button payload and the option text a person may type instead.
+
+    Live run 2026-10-24: typing "Пока не уверен" under a choice question was rejected as an
+    unknown option, so the bot repeated the question and the person had no way to see why.
+    """
     known = {option.id for option in question.options}
     chosen = (option_id or (text or "").strip()).strip()
     if not chosen:
         raise SurveyError(f"question {question.id!r}: an option is required")
     if chosen not in known:
-        raise SurveyError(
-            f"question {question.id!r}: unknown option {chosen!r}, expected one of {sorted(known)}"
-        )
+        by_text = {
+            _normalized(option.text): option.id
+            for option in question.options
+            if option.text is not None
+        }
+        matched = by_text.get(_normalized(chosen))
+        if matched is None:
+            raise SurveyError(
+                f"question {question.id!r}: unknown option {chosen!r}, "
+                f"expected one of {sorted(known)}"
+            )
+        chosen = matched
     return SurveyAnswer(question_id=question.id, option_id=chosen)
+
+
+def _normalized(value: str) -> str:
+    return " ".join(value.lower().replace("ё", "е").split())
 
 
 def _scale(question: Question, text: str | None, option_id: str | None) -> SurveyAnswer:

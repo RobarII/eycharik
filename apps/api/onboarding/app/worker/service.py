@@ -27,6 +27,7 @@ from onboarding.core.models import (
     RunId,
     Scenario,
     ScheduledEntry,
+    StepKind,
     StepState,
     SurveyAnswer,
     Transition,
@@ -34,6 +35,8 @@ from onboarding.core.models import (
 from onboarding.core.risk import assess, keyword_signal, scale_signal
 from onboarding.core.transitions import (
     advance,
+    asks_about_stage,
+    has_words,
     is_confirmation,
     is_question,
     jump,
@@ -186,8 +189,7 @@ class OnboardingService:
 
         stored = await self._runs.find_active_by_employee(employee_id)
         if stored is None:
-            await self._audit.record("event_without_run", employee_id=str(employee_id))
-            return ServiceResult(handled=False)
+            return await self._after_run(employee_id, address, event, command)
 
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
         # Reminders are scheduled from processing time, never from a delivery timestamp: a retried
@@ -259,6 +261,12 @@ class OnboardingService:
                 # the step was entered. Repeating it per document is noise (measured 2026-10-24:
                 # two identical "next stage" messages in one dialog).
                 return ServiceResult(handled=True)
+            if event.kind is EventKind.MESSAGE_RECEIVED:
+                # "Понятно", "спасибо", "готово" while the stage waits for its due time is not a
+                # request for a status: answering each one repeated the same notice (measured live
+                # 2026-10-24: six identical "Следующий этап" messages in a row). Only a button
+                # press on a stale keyboard is a real question about the stage.
+                return ServiceResult(handled=True)
             await self._ack_scheduled(
                 scenario,
                 stored.scheduled,
@@ -266,6 +274,33 @@ class OnboardingService:
                 employee_id,
                 now.date(),
                 waiting=True,
+            )
+            return ServiceResult(handled=True)
+
+        if event.kind is EventKind.MESSAGE_RECEIVED and event.text and not has_words(event.text):
+            # An emoji is not a question: it used to be logged and escalated to HR as "no sources".
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=self._executor.not_understood_text()),),
+                address,
+                employee_id,
+                now.date(),
+                question=None,
+            )
+            return ServiceResult(handled=True)
+        if (
+            event.kind is EventKind.MESSAGE_RECEIVED
+            and event.text
+            and asks_about_stage(event.text)
+            and scenario.step(stored.state.step_id).kind is StepKind.WAIT
+        ):
+            # The run knows the current step; repeating it beats "no answer in the knowledge base".
+            await self._audit.record("stage_replayed", employee_id=str(employee_id))
+            await self._act(
+                replay(scenario, stored.state, now).actions,
+                address,
+                employee_id,
+                now.date(),
+                question=None,
             )
             return ServiceResult(handled=True)
 
@@ -324,6 +359,57 @@ class OnboardingService:
             )
         return ServiceResult(handled=True, escalated=escalated, completed=completed)
 
+    async def _after_run(
+        self,
+        employee_id: EmployeeId,
+        address: Address,
+        event: Event,
+        command: str | None,
+    ) -> ServiceResult:
+        """Work the same way after the scenario ended as during it.
+
+        The completion message promises "я на связи" — live run 2026-10-24 showed the opposite:
+        every message after ``done`` was dropped with an ``event_without_run`` audit row, questions
+        included. Commands and questions now behave the same before and after completion.
+        """
+        now = self._now()
+        if command is not None and event.kind is EventKind.MESSAGE_RECEIVED:
+            text = (
+                self._executor.no_next_stage_text()
+                if command == "/nextstage"
+                else self._executor.help_text()
+                if command == "/help"
+                else self._executor.unknown_command_text()
+            )
+            await self._audit.record(
+                "command_after_completion", employee_id=str(employee_id), command=command
+            )
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=text),),
+                address,
+                employee_id,
+                now.date(),
+                question=None,
+            )
+            return ServiceResult(handled=True)
+        asks = (
+            event.text
+            if event.kind in {EventKind.MESSAGE_RECEIVED, EventKind.FILE_RECEIVED}
+            else None
+        )
+        if asks and has_words(asks) and is_question(asks):
+            await self._audit.record("answer_after_completion", employee_id=str(employee_id))
+            await self._act(
+                (Action(kind=ActionKind.ANSWER),),
+                address,
+                employee_id,
+                now.date(),
+                question=asks,
+            )
+            return ServiceResult(handled=True)
+        await self._audit.record("event_without_run", employee_id=str(employee_id))
+        return ServiceResult(handled=False)
+
     async def reboot(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
         """Close the current run and make the same person start from the welcome again.
 
@@ -348,8 +434,15 @@ class OnboardingService:
         """Move to the next timeline stage now (demo-only ``/nextStage``)."""
         stored = await self._runs.find_active_by_employee(employee_id)
         if stored is None:
-            await self._audit.record("event_without_run", employee_id=str(employee_id))
-            return ServiceResult(handled=False)
+            now = self._now()
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=self._executor.no_next_stage_text()),),
+                address,
+                employee_id,
+                now.date(),
+                question=None,
+            )
+            return ServiceResult(handled=True)
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
         target = _next_stage_target(scenario, stored)
         now = self._now()

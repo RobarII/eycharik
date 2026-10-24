@@ -31,6 +31,8 @@ class Copy:
     no_next_stage: str = ""
     stage_scheduled: str = ""
     stage_waiting: str = ""
+    invalid_answer: dict[str, str] | None = None
+    not_understood: str = ""
 
     def escalation_for(self, reason: EscalationReason) -> str:
         try:
@@ -40,6 +42,11 @@ class Copy:
 
     def reminder(self, text: str) -> str:
         return f"{self.reminder_prefix}{text}"
+
+    def answer_hint(self, kind: str) -> str:
+        """A hint for a rejected survey answer so the same question is not just repeated."""
+        hints = self.invalid_answer or {}
+        return hints.get(kind, hints.get("open", ""))
 
 
 def load_copy(path: Path) -> Copy:
@@ -69,7 +76,19 @@ def load_copy(path: Path) -> Copy:
         no_next_stage=_text(raw, "no_next_stage", path),
         stage_scheduled=_text(raw, "stage_scheduled", path),
         stage_waiting=_text(raw, "stage_waiting", path),
+        invalid_answer=_hints(raw, path),
+        not_understood=_text(raw, "not_understood", path),
     )
+
+
+def _hints(raw: dict[object, object], path: Path) -> dict[str, str]:
+    block = raw.get("invalid_answer")
+    if not isinstance(block, dict):
+        raise CopyError(f"{path}: missing 'invalid_answer' mapping")
+    hints: dict[str, str] = {}
+    for kind in ("scale", "choice", "open"):
+        hints[kind] = _text(block, kind, path)
+    return hints
 
 
 def _text(raw: dict[object, object], key: str, path: Path) -> str:

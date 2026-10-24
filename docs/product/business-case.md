@@ -1,136 +1,174 @@
 # Business case: onboarding assistant, Russian-hosted pilot
 
-Status: draft for the client. Every number is either measured in this repository, read from a vendor
-price list on 2026-10-25, or explicitly marked **assumption** with the party that must confirm it.
-Nothing here is a promise of quality; the quality gates live in [evals](../evals/README.md).
+Status: draft for the client. Prices live in [vendor-comparison.md](vendor-comparison.md), token
+counts in [the token budget measurement](../measurements/2026-10-25-token-budget.md). This document
+does not restate either — it spends them.
 
-## The decision this document supports
+Two rules this document follows:
 
-One vendor, Russian-hosted, three calls per answer (chat, embeddings, rerank). Managed API costs
-**≈ 0.032 ₽ per answer**; a self-hosted GPU costs the same per answer at the margin but **71 456 ₽
-per month** before the first question. For onboarding volumes the managed option wins by two orders
-of magnitude, so a GPU is justified by data locality or latency, not by cost.
+1. **No invented numbers.** Where an input belongs to the client, the row says so and stays empty
+   until the client fills it. An empty cell is cheaper than a wrong one.
+2. **Arithmetic is not a recommendation.** A break-even is a division. Whether to buy the GPU is a
+   decision with reasons that may have nothing to do with the division.
+
+## The question this document answers
+
+At onboarding volumes, does the assistant cost less than the HR time it removes — and does a
+self-hosted GPU change that answer?
+
+Short version: the model cost is small enough that the answer hinges on the HR inputs, not on the
+vendor. The GPU is a decision about the contour, not about money.
 
 ## Inputs
 
-| Input | Value | Type | Source |
+| Input | Value | Type | Owner |
 |---|---|---|---|
-| Input tokens per answer | 2 208 | measured | [token budget](../measurements/2026-10-25-token-budget.md) |
-| Completion tokens per answer | 250 typical, 700 cap | budget | profile limit, not a measurement |
-| Chat + embed + rerank price | 0.030 + 0.00002 + 0.0017 ₽ | list price, 22% VAT | [vendor comparison](vendor-comparison.md) |
-| Corpus reindex | 0.012 ₽ one-off | derived | 89 chunks × 226 tokens, `bge-m3` |
-| Full eval run | ≈ 4 ₽ | derived | 137 cases × 2 458 tokens |
-| Answers per employee per month | 20 | **assumption** | client: onboarding bot usage |
-| HR FTE loaded cost | 90 000 ₽/month | **assumption** | client's payroll |
-| HR routine share | 40% | **client's own claim** | [case brief](../case/poliplastic-2026.md) |
-| Routine work removed by the bot | 50% | **assumption** | must be measured in the pilot |
+| Input tokens per answer, `GigaChat3-10B` tokenizer | 2 208 (5 chunks) | measured | repo |
+| Completion, 700 Russian characters | 175 tokens | measured | repo |
+| Profile output ceiling | 700 tokens | policy | repo (4× the measured answer) |
+| Chat + embeddings + rerank | 0.0306 ₽/answer | list price, class B | [vendor-comparison](vendor-comparison.md) |
+| One-off corpus reindex | 0.013 ₽ | derived | [vendor-comparison](vendor-comparison.md) |
+| Answers per employee per month | **to be measured** | from MAX logs after two weeks | client |
+| New employees per month | **to be supplied** | HR plan | client |
+| HR FTE loaded cost | **to be supplied** | payroll | client |
+| Share of HR time on routine questions | **to be measured** | the brief claims 40%, the pilot measures it | client + repo evals |
+| Share of that routine the bot removes | **to be measured** | A/B in the pilot | client + repo evals |
 
-## Load scenarios
+No row is filled with a guess. The two "measures" are the point of the pilot: without them the
+business case is a brochure.
 
-| Scenario | Employees | Answers/month | Peak day (≈2%) |
-|---|---|---|---|
-| Pilot | 100 | 2 000 | 40 |
-| One plant | 1 000 | 20 000 | 400 |
-| Company | 5 000 | 100 000 | 2 000 |
+## Cost per answer
 
-## Monthly cost
-
-Managed, `GigaChat3-10B-A1.8B` + `bge-m3` + `bge-reranker-v2-m3`, prices with VAT:
-
-| Scenario | Variable ₽/month | Per employee ₽/month |
-|---|---|---|
-| Pilot, 2 000 answers | 63 | 0.63 |
-| Plant, 20 000 answers | 634 | 0.63 |
-| Company, 100 000 answers | 3 170 | 0.63 |
-
-Self-hosted, one L4 24 GB (VK Cloud, with VAT, accepted as the market anchor):
-
-| Item | ₽/month | Note |
-|---|---|---|
-| GPU server | 71 456 | `GPU2-16-72-L4-1`, 30 days |
-| Model weights | 0 | MIT / Apache-2.0 |
-| Corpus reindex | 0 | local |
-| Ops on-call | **quote** | 0.25–0.5 FTE, not priced here |
-| Backup, monitoring, storage | **quote** | not in the vendor price list |
-
-A GPU at company volume costs **71 456 ₽/month against 3 170 ₽/month** for the managed API: 22× more
-expensive, and it still needs an owner.
-
-## Break-even and payback
-
-```
-break_even_answers_per_month = GPU ₽/month ÷ managed ₽/answer
-L4  24 GB: 71 456 ÷ 0.032 ≈ 2.2 million answers/month
-L40S 48 GB: 173 479 ÷ 0.032 ≈ 5.4 million answers/month
-```
-
-A company of 5 000 employees produces 0.1 million answers/month — 22× below the break-even. The
-managed API stays cheaper until the deployment serves roughly 11 000 employees at the assumption
-above, or until the traffic is not onboarding at all.
-
-Savings side, with the assumptions above (illustration, not a commitment):
-
-```
-routine_hours_saved = HR_FTE × 40% × 50%          → 0.2 FTE
-saving_per_month    = 0.2 × 90 000 = 18 000 ₽
-cost_per_month      = 634 ₽ at plant volume
-ratio               = saving ÷ cost ≈ 28×
-```
-
-The ratio is dominated by the HR FTE assumption, not by the API price — which is why the pilot must
-measure the routine share instead of arguing about it. The API price stops mattering above roughly
-10 000 answers/month.
-
-## Sensitivity
-
-Base is 0.0316 ₽/answer. Numbers recomputed with the same price list:
+Base: 0.0306 ₽. Recomputed with the same price list, per tokenizer where it matters:
 
 | Change | ₽/answer | vs base |
 |---|---|---|
-| Completion at the 700-token cap | 0.0371 | +17% |
-| Eight chunks instead of five | 0.0399 | +26% |
-| Chunks at p95 size (299 tokens) | 0.0499 | +58% |
-| Reranker on the pricier `Qwen3-Reranker-0.6B` | 0.0367 | +16% |
-| Chat on `GigaChat 3 Pro` | 0.207 | ×6.5 |
-| Chat on `DeepSeek V4 Flash` | 0.119 | ×3.8 |
+| Base: 5 chunks, 700-char answer, `bge-reranker-v2-m3` | 0.0306 | — |
+| Chunks at p95 size (299 tokens) | 0.0351 | +15% |
+| Eight chunks instead of five | 0.0389 | +27% |
+| Answer at the 700-token profile ceiling | 0.0370 | +21% |
+| Worst case: eight p95 chunks and the ceiling | 0.0524 | +71% |
+| Reranker on `Qwen3-Reranker-0.6B` instead | 0.0345 | +13% |
+| Chat on `GigaChat 3 Pro` | 0.1936 | ×6.3 |
+| Chat on `DeepSeek V4 Flash` | 0.1349 | ×4.4 |
 
-Two conclusions hold under every row: the answer cost is small against one HR hour, and the chat
-model is the only line that can move it. Reranking, embeddings and the corpus are noise.
+The range 0.031–0.052 ₽ holds under every geometric change. Only the choice of chat model moves the
+number materially, and even the most expensive sensible model stays under 0.27 ₽.
+
+## Monthly cost at a given volume
+
+`answers/month × 0.0306 ₽`, plus the fixed platform cost that is **not** in this document (host,
+Postgres, backups, monitoring: quotes, see [vendor-comparison](vendor-comparison.md)).
+
+| Answers/month | Variable ₽/month | What that volume looks like |
+|---|---|---|
+| 2 000 | 61 | a pilot of ~100 newcomers |
+| 20 000 | 612 | one plant |
+| 100 000 | 3 060 | a company of 5 000 employees at 20 answers each |
+| 1 000 000 | 30 600 | above any realistic onboarding load |
+
+The variable line is not the budget. The platform and the people are.
+
+## Self-hosted GPU: what it really costs
+
+Fixed, from VK Cloud (class A, with VAT, 30 days):
+
+| Item | ₽/month | Status |
+|---|---|---|
+| L4 24 GB | 71 456 | list price |
+| L40S 48 GB | 173 479 | list price |
+| Model weights | 0 | MIT / Apache-2.0 |
+| Corpus reindex | 0 | local |
+| Ops owner (0.25–0.5 FTE) | **quote** | not priced here |
+| Backup, monitoring, storage, second node for HA | **quote** | not in the price list |
+| Throughput on that card | **unmeasured** | needs a load test |
+
+Without the last three lines the GPU looks cheaper than it is. With them, at onboarding volume, it
+is not cheaper at all:
+
+```
+break-even answers/month = 71 456 ÷ 0.0306 ≈ 2.3 million
+```
+
+A company of 5 000 employees at 20 answers each produces 0.1 million per month — 23× below the
+break-even. The managed API stays cheaper until roughly 11 000 employees, and even then the GPU
+needs an owner who does not exist in the pilot team.
+
+## The comparison that actually decides
+
+| Criterion | Managed RU API | Self-hosted GPU |
+|---|---|---|
+| Variable cost | 0.031 ₽/answer | unmeasured |
+| Fixed cost | ≈ 0 | 71 456 ₽/month |
+| Time to first answer | a profile and a key | a week of setup, a load test, an owner |
+| Data contour | vendor's Russian region, with an errand of processing | fully inside the operator's contour |
+| Vendor failure | escalate to a human, second profile ready | the box is yours to fix |
+| Model choice | the vendor's catalogue | anything with a licence |
+| Compliance paperwork | errand of processing, attestation of the vendor's segment | the operator's own attestation |
+
+The GPU wins on exactly two rows: the contour and the model choice. If the client needs neither, the
+managed API is the answer.
+
+## HR economics: the inputs that matter
+
+The assistant is worth what it frees. That is computed from client data, not from the vendor's price:
+
+```
+hours_freed_per_month = newcomers_per_month × minutes_saved_per_newcomer ÷ 60
+saving_per_month      = hours_freed_per_month × hourly_HR_cost
+payback_months        = setup_cost ÷ (saving_per_month − opex_per_month)
+```
+
+What the repo can contribute is one honest anchor: at a loaded HR cost of 90 000 ₽/month (an
+illustration, not a client input), one HR minute costs ≈ 8.9 ₽, so **one bot answer at 0.031 ₽ costs
+about 0.2 seconds of HR time**. Whatever the pilot measures for `minutes_saved_per_newcomer`, the
+model cost will not be the limiting term.
+
+The brief's "up to 70% less routine HR work" is the client's expectation, not our measurement, and
+this document does not repeat it as a result.
 
 ## Costs the per-answer number hides
 
-| Cost | Order | Owner |
+| Cost | How to price it | Owner |
 |---|---|---|
-| App host, Postgres, backups | quote, not captured | DevOps, from the invoice |
-| Monitoring and on-call | quote | DevOps |
-| 152-ФЗ paperwork: errand of processing, DPA, attestation review | legal hours | client's DPO |
-| Model vendor change: new profile, reindex, eval run | ~1 day of work + 4 ₽ of tokens | engineer |
-| Retention: storage of messages and audit rows | grows with `DATA_RETENTION_DAYS` | client policy |
-| Price changes | vendor's right; the port makes the switch cheap | procurement |
+| App host, Postgres, object storage | invoice from the chosen Russian cloud | DevOps |
+| Backups and restore drills | storage + the drill time twice a year | DevOps |
+| Monitoring, on-call, incident response | 0.25–0.5 FTE | DevOps |
+| 152-ФЗ paperwork | legal hours; errand of processing, DPA review | client DPO |
+| Corpus maintenance | HR edits knowledge, reindex is one command | HR + engineer |
+| Vendor switch | one day of work + ~4 ₽ of eval tokens | engineer |
+| Retention storage | grows with `DATA_RETENTION_DAYS`, unmeasured | client policy |
+| Price change | vendor's right; ask for a 90-day lock | procurement |
 
-## Risks and what reduces them
+## Decision triggers
 
-| Risk | Effect | Mitigation |
-|---|---|---|
-| Vendor raises prices 3× | 0.032 → 0.096 ₽/answer, still < 1% of one HR hour | the ports make a switch a settings change; the eval matrix is the cost |
-| Vendor outage | answers escalate to a human (`reason: unavailable`) | second profile, no second implementation |
-| Data leaves Russia | 152-ФЗ violation | managed RU internal-only models, or self-host |
-| Embedder replaced | reindex + migration, not a setting | width stays 1024 unless a migration is planned |
-| Latency regression | p95 gates fail before users notice | `make eval` with the gates in [evals](../evals/README.md) |
-| Quality regression from a cheaper model | escalations rise, HR does the work anyway | golden set + escalation gates |
+Written down so that the choice is revisited on evidence, not on mood:
+
+| Trigger | Action |
+|---|---|
+| Measured answers/month > 2 million | re-open the GPU comparison with a real load test |
+| A vendor publishes a price validity term and it is ≥ 90 days | prefer that vendor at equal quality |
+| `make eval` on a cheaper profile stays green | move down the price list |
+| Escalation rate rises above the gate on a cheaper model | move back up; quality is the product |
+| The client requires the data to stay in its own contour | GPU or on-prem, cost becomes secondary |
+| Errand of processing cannot be signed for the vendor's segment | same as above |
+| One vendor outage costs more than the GPU difference | second vendor or GPU, decided by numbers from the pilot |
 
 ## Gates before a purchase order
 
-1. `make eval` green on the candidate profile, with the measurement file.
-2. Errand of processing under 152-ФЗ art. 6 part 3 signed, data localised per art. 18 part 5.
-3. Written offer with currency, VAT, term, volume break, and price-change clause.
+1. `make eval` green on the candidate profile, with a measurement file under `docs/measurements/`.
+2. Errand of processing signed; data localised per 152-ФЗ; evidence pack per
+   [152fz-checklist.md](../runbooks/152fz-checklist.md).
+3. Written offer with currency, VAT, price validity term, volume break, and price-change clause.
 4. Written answer on training on our data: off.
-5. Exit plan: who reindexes, how long, what the corpus re-embedding costs.
+5. A named owner for the deployment, with the on-call hours in their plan.
+6. Exit plan: who reindexes, how long, what it costs.
 
 ## What this document does not claim
 
-- It does not claim the assistant saves 70% of HR work. That is the client's expectation in the
-  brief; the pilot measures it.
-- It does not price the app host, backups, or on-call: those are quotes, and a number invented here
-  would be a lie with a decimal point.
-- It does not compare answer quality between vendors; only [evals](../evals/README.md) do that.
+- It does not claim savings. Two of the three inputs that produce savings belong to the client.
+- It does not price the platform: those are quotes, and a number invented here would be a lie with a
+  decimal point.
+- It does not compare answer quality across vendors; only [evals](../evals/README.md) do that, per
+  profile, with a measurement file.
+- It does not treat the break-even as a recommendation. It is a division with a reason attached.

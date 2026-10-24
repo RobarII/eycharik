@@ -7,6 +7,10 @@ lawful basis: the operating company is the data operator, its DPO signs, its cou
 The product stores employee conversations in MAX, onboarding progress, and free-text survey answers.
 That is personal data under 152-ФЗ even when no name is stored, because the chat identifies a person.
 
+Review status: written by engineers, **not reviewed by counsel**. Every unchecked box below is a
+gate on the pilot, and the two that legal owns — the errand of processing and the attestation scope —
+cannot be closed by this repository alone.
+
 ## 1. Data map
 
 | Data | Table | Retention control | Contains personal data |
@@ -84,8 +88,21 @@ else.
 6. Access matrix: who holds which token.
 7. This checklist, with dates and owners.
 
+## Gates that block the first real employee
+
+| Gate | Owner | Evidence that closes it |
+|---|---|---|
+| Errand of processing signed for the model **service**, not only the cloud | client DPO + vendor | signed document with the service name |
+| Attestation names the segment actually used | vendor + operator | attestation copy with the availability zone |
+| Retention period fixed by policy | client DPO | `DATA_RETENTION_DAYS` value in the production env |
+| Pilot host inside Russia | DevOps | [deploy.md](deploy.md) checklist, host region |
+| Training on client data off | vendor | written clause, not a marketing page |
+| Sub-processor list, including gateways and proxies | vendor | list with countries |
+| Incident notification owner and deadline | client DPO | internal regulation reference |
+
 ## What is still open in this repository
 
+- No legal review: the checklist is engineering evidence, and counsel signs the lawful basis.
 - `DATA_RETENTION_DAYS` is a placeholder until the client's policy fixes it.
 - The demo host is outside Russia and holds no personal data; the pilot host must be chosen before
   the first real employee is onboarded ([deploy.md](deploy.md)).

@@ -36,10 +36,12 @@ cross-border question at all: the model files and the prompts never leave the op
 ## Decision (proposed)
 
 Prices are in [vendor-comparison.md](../product/vendor-comparison.md); the money argument and the
-scenarios are in [business-case.md](../product/business-case.md). One answer is 2 208 input and 250
-completion tokens ([measurement](../measurements/2026-10-25-token-budget.md)), which prices the
-recommended managed stack at **0.032 ₽/answer** against **71 456 ₽/month** for the smallest useful
-GPU box.
+scenarios are in [business-case.md](../product/business-case.md). One answer is 2 208 input tokens and
+a 700-character completion measured at 175 tokens in the GigaChat tokenizer
+([measurement](../measurements/2026-10-25-token-budget.md)); other tokenizers cost 14–23% more for the
+same prompt. Quoted from that file: the recommended managed stack is **0.0306 ₽/answer**, the
+smallest useful GPU box is **71 456 ₽/month**. The magnitude is the argument; the numbers have one
+home and it is the comparison.
 
 Note one vendor fact: since 2026-09-01 new clients buy GigaChat models through cloud.ru rather than
 through the Sber package list, so "GigaChat" and "Cloud.ru" are close to the same purchase.
@@ -100,10 +102,23 @@ OCR already runs in-process: `doc-scan` uses PP-OCRv5 Cyrillic over ONNX Runtime
 - Selectel Token Factory is not a candidate for personal data on its own ToS: its text disclaims
   personal-data processing. Dedicated Inference or a self-hosted vLLM on the same GPU fleet is.
 - Every option needs its own measurement file before this ADR moves to `accepted`.
-- Managed wins on money until roughly 2.2 million answers/month (one L4 break-even); a GPU is bought
+- Managed wins on money until roughly 2.3 million answers/month (one L4 break-even); a GPU is bought
   for a closed contour or a latency floor, not for cost.
+- The GPU side has no `₽/answer` yet: throughput on the card is unmeasured, so the break-even is a
+  division, not a recommendation.
 - GigaChat packages are 5–8× the cloud.ru per-token price for the same family; prepaid packages
   expire monthly, so pay-as-you-go on cloud.ru is the cheaper path at pilot volume.
+
+## Exit criteria to leave `proposed`
+
+This ADR stays `proposed` until all four exist. Each one is a file or a signature, not an opinion:
+
+1. A written offer per candidate: currency, VAT, price validity term, price-change clause.
+2. `make eval` green on the chosen profile, with a measurement file under `docs/measurements/`
+   naming the commit and the model.
+3. A load test on one GPU, if the GPU option survives the money argument, giving a real
+   `₽/answer` and a `p95` beside the managed profile.
+4. An errand of processing signed for the service, not just for the cloud that hosts it.
 
 ## Alternatives
 

@@ -133,10 +133,6 @@ make smoke         # public health, webhook, cabinet headers, metrics exposure
 make backup        # verified Postgres dump; BACKUP_S3_URI enables offsite upload
 ```
 
-Офлайн-демо за пять минут: [docs/product/demo-script.md](docs/product/demo-script.md).
-
-Сценарий защиты для организаторов: [docs/product/defense.md](docs/product/defense.md).
-
 ## Состояние
 
 Работает от начала до конца на локальном Postgres с pgvector и внешней моделью через OpenRouter:
@@ -185,24 +181,4 @@ make backup        # verified Postgres dump; BACKUP_S3_URI enables offsite uploa
 
 ![Список прогонов](docs/assets/cabinet-runs.png)
 
-![Загрузка знаний](docs/assets/cabinet-knowledge.png)
-
-Известные пробелы — названы, чтобы никто не додумал лишнего:
-
-- Настоящий токен бота MAX и верификация «MAX для бизнеса» — внешние зависимости. Адаптер и
-  вебхук проверены на задокументированных payload и локальном отправителе.
-- Бот не прикладывает файлы к своим сообщениям. Входящие документы из чата принимаются,
-  шифруются и видны рекрутёру в карточке прогона ([ADR 0027](docs/decisions/0027-inbound-documents-are-encrypted.md));
-  исходящие вложения, кроме картинок сценария, не сделаны.
-- Окно хранения — заглушка, пока политика компании по защите информации его не подтвердит. Механизм
-  протестирован; юридическое число не наше.
-- Одна реплика воркера: состояние темпа MAX живёт в процессе. Больше реплик — нужен общий
-  лимитер.
-- Вендор продакшн-модели должен соответствовать 152-ФЗ. Архитектура держит провайдера за портом;
-  `docs/decisions/0010-one-model-vendor.md` фиксирует текущий выбор и что меняется для on-prem
-  развёртывания.
-- Развёрнут один демо-стенд на VM (<https://bot.state3407.space>): он держит живой MAX и кабинет,
-  и это не промышленная эксплуатация — одна реплика воркера, без SLA и без контура 152-ФЗ. Что
-  стенд доказывает и как дать к нему доступ, не раздавая ключи, —
-  [docs/live-demo.md](docs/live-demo.md); протокол живой проверки —
-  [docs/measurements/2026-10-24-live-max-and-admin.md](docs/measurements/2026-10-24-live-max-and-admin.md).
+![База знаний](docs/assets/cabinet-knowledge.png)

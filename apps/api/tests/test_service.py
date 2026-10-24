@@ -551,7 +551,9 @@ async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
     assert stored.state.step_id == "day_before"
     assert stored.scheduled is not None
     assert len(messaging.sent) == before + 1
-    assert messaging.sent[-1].text.startswith("Принял. Следующий этап")
+    assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "Принял" not in messaging.sent[-1].text
+    assert "Бот работает" not in messaging.sent[-1].text
 
     run_id = stored.state.run_id
     result = await service.resume_scheduled(run_id, "day_before")
@@ -611,7 +613,8 @@ async def test_a_button_while_scheduled_gets_a_stage_status() -> None:
 
     assert result.handled
     assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
-    assert messaging.sent[-1].text.startswith("Сейчас ещё не время следующего этапа")
+    assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "Бот работает" not in messaging.sent[-1].text
 
 
 async def test_not_ready_offers_a_question_step() -> None:

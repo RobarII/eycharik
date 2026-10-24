@@ -82,6 +82,7 @@ from onboarding.core.models import (
     Action,
     ActionKind,
     Address,
+    Button,
     Channel,
     ChatId,
     DocId,
@@ -89,6 +90,7 @@ from onboarding.core.models import (
     EmployeeId,
     Event,
     EventKind,
+    Keyboard,
     RunId,
     ScheduleReminder,
     StepState,
@@ -285,6 +287,33 @@ async def test_outbox_and_dispatcher_deliver_a_message(database: Database) -> No
     assert delivered == 1
     assert direct.sent[0].text == "привет"
     assert direct.sent[0].address == MAX
+
+
+async def test_dispatcher_follows_the_creation_order(database: Database) -> None:
+    """``UPDATE ... RETURNING`` has no order; the chat must still see the rows in id order."""
+    direct = RecordingMessaging()
+    outbox = OutboxMessaging(database, {Channel.MAX: direct}, PROFILES)
+    for index in range(12):
+        await outbox.send(OutboundMessage(address=MAX, text=f"часть {index}"))
+
+    await MessageDispatcher(database, {Channel.MAX: direct}, batch=12).run_once()
+
+    assert [message.text for message in direct.sent] == [f"часть {index}" for index in range(12)]
+
+
+async def test_a_split_message_keeps_buttons_under_the_last_part(database: Database) -> None:
+    direct = RecordingMessaging()
+    outbox = OutboxMessaging(database, {Channel.MAX: direct}, PROFILES)
+    keyboard: Keyboard = ((Button(id="tone_you", text="На «ты»"),),)
+    long_text = "проверка переноса. " * 400
+
+    await outbox.send(OutboundMessage(address=MAX, text=long_text, keyboard=keyboard))
+    await MessageDispatcher(database, {Channel.MAX: direct}, batch=10).run_once()
+
+    assert len(direct.sent) > 1
+    assert all(message.keyboard == () for message in direct.sent[:-1])
+    assert direct.sent[-1].keyboard == keyboard
+    assert "".join(message.text for message in direct.sent).replace(" ", "") != ""
 
 
 async def test_dispatcher_reclaims_a_message_abandoned_mid_send(database: Database) -> None:

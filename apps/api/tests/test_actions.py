@@ -155,3 +155,19 @@ async def test_ignore_sends_nothing() -> None:
     assert audit.names() == ["action_ignored"]
     assert audit.events[0][1]["employee_id"] == str(EMPLOYEE)
     assert NullAudit
+
+
+async def test_a_repeated_question_explains_what_is_wrong() -> None:
+    """Repeating the prompt verbatim leaves a person guessing; the hint names the accepted input."""
+    executor, messaging, _, _ = build()
+    action = Action(
+        kind=ActionKind.SEND,
+        text="Оцените доступность руководителя от 1 до 10",
+        note="survey:repeat:scale",
+    )
+
+    await executor.execute(action, ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)))
+
+    text = messaging.sent[0].text
+    assert text.startswith("Оцените доступность руководителя от 1 до 10")
+    assert COPY.answer_hint("scale") in text

@@ -274,6 +274,7 @@ v6a и v6b — один промпт, один корпус и один комм
 | слияние трёх списков, BM25 включён (`pg_search` на ParadeDB) | 0.988 | 0.915 | хуже по обоим; ADR 0012 подтверждён |
 | обычный индекс | замер в `arm-plain` | | компаратор для contextual |
 | индекс на контекстных фрагментах (`contextual:v1`) | 1.000 | 0.919 | прироста recall нет, `mrr` в парном интервале |
+| переранжировщик `qwen/qwen3-reranker-8b` вместо Nemotron | 0.992 | 0.949 | регрессии нет, free-эндпоинт не отвечает |
 
 BM25 стоил одного кейса recall и 0.036 `mrr`: лексический список, переупорядочивающий корпус из 78
 фрагментов, добавляет третье мнение там, где два уже согласны, и это мнение ставит совпадение слова
@@ -286,6 +287,10 @@ DATABASE_URL=postgresql+asyncpg://onboarding:onboarding@localhost:5433/onboardin
 DATABASE_URL=...5433/onboarding BM25_ENABLED=false make eval-retrieval ARGS="--label arm-bm25-off"
 DATABASE_URL=...5433/onboarding BM25_ENABLED=true  make eval-retrieval ARGS="--label arm-bm25-on"
 ```
+
+Ветка с `qwen/qwen3-reranker-8b` — [измерение](../measurements/2026-10-24-eval-retrieval-arm-qwen3-rerank-8b.md):
+дельта в пределах шума, но endpoint не упирается в дневной лимит бесплатных моделей, из-за которого
+ветка на Nemotron потеряла часть вызовов.
 
 Contextual-поиск — один ingest и один прогон: `CONTEXTUAL_RETRIEVAL=true make ingest` пишет префикс
 в `kb_chunks.context` и эмбеддит `context + text`; ветка затем меряет, оправдывает ли префикс своё

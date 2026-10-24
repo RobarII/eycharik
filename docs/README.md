@@ -159,6 +159,7 @@
 - [Оценка 2026-10-24: arm-bm25-on](measurements/2026-10-24-eval-retrieval-arm-bm25-on.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-contextual-on](measurements/2026-10-24-eval-retrieval-arm-contextual-on.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-plain](measurements/2026-10-24-eval-retrieval-arm-plain.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: arm-qwen3-rerank-8b](measurements/2026-10-24-eval-retrieval-arm-qwen3-rerank-8b.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: noise-r1](measurements/2026-10-24-eval-retrieval-noise-r1.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: noise-r2](measurements/2026-10-24-eval-retrieval-noise-r2.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: noise-r3](measurements/2026-10-24-eval-retrieval-noise-r3.md) — проверен 2026-10-24

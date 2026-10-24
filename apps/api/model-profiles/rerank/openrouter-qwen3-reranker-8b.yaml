@@ -1,0 +1,9 @@
+name: openrouter-qwen3-reranker-8b
+role: rerank
+description: "Hosted 8B cross-encoder on OpenRouter (Fireworks backend), the measured replacement for the rate-limited free endpoint (ADR 0008)."
+family: cohere-rerank
+model: qwen/qwen3-reranker-8b
+timeout_s: 8.0
+# Rerank is a ranking improvement, never a dependency: a spent deadline keeps the fused order.
+# Three attempts at 8 s are 24 s of the user's wait, so the stage owns a shorter budget.
+deadline_s: 6.0

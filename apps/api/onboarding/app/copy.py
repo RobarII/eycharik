@@ -25,6 +25,8 @@ class Copy:
     reminder_prefix: str
     escalation_footer: str
     completion: str
+    help: str = ""
+    unknown_command: str = ""
 
     def escalation_for(self, reason: EscalationReason) -> str:
         try:
@@ -57,6 +59,8 @@ def load_copy(path: Path) -> Copy:
         reminder_prefix=reminder_prefix,
         escalation_footer=footer,
         completion=completion,
+        help=_text(raw, "help", path),
+        unknown_command=_text(raw, "unknown_command", path),
     )
 
 

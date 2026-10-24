@@ -134,7 +134,49 @@ async def test_button_advances_the_run() -> None:
     assert messaging.sent[-1].text.startswith("До первого рабочего дня")
 
 
-async def test_choosing_informal_tone_changes_the_next_message() -> None:
+async def test_help_does_not_advance_the_step() -> None:
+    service, runs, messaging, audit, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    before = next(iter(runs.runs.values())).state.step_id
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/help"),
+    )
+
+    assert result.handled
+    assert next(iter(runs.runs.values())).state.step_id == before
+    assert messaging.sent[-1].text == COPY.help
+    assert "command_handled" in audit.names()
+
+
+async def test_an_unknown_command_is_not_a_step_confirmation() -> None:
+    service, runs, messaging, audit, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    before = next(iter(runs.runs.values())).state.step_id
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/foo"),
+    )
+
+    assert result.handled
+    assert next(iter(runs.runs.values())).state.step_id == before
+    assert messaging.sent[-1].text == COPY.unknown_command
+    assert "command_handled" in audit.names()
+
     service, runs, messaging, _, _ = build()
     await service.start(EMPLOYEE, ADDRESS)
 

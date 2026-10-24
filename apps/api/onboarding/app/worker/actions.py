@@ -50,6 +50,12 @@ class ActionExecutor:
         self._audit = audit or NullAudit()
         self._questions = questions
 
+    def help_text(self) -> str:
+        return self._copy.help
+
+    def unknown_command_text(self) -> str:
+        return self._copy.unknown_command
+
     async def execute(self, action: Action, context: ActionContext) -> None:
         match action.kind:
             case ActionKind.SEND:

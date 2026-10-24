@@ -19,6 +19,7 @@ from onboarding.core.models import (
     Address,
     EmployeeId,
     Event,
+    EventKind,
     Question,
     RiskSignal,
     RunId,
@@ -153,6 +154,26 @@ class OnboardingService:
         # Reminders are scheduled from processing time, never from a delivery timestamp: a retried
         # update can be hours old, and a timeout due in the past would escalate immediately.
         now = self._now()
+        command = _command(event.text)
+        if event.kind is EventKind.MESSAGE_RECEIVED and command is not None:
+            if command == "/start":
+                return await self.start(employee_id, address)
+            await self._audit.record(
+                "command_handled", employee_id=str(employee_id), command=command
+            )
+            text = (
+                self._executor.help_text()
+                if command == "/help"
+                else self._executor.unknown_command_text()
+            )
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=text),),
+                address,
+                employee_id,
+                now.date(),
+                question=None,
+            )
+            return ServiceResult(handled=True)
         event_at = event.at if event.at.tzinfo is not None else event.at.replace(tzinfo=UTC)
         effective = event if event_at >= now else replace(event, at=now)
         transition = advance(scenario, stored.state, effective)
@@ -292,3 +313,13 @@ class OnboardingService:
         )
         for action in actions:
             await self._executor.execute(action, context)
+
+
+def _command(text: str | None) -> str | None:
+    """Return a slash command, without the optional ``@bot`` suffix."""
+    if not text:
+        return None
+    token = text.strip().split(maxsplit=1)[0]
+    if not token.startswith("/"):
+        return None
+    return token.split("@", 1)[0].lower()

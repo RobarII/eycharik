@@ -301,6 +301,44 @@ async def test_a_bot_start_becomes_a_delivered_welcome(database: Database) -> No
         await container.aclose()
 
 
+async def test_a_typed_start_command_opens_the_run(database: Database) -> None:
+    fake = FakeMax()
+    config = settings()
+    app = create_app(config)
+    async with app.router.lifespan_context(app):
+        assert (
+            await post(
+                app,
+                {
+                    "update_type": "message_created",
+                    "timestamp": 1_766_000_002_000,
+                    "chat_id": CHAT,
+                    "user": {"user_id": CHAT},
+                    "message": {
+                        "sender": {"user_id": CHAT},
+                        "recipient": {"chat_id": CHAT},
+                        "body": {"mid": "mid-start", "text": "/start"},
+                    },
+                },
+            )
+            == 200
+        )
+    container = build_container(config)
+    container.senders[Channel.MAX] = max_client(fake)
+    try:
+        await pump(container)
+        async with database.session() as session:
+            run = await session.scalar(select(RunRow))
+            messages = await session.scalar(select(func.count()).select_from(MessageRow))
+    finally:
+        await container.aclose()
+
+    assert run is not None
+    assert run.step_id == "welcome"
+    assert messages == 1
+    assert fake.violations == []
+
+
 async def test_run_detail_names_the_messenger_account(database: Database) -> None:
     # The card must print the messenger account; the HR id is not an address in MAX.
     fake = FakeMax()

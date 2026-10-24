@@ -114,6 +114,74 @@ def test_bot_started_becomes_an_employee_created_event() -> None:
     assert inbound.starts_run
 
 
+def test_a_photo_becomes_a_file_event_with_its_token() -> None:
+    inbound = parse_update(
+        {
+            **MESSAGE_CREATED,
+            "message": {
+                **MESSAGE_CREATED["message"],
+                "body": {
+                    "mid": "mid-photo",
+                    "attachments": [
+                        {"type": "image", "payload": {"token": "photo-token-1", "url": "https://x"}}
+                    ],
+                },
+            },
+        },
+        received_at=RECEIVED,
+    )
+
+    assert inbound is not None
+    assert inbound.event.kind is EventKind.FILE_RECEIVED
+    assert inbound.event.file_id == "photo-token-1"
+    assert not inbound.starts_run
+
+
+def test_a_file_falls_back_to_the_documented_ids() -> None:
+    for payload, expected in (
+        ({"file_id": "f-1"}, "f-1"),
+        ({"photo_id": 42}, "42"),
+        ({"url": "https://cdn/x.pdf"}, "https://cdn/x.pdf"),
+    ):
+        inbound = parse_update(
+            {
+                **MESSAGE_CREATED,
+                "message": {
+                    **MESSAGE_CREATED["message"],
+                    "body": {
+                        "mid": "mid-file",
+                        "attachments": [{"type": "file", "payload": payload}],
+                    },
+                },
+            },
+            received_at=RECEIVED,
+        )
+
+        assert inbound is not None
+        assert inbound.event.file_id == expected
+
+
+def test_a_caption_stays_with_the_file() -> None:
+    inbound = parse_update(
+        {
+            **MESSAGE_CREATED,
+            "message": {
+                **MESSAGE_CREATED["message"],
+                "body": {
+                    "mid": "mid-photo-2",
+                    "text": " вот паспорт ",
+                    "attachments": [{"type": "image", "payload": {"token": "t-2"}}],
+                },
+            },
+        },
+        received_at=RECEIVED,
+    )
+
+    assert inbound is not None
+    assert inbound.event.kind is EventKind.FILE_RECEIVED
+    assert inbound.event.text == "вот паспорт"
+
+
 def test_a_typed_start_command_starts_the_run() -> None:
     # MAX has no command router: the same text arrives as a plain message. It must still open
     # the run, like `/start` does on Telegram and VK.

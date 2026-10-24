@@ -430,7 +430,12 @@ def is_question(text: str | None) -> bool:
 
 def _on_file(scenario: Scenario, state: StepState, event: Event) -> Transition:
     step = scenario.step(state.step_id)
-    if step.expects is Expects.FILE:
+    # A file is an acknowledgement where the scenario waits for a file, and also where it waits for
+    # a message: the documents step says "send them here", so a photo with no caption must move it.
+    # A captioned question is still a question, not a receipt.
+    if step.expects is Expects.MESSAGE and is_question(event.text):
+        return _idle(state, ActionKind.ANSWER)
+    if step.expects is Expects.FILE or step.expects is Expects.MESSAGE:
         target = step.routes.get("default")
         if target is not None:
             return _leave(scenario, state, target, event.at)

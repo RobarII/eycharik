@@ -121,11 +121,16 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
     elif update_type == "message_created":
         text = body.get("text")
         clean = text.strip() if isinstance(text, str) and text.strip() else None
+        attachment = _attachment_id(body.get("attachments"))
         # MAX has no command router: `/start` typed by hand is an ordinary message. Treating it
         # as a first contact keeps the three channels alike (``docs/contracts/channel.md``).
         if clean is not None and clean.startswith(START_COMMAND):
             starts_run = True
             event = Event(kind=EventKind.EMPLOYEE_CREATED, at=at)
+        elif attachment is not None:
+            # The file is not downloaded or stored: the event carries the attachment id, and the
+            # scenario only needs to know that something was sent.
+            event = Event(kind=EventKind.FILE_RECEIVED, at=at, text=clean, file_id=attachment)
         else:
             event = Event(kind=EventKind.MESSAGE_RECEIVED, at=at, text=clean)
     else:
@@ -140,6 +145,21 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
         event=event,
         starts_run=starts_run,
     )
+
+
+def _attachment_id(value: object) -> str | None:
+    """The first attachment's stable id: ``token`` when present, else a documented fallback."""
+    if not isinstance(value, list):
+        return None
+    for item in value:
+        payload = _mapping(_mapping(item).get("payload"))
+        for key in ("token", "file_id", "photo_id", "url"):
+            raw = payload.get(key)
+            if isinstance(raw, str) and raw:
+                return raw
+            if isinstance(raw, int) and not isinstance(raw, bool):
+                return str(raw)
+    return None
 
 
 def _callback_id(payload: Mapping[str, Any]) -> str | None:

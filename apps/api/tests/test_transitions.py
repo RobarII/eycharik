@@ -253,6 +253,33 @@ def test_file_step_routes_on_a_file_event() -> None:
     assert isinstance(transition.reminder, CancelReminder)
 
 
+def test_a_file_acknowledges_a_message_step(scenario: Scenario, state: StepState) -> None:
+    # The documents step says "send them here" and waits for a message: a photo with no caption is
+    # that message, not a question the assistant has to answer.
+    documents = replace(state, step_id="documents")
+
+    transition = advance(
+        scenario, documents, Event(kind=EventKind.FILE_RECEIVED, at=NOW, file_id="f")
+    )
+
+    assert transition.state.step_id == "done"
+
+
+def test_a_captioned_question_at_a_message_step_is_answered(
+    scenario: Scenario, state: StepState
+) -> None:
+    documents = replace(state, step_id="documents")
+
+    transition = advance(
+        scenario,
+        documents,
+        Event(kind=EventKind.FILE_RECEIVED, at=NOW, file_id="f", text="А как оформить отпуск?"),
+    )
+
+    assert transition.state.step_id == "documents"
+    assert transition.actions[0].kind is ActionKind.ANSWER
+
+
 def test_a_question_at_a_message_step_is_answered_not_acknowledged(
     scenario: Scenario, state: StepState
 ) -> None:

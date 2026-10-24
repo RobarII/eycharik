@@ -69,4 +69,9 @@ describe("the admin image", () => {
   it("leaves an existing tag alone, so a re-run does not invent a version", () => {
     expect(release).toMatch(/if git rev-parse -q --verify "refs\/tags\/\$VERSION"/);
   });
+
+  it("tags as the bot, because the runner has no git identity", () => {
+    expect(release).toContain('-c user.name="github-actions[bot]"');
+    expect(release).toContain('-c user.email="41898282+github-actions[bot]@users.noreply.github.com"');
+  });
 });

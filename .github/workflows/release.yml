@@ -133,5 +133,8 @@ jobs:
             echo "$VERSION already exists; the images for $SHA stay reachable by its SHA"
             exit 0
           fi
-          git tag -a "$VERSION" -m "Release $VERSION" "$SHA"
+          # The runner has no git identity of its own, and an annotated tag needs one.
+          git -c user.name="github-actions[bot]" \
+            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            tag -a "$VERSION" -m "Release $VERSION" "$SHA"
           git push origin "refs/tags/$VERSION"

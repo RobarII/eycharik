@@ -30,7 +30,8 @@ describe("the cabinet's nginx server", () => {
     expect(nginx).toMatch(/location = \/version\.json \{[^}]*Cache-Control "no-store"/s);
   });
 
-  it("sends the API through to the service by name", () => {
-    expect(nginx).toContain("proxy_pass http://api:8000;");
+  it("resolves the API per request so a restart does not leave a stale address", () => {
+    expect(nginx).toContain("resolver 127.0.0.11 valid=10s ipv6=off;");
+    expect(nginx).toContain("proxy_pass http://$api_upstream:8000$request_uri;");
   });
 });

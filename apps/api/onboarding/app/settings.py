@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     inbound_files_key: SecretStr = SecretStr("")
     inbound_files_max_bytes: int = 15 * 1024 * 1024
 
+    # Demo shortcuts (/reboot, /nextStage, the "Продолжить" button) are open to a pilot employee
+    # and move the run past a real wait. Set the ids that may use them; empty means every account,
+    # which is the demo stand.
+    demo_employee_ids_raw: str = Field(default="", alias="DEMO_EMPLOYEE_IDS")
     telegram_base_url: str = "https://api.telegram.org"
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_webhook_secret: SecretStr = SecretStr("")

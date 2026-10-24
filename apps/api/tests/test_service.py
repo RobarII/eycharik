@@ -46,7 +46,9 @@ SCENARIOS = ROOT / "apps" / "api" / "onboarding" / "scenarios"
 COPY = load_copy(ROOT / "docs" / "product" / "copy.yaml")
 
 
-def build(*, scenario_id: str = "onboarding_default") -> tuple[
+def build(
+    *, scenario_id: str = "onboarding_default", demo_ids: frozenset[int] = frozenset()
+) -> tuple[
     OnboardingService,
     InMemoryRuns,
     RecordingMessaging,
@@ -70,6 +72,7 @@ def build(*, scenario_id: str = "onboarding_default") -> tuple[
         clock=FrozenClock(NOW),
         directory=StaticDirectory({EMPLOYEE: profile(scenario_id=scenario_id)}),
         audit=audit,
+        demo_ids=demo_ids,
     )
     return service, runs, messaging, audit, answerer
 
@@ -957,3 +960,39 @@ async def test_the_ask_button_on_a_step_replies_with_the_ask_prompt() -> None:
 
     assert result.handled
     assert messaging.sent[sent_before].text == COPY.ask_question
+
+
+async def test_demo_commands_are_closed_to_a_pilot_employee() -> None:
+    """A real employee must not skip a stage with /nextStage or restart with /reboot."""
+    service, runs, messaging, audit, _ = build(demo_ids=frozenset({1001, 1002}))
+    await service.start(EMPLOYEE, ADDRESS)
+    stored = next(iter(runs.runs.values()))
+
+    skipped = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/nextStage")
+    )
+    restarted = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/reboot")
+    )
+
+    assert skipped.handled
+    assert restarted.handled
+    assert next(iter(runs.runs.values())).state.step_id == "welcome"
+    assert next(iter(runs.runs.values())).state.run_id == stored.state.run_id
+    assert messaging.sent[-1].text == COPY.unknown_command
+    assert "demo_command_refused" in audit.names()
+
+
+async def test_the_demo_stand_keeps_its_shortcuts() -> None:
+    service, runs, _, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    runs_before = len(runs.runs)
+
+    await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/reboot")
+    )
+
+    active = [run for run in runs.runs.values() if run.active]
+    assert len(active) == 1
+    assert active[0].state.step_id == "welcome"
+    assert len(runs.runs) >= runs_before

@@ -76,6 +76,7 @@ class OnboardingService:
         classifier: SentimentAnalysis | None = None,
         scenario_id: str = "onboarding_default",
         scenario_version: int | None = None,
+        demo_ids: frozenset[int] = frozenset(),
     ) -> None:
         self._runs = runs
         self._catalog = catalog
@@ -86,6 +87,7 @@ class OnboardingService:
         self._classifier = classifier
         self._scenario_id = scenario_id
         self._scenario_version = scenario_version
+        self._demo_ids = demo_ids
 
     def _scenario(self, scenario_id: str | None = None) -> Scenario:
         chosen = scenario_id or self._scenario_id
@@ -182,11 +184,9 @@ class OnboardingService:
         command = _command(event.text)
         # These two commands must work even before there is an active run: /reboot is what makes a
         # demo account look new again, and /start is still the normal entry point.
-        if event.kind is EventKind.MESSAGE_RECEIVED:
-            if command == "/reboot":
-                return await self.reboot(employee_id, address)
-            if command == "/start":
-                return await self.start(employee_id, address)
+        entry = await self._entry_command(employee_id, address, event, command)
+        if entry is not None:
+            return entry
 
         stored = await self._runs.find_active_by_employee(employee_id)
         if stored is None:
@@ -197,7 +197,7 @@ class OnboardingService:
         # Reminders are scheduled from processing time, never from a delivery timestamp: a retried
         # update can be hours old, and a timeout due in the past would escalate immediately.
         if command == "/nextstage":
-            return await self.next_stage(employee_id, address)
+            return await self._guarded_next_stage(employee_id, address, command)
         if event.kind is EventKind.MESSAGE_RECEIVED and command is not None:
             await self._audit.record(
                 "command_handled", employee_id=str(employee_id), command=command
@@ -216,6 +216,8 @@ class OnboardingService:
             )
             return ServiceResult(handled=True)
         if event.kind is EventKind.BUTTON_PRESSED and event.button_id == "hr_continue":
+            if not await self._demo_allowed(employee_id):
+                return await self._refuse_demo_command(employee_id, address, "hr_continue")
             return await self.next_stage(employee_id, address)
         if event.kind is EventKind.BUTTON_PRESSED and _asks_a_question(event.button_id):
             await self._act(
@@ -370,6 +372,52 @@ class OnboardingService:
                 scenario, scheduled, address, employee_id, effective.at.date()
             )
         return ServiceResult(handled=True, escalated=escalated, completed=completed)
+
+    async def _entry_command(
+        self,
+        employee_id: EmployeeId,
+        address: Address,
+        event: Event,
+        command: str | None,
+    ) -> ServiceResult | None:
+        """The two commands that work before a run exists: /start and a permitted /reboot."""
+        if event.kind is not EventKind.MESSAGE_RECEIVED:
+            return None
+        if command == "/start":
+            return await self.start(employee_id, address)
+        if command == "/reboot":
+            if not await self._demo_allowed(employee_id):
+                return await self._refuse_demo_command(employee_id, address, command)
+            return await self.reboot(employee_id, address)
+        return None
+
+    async def _guarded_next_stage(
+        self, employee_id: EmployeeId, address: Address, command: str
+    ) -> ServiceResult:
+        if not await self._demo_allowed(employee_id):
+            return await self._refuse_demo_command(employee_id, address, command)
+        return await self.next_stage(employee_id, address)
+
+    async def _demo_allowed(self, employee_id: EmployeeId) -> bool:
+        """A pilot employee must not skip a real wait with a demo command (roadmap 1.6)."""
+        if not self._demo_ids:
+            return True
+        return str(employee_id) in {str(candidate) for candidate in self._demo_ids}
+
+    async def _refuse_demo_command(
+        self, employee_id: EmployeeId, address: Address, command: str
+    ) -> ServiceResult:
+        await self._audit.record(
+            "demo_command_refused", employee_id=str(employee_id), command=command
+        )
+        await self._act(
+            (Action(kind=ActionKind.SEND, text=self._executor.unknown_command_text()),),
+            address,
+            employee_id,
+            self._now().date(),
+            question=None,
+        )
+        return ServiceResult(handled=True)
 
     async def _drop_started_stage(
         self, stored: StoredRun, employee_id: EmployeeId, scenario: Scenario

@@ -86,6 +86,16 @@ class Container(Common):
         await Common.aclose(self)
 
 
+def _demo_ids(settings: Settings) -> frozenset[int]:
+    raw = settings.demo_employee_ids_raw.strip()
+    if not raw:
+        return frozenset()
+    try:
+        return frozenset(int(part) for part in raw.replace(";", ",").split(",") if part.strip())
+    except ValueError:
+        raise ValueError("DEMO_EMPLOYEE_IDS must be a comma-separated list of numbers") from None
+
+
 def _classifier(
     settings: Settings,
     *,
@@ -201,6 +211,7 @@ def build_container(settings: Settings) -> Container:
         directory=common.directory,
         audit=common.audit,
         classifier=classifier,
+        demo_ids=_demo_ids(settings),
     )
 
     writer = PostgresKnowledgeWriter(common.database, embedder)

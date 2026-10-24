@@ -97,6 +97,7 @@ from onboarding.core.models import (
     SurveyAnswer,
     TimeoutAction,
 )
+from onboarding.core.quiet_hours import QuietHours
 from onboarding.core.retrieval import RetrievalPolicy
 from onboarding.core.transitions import start as start_run
 from onboarding.ports import (
@@ -350,6 +351,25 @@ async def test_scheduler_enqueues_a_due_reminder(database: Database) -> None:
     jobs = await JobQueue(database).claim()
     assert [job.kind for job in jobs] == ["timeout"]
     assert jobs[0].payload["employee_id"] == str(EMPLOYEE)
+
+
+async def test_a_night_reminder_waits_for_the_morning(database: Database) -> None:
+    """A reminder created at night must not wake the employee up (roadmap 0.6)."""
+    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
+    await service.start(EMPLOYEE, MAX)
+    async with database.session() as session:
+        await session.execute(text("UPDATE runs SET reminder_at = now() - interval '1 minute'"))
+    night = datetime(2026, 10, 24, 23, 30, tzinfo=UTC)  # 02:30 in Moscow
+
+    scheduler = ReminderScheduler(
+        database, quiet=QuietHours(start_hour=21, end_hour=9), now=night
+    )
+
+    assert await scheduler.tick() == 1
+    async with database.session() as session:
+        row = await session.scalar(select(JobRow))
+        assert row is not None
+        assert row.available_at == datetime(2026, 10, 25, 6, 0, tzinfo=UTC)
 
 
 async def test_scheduler_enqueues_a_delayed_step(database: Database) -> None:

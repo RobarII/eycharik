@@ -168,6 +168,14 @@ class Scenario:
         except KeyError:
             raise ScenarioError(f"step {step_id!r} is not part of scenario {self.id!r}") from None
 
+    def position(self, step_id: str) -> tuple[int, int]:
+        """One-based place of a step and the total: "3 of 21" keeps the person oriented."""
+        order = list(self.steps)
+        try:
+            return order.index(step_id) + 1, len(order)
+        except ValueError:
+            raise ScenarioError(f"step {step_id!r} is not part of scenario {self.id!r}") from None
+
 
 class ScenarioError(ValueError):
     """A scenario document violates the contract."""

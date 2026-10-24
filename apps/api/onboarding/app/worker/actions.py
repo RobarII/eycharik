@@ -72,11 +72,14 @@ class ActionExecutor:
     def stage_waiting_text(self, stage: str, when: str) -> str:
         return self._copy.stage_waiting.format(stage=stage, when=when)
 
+    def stage_progress_text(self, index: int, total: int) -> str:
+        return self._copy.stage_progress.format(index=index, total=total)
+
     async def execute(self, action: Action, context: ActionContext) -> None:
         match action.kind:
             case ActionKind.SEND:
                 assert action.text is not None
-                text = self._resolve(action)
+                text = self._resolve(action, context)
                 await self._messaging.send(
                     OutboundMessage(
                         address=context.address,
@@ -126,22 +129,32 @@ class ActionExecutor:
     def file_received_text(self) -> str:
         return self._copy.file_received
 
-    def _resolve(self, action: Action) -> str:
+    def _resolve(self, action: Action, context: ActionContext) -> str:
         """Attach the position, the hint or the acknowledgement the copy file words."""
         assert action.text is not None
         if action.note == "reminder":
-            return self._copy.reminder(action.text)
+            return self._copy.reminder(self._personal(action.text, context))
         if action.note == "survey:ack":
             return self._copy.survey_acknowledgement(action.text)
         if action.note is not None and action.note.startswith("survey:ask:"):
             _, _, index, total = action.note.split(":")
             progress = self._copy.survey_question(int(index), int(total))
-            return f"{progress}\n\n{action.text}"
+            return f"{progress}\n\n{self._personal(action.text, context)}"
         if action.note is not None and action.note.startswith("survey:repeat"):
             kind = action.note.rpartition(":")[2]
             hint = self._copy.answer_hint(kind)
-            return f"{action.text}\n\n{hint}" if hint else action.text
-        return action.text
+            text = self._personal(action.text, context)
+            return f"{text}\n\n{hint}" if hint else text
+        return self._personal(action.text, context)
+
+    def _personal(self, text: str, context: ActionContext) -> str:
+        """``{name}`` is the employee's first name: a greeting with no name reads as a mailing."""
+        if "{name}" not in text:
+            return text
+        name = _first_name(context.profile)
+        if name:
+            return text.replace("{name}", name)
+        return text.replace(", {name}", "").replace("{name}, ", "").replace("{name}", "").strip()
 
     async def _answer(self, context: ActionContext) -> None:
         if context.profile is None or not context.question:
@@ -175,6 +188,12 @@ class ActionExecutor:
 
 def _menu_buttons(copy: Copy) -> tuple[Button, ...]:
     return tuple(Button(id=button_id, text=text) for button_id, text in copy.post_run_menu)
+
+
+def _first_name(profile: EmployeeProfile | None) -> str:
+    if profile is None or not profile.name:
+        return ""
+    return profile.name.strip().split(maxsplit=1)[0]
 
 
 def _employee(context: ActionContext) -> str | None:

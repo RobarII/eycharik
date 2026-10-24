@@ -64,6 +64,10 @@ class Settings(BaseSettings):
     # and move the run past a real wait. Set the ids that may use them; empty means every account,
     # which is the demo stand.
     demo_employee_ids_raw: str = Field(default="", alias="DEMO_EMPLOYEE_IDS")
+    # ``21-9`` keeps the bot from reminding anyone at night; empty disables the window, which is
+    # what a demo stand wants.
+    quiet_hours_raw: str = Field(default="", alias="QUIET_HOURS")
+    quiet_hours_timezone: str = Field(default="Europe/Moscow", alias="QUIET_HOURS_TIMEZONE")
     telegram_base_url: str = "https://api.telegram.org"
     telegram_bot_token: SecretStr = SecretStr("")
     telegram_webhook_secret: SecretStr = SecretStr("")

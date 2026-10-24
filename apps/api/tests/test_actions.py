@@ -213,3 +213,31 @@ async def test_completion_carries_a_menu_instead_of_a_dead_end() -> None:
         "post_ask",
         "post_reboot",
     ]
+
+
+async def test_the_greeting_carries_the_first_name() -> None:
+    executor, messaging, _, _ = build()
+
+    await executor.execute(
+        Action(kind=ActionKind.SEND, text="Здравствуйте, {name}! Я Корсик."),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20), profile=profile()),
+    )
+
+    assert messaging.sent[0].text == "Здравствуйте, Иван! Я Корсик."
+
+
+async def test_a_missing_name_does_not_leave_a_hole_in_the_greeting() -> None:
+    executor, messaging, _, _ = build()
+
+    await executor.execute(
+        Action(kind=ActionKind.SEND, text="Здравствуйте, {name}! Я Корсик."),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)),
+    )
+
+    assert messaging.sent[0].text == "Здравствуйте! Я Корсик."
+
+
+async def test_the_stage_notice_names_the_position() -> None:
+    executor, _, _, _ = build()
+
+    assert executor.stage_progress_text(3, 21) == "Шаг 3 из 21."

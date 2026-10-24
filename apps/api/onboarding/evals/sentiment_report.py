@@ -20,8 +20,8 @@ from onboarding.core.models import Sentiment
 from onboarding.evals.artifact import commit_hash
 
 if TYPE_CHECKING:
-    from onboarding.evals.sentiment import Comparison, Report
     from onboarding.evals.sentiment_cases import Case
+    from onboarding.evals.sentiment_metrics import Comparison, Report
 
 
 def render_markdown(

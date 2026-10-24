@@ -14,7 +14,6 @@ from onboarding.evals.sentiment import (
     CaseResult,
     Report,
     SentimentSetError,
-    _wilson,
     compare_reports,
     degraded_beyond,
     load_artifact,
@@ -22,6 +21,7 @@ from onboarding.evals.sentiment import (
     render_artifact,
     render_markdown,
 )
+from onboarding.evals.sentiment_metrics import _wilson
 
 ROOT = Path(__file__).resolve().parents[3]
 SET_PATH = ROOT / "docs" / "evals" / "sentiment.yaml"

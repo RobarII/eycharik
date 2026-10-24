@@ -54,8 +54,17 @@ body {
   background: var(--bg);
 }
 
+/* The gutter lives on the root, not on `.app`'s margin: a margin there collapses through #root and
+   makes the page itself scroll by 16px under a viewport-height shell. */
 #root {
   height: 100%;
+  padding: 16px;
+}
+
+@media (max-width: 760px), (max-height: 560px) and (pointer: coarse) {
+  #root {
+    padding: 0;
+  }
 }
 
 button,
@@ -144,10 +153,11 @@ code {
 .app {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  width: min(1560px, calc(100% - 32px));
+  width: min(1560px, 100%);
   height: calc(100vh - 32px);
+  height: calc(100dvh - 32px);
   min-height: 0;
-  margin: 16px auto;
+  margin: 0 auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 28px;
@@ -165,6 +175,11 @@ code {
   padding: 26px 16px 18px;
   background: var(--surface);
   border-right: 1px solid var(--line);
+  /* A short window (a laptop with devtools open, a landscape phone) must still reach "Выйти". */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
 }
 
 .brand {

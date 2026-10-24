@@ -1,4 +1,8 @@
-/* Breakpoints, reduced motion and print. Keep these last: they override the above. */
+/* Breakpoints, touch ergonomics, reduced motion and print. Keep these last: they override the above. */
+
+/* The shell swaps at `max-width: 760px`, and also on a landscape phone: 915px wide is past the
+   breakpoint but only 412px tall, so a rail plus a footer cannot fit. The same condition guards
+   `#root`'s gutter in base.css. */
 
 /* ---------- responsive ---------- */
 
@@ -20,6 +24,8 @@
   }
 }
 
+/* ---------- icon rail ---------- */
+
 @media (max-width: 1024px) {
   .app {
     grid-template-columns: 78px minmax(0, 1fr);
@@ -35,14 +41,29 @@
     padding: 0;
   }
 
+  /* Hidden from view, kept in the accessibility tree: an icon alone has no name, and `title` is
+     not a name a screen reader announces. Clipped text still is. */
   .brand-text,
   .nav-label,
   .logout span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* The rail is 78px wide: the role paragraph and the build id would spill over the content. Both
+     stay on a wide screen, and the phone shell drops them too. */
+  .sidebar-role,
+  .sidebar-build {
     display: none;
   }
 
   .nav-link {
     justify-content: center;
+    min-height: 44px;
     padding: 11px 0;
   }
 
@@ -61,6 +82,7 @@
 
   .logout {
     justify-content: center;
+    min-height: 44px;
   }
 
   .detail-grid,
@@ -84,8 +106,12 @@
   }
 }
 
-@media (max-width: 760px) {
+/* ---------- phone shell: fixed bottom navigation ---------- */
+
+@media (max-width: 760px), (max-height: 560px) and (pointer: coarse) {
   .app {
+    --nav-h: 64px;
+
     grid-template-columns: 1fr;
     width: 100%;
     height: 100vh;
@@ -108,12 +134,14 @@
     flex-direction: row;
     align-items: center;
     gap: 4px;
-    height: 64px;
+    height: var(--nav-h);
     padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
     border-top: 1px solid var(--line);
     border-right: 0;
     background: rgba(255, 255, 255, 0.96);
     backdrop-filter: blur(12px);
+    /* A badge sits half outside the button; the bar must not clip it. */
+    overflow: visible;
   }
 
   .sidebar > .brand,
@@ -129,17 +157,26 @@
 
   .nav-link {
     flex-direction: column;
-    gap: 2px;
-    padding: 6px 2px;
-    border-radius: 9px;
-    font-size: 0.62rem;
+    justify-content: center;
+    gap: 3px;
+    min-height: 52px;
+    padding: 4px 2px;
+    border-radius: 10px;
+    font-size: 0.68rem;
     font-weight: 500;
   }
 
   .nav-label {
-    display: block;
+    position: static;
+    width: auto;
+    height: auto;
     max-width: 100%;
-    font-size: 0.62rem;
+    overflow: hidden;
+    clip-path: none;
+    font-size: 0.68rem;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .nav-link-on::before {
@@ -154,7 +191,7 @@
   .content {
     height: 100%;
     min-height: 0;
-    padding-bottom: 64px;
+    padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   }
 
   .topbar {
@@ -344,11 +381,22 @@
 }
 
 /* Mobile reflow: a long question row must not widen the layout viewport. */
-@media (max-width: 760px) {
+@media (max-width: 760px), (max-height: 560px) and (pointer: coarse) {
   html,
   body {
     overflow-x: hidden;
     overflow-x: clip;
+  }
+
+  /* Notched phones hold the bar and the columns away from the rounded corners. */
+  .sidebar {
+    padding-left: calc(8px + env(safe-area-inset-left));
+    padding-right: calc(8px + env(safe-area-inset-right));
+  }
+
+  .topbar {
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
   }
 
   .main,
@@ -435,5 +483,153 @@
 @media (max-width: 380px) {
   .kpi-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+/* ---------- touch ---------- */
+
+/* WCAG 2.5.8 asks for 24×24 CSS px; a fingertip asks for more. Anything a recruiter taps on the
+   queue screen gets at least 44px, and secondary text links get 28px. */
+@media (pointer: coarse) {
+  .button,
+  .icon-button {
+    min-height: 44px;
+  }
+
+  .icon-button {
+    width: 44px;
+  }
+
+  .segment {
+    min-height: 40px;
+  }
+
+  .link-button,
+  .back {
+    min-height: 28px;
+    align-items: center;
+  }
+
+  .upload-fields input,
+  .upload input[type="file"] {
+    min-height: 44px;
+  }
+
+  /* iOS Safari zooms into a focused control under 16px and does not zoom back out. */
+  input,
+  select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+/* A tap leaves `:hover` stuck until the next tap elsewhere. Pointer devices keep the feedback. */
+@media (hover: none) {
+  .nav-link:hover {
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  .nav-link-on:hover {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .segment:hover {
+    background: transparent;
+    color: var(--ink-2);
+  }
+
+  .segment-on:hover {
+    background: var(--ink);
+    color: #fff;
+  }
+
+  .link-button:hover {
+    color: var(--accent-ink);
+    text-decoration: none;
+  }
+
+  .run-card:hover {
+    border-color: var(--line);
+    box-shadow: var(--shadow-sm);
+    transform: none;
+  }
+
+  .knowledge-row:hover {
+    border-color: var(--line);
+    background: var(--surface-soft);
+  }
+
+  .logout:hover {
+    background: transparent;
+    color: var(--muted);
+  }
+
+  .activity-button:hover .activity-name {
+    color: var(--ink);
+  }
+}
+
+/* ---------- print ---------- */
+
+/* A recruiter prints a card or a document, not the shell. */
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  html,
+  body,
+  #root {
+    height: auto;
+    padding: 0;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .app {
+    display: block;
+    height: auto;
+    width: auto;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .sidebar,
+  .topbar,
+  .banner,
+  .skip,
+  .knowledge-modal,
+  .update-banner {
+    display: none !important;
+  }
+
+  .content {
+    height: auto;
+    padding: 0;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .main {
+    width: auto;
+    max-width: none;
+    padding: 0;
+  }
+
+  .page {
+    animation: none;
+  }
+
+  .card,
+  .run-card,
+  .knowledge-row,
+  .timeline li {
+    break-inside: avoid;
+    box-shadow: none;
   }
 }

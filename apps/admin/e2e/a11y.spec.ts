@@ -15,7 +15,7 @@ const SCREENS: ReadonlyArray<{ name: string; hash: string }> = [
   { name: "questions", hash: "#/questions" },
   { name: "risk", hash: "#/risk" },
   { name: "knowledge", hash: "#/knowledge" },
-  { name: "run detail", hash: "#/run/9c8b7a65-4321-4f0e-9d8c-7b6a5f4e3d2c" },
+  { name: "run detail", hash: "#/run/4a1d2c3b-5e6f-4a71-8b92-0c1d2e3f4a5b" },
   { name: "not found", hash: "#/nonsense" },
 ];
 

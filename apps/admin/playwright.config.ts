@@ -20,7 +20,28 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  // Four viewports, because the shell has three shapes: a 248px sidebar, a 78px icon rail, and a
+  // fixed bottom bar. Only running all three keeps the layout honest — every defect found in the
+  // rail and in landscape was invisible to a desktop-only run. CI installs Chromium alone, so the
+  // iPad project borrows it: the viewport and `pointer: coarse` are what the layout reacts to.
+  //
+  // Only layout and axe repeat per viewport. The cabinet flows mutate the in-memory demo (a claim, an
+  // offboard, an edited document) and every project shares one server, so running them twice would
+  // race on that state rather than test a second shape.
+  projects: [
+    { name: "desktop", use: { ...devices["Desktop Chrome"] } },
+    {
+      name: "tablet",
+      use: { ...devices["iPad Mini"], browserName: "chromium" },
+      testMatch: /(layout|a11y)\.spec\.ts/,
+    },
+    { name: "phone", use: { ...devices["Pixel 7"] }, testMatch: /(layout|a11y)\.spec\.ts/ },
+    {
+      name: "phone-landscape",
+      use: { ...devices["Pixel 7 landscape"] },
+      testMatch: /(layout|a11y)\.spec\.ts/,
+    },
+  ],
   webServer: {
     command: "npm run preview:demo -- --port 5199 --strictPort",
     url: "http://127.0.0.1:5199",

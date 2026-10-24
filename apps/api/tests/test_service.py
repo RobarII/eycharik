@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -11,7 +11,7 @@ from onboarding.app.clock import FrozenClock
 from onboarding.app.copy import load_copy
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 from onboarding.app.worker.actions import ActionExecutor
-from onboarding.app.worker.service import OnboardingService
+from onboarding.app.worker.service import OnboardingService, _relative_due
 from onboarding.core.models import (
     Address,
     Channel,
@@ -510,6 +510,18 @@ async def test_next_stage_skips_to_the_next_delayed_stage() -> None:
     assert messaging.sent[-1].text.startswith("Завтра")
 
 
+def test_relative_due_is_readable_and_never_points_to_the_past() -> None:
+    now = datetime(2026, 10, 24, 18, 30, tzinfo=UTC)
+
+    assert _relative_due(now + timedelta(minutes=30), now) == "через 30 минут"
+    assert _relative_due(now + timedelta(hours=1), now) == "через 1 час"
+    assert _relative_due(now + timedelta(hours=24), now) == "через 1 день"
+    assert _relative_due(now + timedelta(hours=48), now) == "через 2 дня"
+    assert _relative_due(now + timedelta(hours=264), now) == "через 11 дней"
+    assert _relative_due(now + timedelta(hours=720), now) == "через 30 дней"
+    assert _relative_due(now - timedelta(minutes=1), now) == "сейчас"
+
+
 async def test_reboot_starts_a_fresh_run() -> None:
     service, runs, messaging, _, _ = build()
     await service.start(EMPLOYEE, ADDRESS)
@@ -552,6 +564,8 @@ async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
     assert stored.scheduled is not None
     assert len(messaging.sent) == before + 1
     assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "через" in messaging.sent[-1].text
+    assert "UTC" not in messaging.sent[-1].text
     assert "Принял" not in messaging.sent[-1].text
     assert "Бот работает" not in messaging.sent[-1].text
 
@@ -614,6 +628,8 @@ async def test_a_button_while_scheduled_gets_a_stage_status() -> None:
     assert result.handled
     assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
     assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "через" in messaging.sent[-1].text
+    assert "UTC" not in messaging.sent[-1].text
     assert "Бот работает" not in messaging.sent[-1].text
 
 

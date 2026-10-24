@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
+from math import ceil
 from uuid import uuid4
 
 from onboarding.app.audit import NullAudit
@@ -445,7 +446,7 @@ class OnboardingService:
             if scheduled.due_at.tzinfo is not None
             else scheduled.due_at.replace(tzinfo=UTC)
         )
-        when = due.astimezone(UTC).strftime("%d.%m.%Y %H:%M UTC")
+        when = _relative_due(due, self._now())
         text = (
             self._executor.stage_waiting_text(stage, when)
             if waiting
@@ -581,6 +582,38 @@ def _next_stage_target(scenario: Scenario, stored: StoredRun) -> str | None:
             return target
         target = _following_step(step)
     return fallback
+
+
+def _relative_due(due: datetime, now: datetime) -> str:
+    """Say when the next stage is due in human time, never as a UTC timestamp.
+
+    An absolute ``18:30 UTC`` looks like the past to a person whose clock says ``21:30``. Relative
+    wording is also truthful when the worker is a little late: a due point that has just passed
+    becomes ``сейчас`` instead of a date the reader has to interpret.
+    """
+    seconds = (due - now).total_seconds()
+    if seconds <= 0:
+        return "сейчас"
+    minutes = max(1, ceil(seconds / 60))
+    if minutes < 60:
+        return f"через {minutes} {_plural(minutes, 'минуту', 'минуты', 'минут')}"
+    hours = max(1, ceil(seconds / 3600))
+    if hours < 24:
+        return f"через {hours} {_plural(hours, 'час', 'часа', 'часов')}"
+    days = max(1, ceil(seconds / 86400))
+    return f"через {days} {_plural(days, 'день', 'дня', 'дней')}"
+
+
+def _plural(value: int, one: str, few: str, many: str) -> str:
+    last_two = value % 100
+    if 11 <= last_two <= 14:
+        return many
+    last = value % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
 
 
 def _following_step(step: object) -> str | None:

@@ -213,7 +213,7 @@ steps:
             text: Нет
       - id: first_days_score
         kind: scale
-        prompt: Оцените первые дни от 1 до 10
+        prompt: Оцените, насколько комфортными были первые дни, от 1 до 10
         low_threshold: 8
         reason_prompt: Что повлияло на оценку? Напишите пару слов.
       - id: what_helps
@@ -248,42 +248,42 @@ steps:
         reason_prompt: Что стоит уточнить в задачах?
       - id: info_access
         kind: scale
-        prompt: Хватает информации для работы?
+        prompt: Оцените, насколько вам хватает информации для работы, от 1 до 10
         low_threshold: 8
         reason_prompt: Какой информации не хватает?
       - id: manager_available
         kind: scale
-        prompt: Руководитель доступен для вопросов?
+        prompt: Оцените, насколько руководитель доступен для вопросов, от 1 до 10
         low_threshold: 8
         reason_prompt: Что мешает общению с руководителем?
       - id: feedback
         kind: scale
-        prompt: Получаете обратную связь по работе?
+        prompt: Оцените, насколько регулярно вы получаете обратную связь, от 1 до 10
         low_threshold: 8
         reason_prompt: Какой обратной связи не хватает?
       - id: colleagues
         kind: scale
-        prompt: Команда помогает освоиться?
+        prompt: Оцените, насколько команда помогает вам освоиться, от 1 до 10
         low_threshold: 8
         reason_prompt: Что происходит в команде?
       - id: it_support
         kind: scale
-        prompt: ИТ-поддержка решает вопросы?
+        prompt: Оцените, насколько ИТ-поддержка решает ваши вопросы, от 1 до 10
         low_threshold: 8
         reason_prompt: Что не работает или долго решается?
       - id: access_speed
         kind: scale
-        prompt: Доступы выдали вовремя?
+        prompt: Оцените, насколько вовремя вам выдали доступы, от 1 до 10
         low_threshold: 8
         reason_prompt: Каких доступов не хватает?
       - id: hr_support
         kind: scale
-        prompt: Поддержка HR достаточна?
+        prompt: Оцените, насколько вам хватает поддержки HR, от 1 до 10
         low_threshold: 8
         reason_prompt: Что HR стоит улучшить?
       - id: overall
         kind: scale
-        prompt: Общая оценка адаптации
+        prompt: Оцените общую адаптацию от 1 до 10
         low_threshold: 8
         reason_prompt: Что больше всего мешает?
     next: month_two_plan
@@ -311,7 +311,7 @@ steps:
     questions:
       - id: mood
         kind: scale
-        prompt: Настроение на работе от 1 до 10
+        prompt: Оцените настроение на работе от 1 до 10
         low_threshold: 8
         reason_prompt: Что влияет на настроение?
       - id: who_helps
@@ -372,7 +372,7 @@ steps:
         prompt: Что бы вы посоветовали новому сотруднику на вашем месте?
       - id: overall
         kind: scale
-        prompt: Общая удовлетворённость работой от 1 до 10
+        prompt: Оцените общую удовлетворённость работой от 1 до 10
         low_threshold: 8
         reason_prompt: Что повлияло на оценку?
     next: done

@@ -7,6 +7,7 @@ report only checks the aggregate.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from onboarding.evals.runner import (
@@ -139,6 +140,22 @@ def test_a_failing_run_may_not_become_the_baseline() -> None:
     assert refusal is not None
     assert "recall_at_5" in refusal
     assert "force-baseline" in refusal
+
+
+def test_a_missed_latency_budget_does_not_block_a_baseline() -> None:
+    """The budget is copied into the baseline unchanged; pinning cannot make it slower."""
+    answered = replace(
+        _hits(_case("a")),
+        retrieved_citations=1,
+        accepted_citations=1,
+        escalated=False,
+        completion_ms=20000,
+        answer_ms=21000,
+    )
+    report = summarise((answered,), generated=True)
+
+    assert report.failures == ("p95_completion_ms", "p95_answer_ms")
+    assert baseline_refusal(report) is None
 
 
 def test_a_passing_run_may_become_the_baseline() -> None:

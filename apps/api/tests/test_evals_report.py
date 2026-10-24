@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 
 from onboarding.app.settings import Settings
-from onboarding.evals.__main__ import retrieval_label
+from onboarding.evals.__main__ import main, retrieval_label
 from onboarding.evals.runner import (
     Baseline,
     Case,
@@ -152,3 +152,8 @@ def test_the_retrieval_label_names_the_switch_that_changed_the_run() -> None:
     assert "bm25:on" in on
     assert "contextual:v2" in on
     assert off != on
+
+
+def test_an_unknown_case_id_stops_the_run_before_the_database() -> None:
+    """``--only`` is the iteration loop; a typo must not silently evaluate the whole set."""
+    assert main(["--only", "no-such-case", "--retrieval-only"]) == 2

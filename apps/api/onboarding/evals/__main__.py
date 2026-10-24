@@ -50,6 +50,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path, default=ROOT / "docs" / "measurements")
     parser.add_argument("--retrieval-only", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="run only the first N cases")
+    parser.add_argument(
+        "--only",
+        default="",
+        help="comma-separated case ids; iterate on a fix without paying for the whole set",
+    )
     parser.add_argument("--write", action="store_true", help="write a measurement file")
     parser.add_argument("--label", default="", help="suffix for the measurement file name")
     parser.add_argument("--note", default="", help="caveat to record in the measurement file")
@@ -89,6 +94,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.limit:
         cases = cases[: args.limit]
+    if args.only:
+        wanted = [token.strip() for token in args.only.split(",") if token.strip()]
+        known = {case.id for case in cases}
+        unknown = [case_id for case_id in wanted if case_id not in known]
+        if unknown:
+            print(f"unknown case ids: {', '.join(unknown)}", file=sys.stderr)
+            return 2
+        cases = tuple(case for case in cases if case.id in set(wanted))
     return asyncio.run(_run(args, cases))
 
 

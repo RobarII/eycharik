@@ -365,12 +365,27 @@ export function runDetail(role: Role, runId: string) {
     scenario_version: run.scenario_version,
     tone: run.tone,
     step_message: run.step_message,
+    channels: MAX_ACCOUNTS[run.employee_id]
+      ? [
+          {
+            channel: "max",
+            external_id: MAX_ACCOUNTS[run.employee_id]!,
+            linked_at: ago(18, 5),
+          },
+        ]
+      : [],
     events,
     questions: questions(role, "all", "any", 20).items.filter(
       (question) => question.employee_id === run.employee_id,
     ),
   };
 }
+
+/** A demo person's MAX account, so the run card can name it instead of an HR id. */
+const MAX_ACCOUNTS: Record<string, string> = {
+  "1002": "502781191",
+  "1003": "778812304",
+};
 
 /** `owner` mirrors the API's `assignee` parameter: `any`, `me` or `unassigned`. */
 export function questions(role: Role, status: string, owner: string, limit: number) {

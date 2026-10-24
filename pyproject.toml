@@ -28,10 +28,12 @@ ocr = [
 
 [dependency-groups]
 dev = [
+  "hypothesis>=6.115",
   "import-linter>=2.15",
   "mypy>=1.13",
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
   "ruff>=0.7",
   "socksio>=1.0",
   "types-jsonschema>=4.23",
@@ -51,7 +53,21 @@ markers = [
 ]
 # A plain `pytest` must never spend tokens or touch a paid endpoint. Live suites opt in by marker:
 # `pytest -m "integration or eval"` (see `make test-live`).
+# The pull-request gate is `make test-cov`: it runs the offline and `integration` tiers together and
+# fails below COVERAGE_MIN, because a tier that never runs proves nothing.
 addopts = "-q -m 'not integration and not eval'"
+
+[tool.coverage.run]
+source = ["onboarding"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+]
 
 [tool.ruff]
 line-length = 100

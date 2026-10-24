@@ -4,7 +4,9 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types arch test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo demo-data demo-data-del fmt docs admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
+COVERAGE_MIN ?= 85
+
+.PHONY: install check lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo demo-data demo-data-del fmt docs admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
 
 install:
 	uv sync
@@ -27,6 +29,16 @@ arch:                              # import cycles, layer order, and "api never 
 
 test:
 	$(PY) pytest
+
+test-cov:                          # PR gate: offline + postgres, one number, fails below the floor
+	@test -n "$$ONBOARDING_TEST_DATABASE" || { \
+		echo "ONBOARDING_TEST_DATABASE is required: start postgres and run the migrations" >&2; \
+		exit 2; \
+	}
+	$(PY) pytest -m "not eval" --cov=onboarding --cov-fail-under=$(COVERAGE_MIN)
+
+test-integration:                  # postgres only; skipped silently when the URL is absent
+	$(PY) pytest -m integration
 
 # Live tier: real Postgres and real providers. Costs money and needs keys, so it never runs in check.
 test-live:

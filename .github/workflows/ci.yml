@@ -38,8 +38,12 @@ jobs:
       - run: uv sync --frozen
       - name: Migrate a fresh database
         run: uv run alembic upgrade head
-      - name: Lint, type-check, test, docs
-        run: make lint types arch test docs
+      - name: Lint, type-check, docs
+        run: make lint types arch docs
+      - name: Offline and integration tiers with a coverage floor
+        # `make test` would drop the 52 integration cases; the database is already here, so run
+        # both tiers and let the coverage floor notice a suite that quietly stopped running.
+        run: make test-cov
       - name: Run migrations from an empty database again
         run: |
           uv run alembic downgrade base
@@ -58,9 +62,33 @@ jobs:
           cache: npm
           cache-dependency-path: apps/admin/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run typecheck
       - run: npm run test
       - run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
+      - name: Keep the trace of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-trace
+          path: apps/admin/test-results/**
+          if-no-files-found: warn
 
   compose:
     runs-on: ubuntu-latest

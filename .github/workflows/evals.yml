@@ -28,7 +28,7 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen
       - name: Lint, types, offline tests
-        run: make check
+        run: make lint types arch test docs
       - name: The set matches its contract and every gate has a mutant
         run: make eval-lint
 

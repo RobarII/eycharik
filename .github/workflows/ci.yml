@@ -39,7 +39,7 @@ jobs:
       - name: Migrate a fresh database
         run: uv run alembic upgrade head
       - name: Lint, type-check, test, docs
-        run: make check
+        run: make lint types arch test docs
       - name: Run migrations from an empty database again
         run: |
           uv run alembic downgrade base

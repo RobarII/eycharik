@@ -111,6 +111,44 @@ def test_bot_started_becomes_an_employee_created_event() -> None:
     assert inbound.chat_id == 4242
     assert inbound.user_id == 77
     assert inbound.event.kind.value == "employee_created"
+    assert inbound.starts_run
+
+
+def test_a_typed_start_command_starts_the_run() -> None:
+    # MAX has no command router: the same text arrives as a plain message. It must still open
+    # the run, like `/start` does on Telegram and VK.
+    inbound = parse_update(
+        {
+            **MESSAGE_CREATED,
+            "message": {
+                **MESSAGE_CREATED["message"],
+                "body": {"mid": "mid-start", "text": " /start "},
+            },
+        },
+        received_at=RECEIVED,
+    )
+
+    assert inbound is not None
+    assert inbound.event.kind is EventKind.EMPLOYEE_CREATED
+    assert inbound.starts_run
+
+
+def test_a_message_that_merely_mentions_start_is_a_question() -> None:
+    inbound = parse_update(
+        {
+            **MESSAGE_CREATED,
+            "message": {
+                **MESSAGE_CREATED["message"],
+                "body": {"mid": "mid-2", "text": "как работает /start?"},
+            },
+        },
+        received_at=RECEIVED,
+    )
+
+    assert inbound is not None
+    assert inbound.event.kind is EventKind.MESSAGE_RECEIVED
+    assert not inbound.starts_run
+    assert inbound.event.text == "как работает /start?"
 
 
 # Captured from the live platform on 2026-10-24: a callback has no outer chat_id or user, the

@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     subscribe_parser.add_argument("--url", required=True, help="public HTTPS webhook URL")
     subscribe_parser.add_argument(
         "--types",
-        default="message_created,bot_started",
+        default="message_created,bot_started,message_callback",
         help="comma-separated MAX update types",
     )
 

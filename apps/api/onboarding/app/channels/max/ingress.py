@@ -25,6 +25,7 @@ from onboarding.ports import InboundMessage
 
 HANDLED_TYPES = frozenset({"message_created", "message_callback", "bot_started"})
 SECRET_HEADER = "X-Max-Bot-Api-Secret"  # noqa: S105 - a header name, not a secret
+START_COMMAND = "/start"
 
 
 class MaxIngress:
@@ -66,7 +67,7 @@ class MaxIngress:
             address=Address(channel=self.channel, chat_id=update.chat_id),
             sender=str(update.user_id),
             event=update.event,
-            starts_run=update.update_type == "bot_started",
+            starts_run=update.starts_run,
         )
 
 
@@ -77,6 +78,7 @@ class InboundUpdate:
     chat_id: ChatId
     user_id: int | None
     event: Event
+    starts_run: bool
 
 
 def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> InboundUpdate | None:
@@ -113,15 +115,19 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
         else _synthetic_id(update_type, payload, chat_id)
     )
 
+    starts_run = update_type == "bot_started"
     if update_type == "bot_started":
         event = Event(kind=EventKind.EMPLOYEE_CREATED, at=at)
     elif update_type == "message_created":
         text = body.get("text")
-        event = Event(
-            kind=EventKind.MESSAGE_RECEIVED,
-            at=at,
-            text=text.strip() if isinstance(text, str) and text.strip() else None,
-        )
+        clean = text.strip() if isinstance(text, str) and text.strip() else None
+        # MAX has no command router: `/start` typed by hand is an ordinary message. Treating it
+        # as a first contact keeps the three channels alike (``docs/contracts/channel.md``).
+        if clean is not None and clean.startswith(START_COMMAND):
+            starts_run = True
+            event = Event(kind=EventKind.EMPLOYEE_CREATED, at=at)
+        else:
+            event = Event(kind=EventKind.MESSAGE_RECEIVED, at=at, text=clean)
     else:
         button_id = _callback_id(payload)
         event = Event(kind=EventKind.BUTTON_PRESSED, at=at, button_id=button_id)
@@ -132,6 +138,7 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
         chat_id=ChatId(chat_id),
         user_id=user_id,
         event=event,
+        starts_run=starts_run,
     )
 
 

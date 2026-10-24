@@ -149,7 +149,7 @@ class GatewayLLM(LLM):
             model=str(body.get("model") or self._profile.model),
             latency_ms=int(elapsed_s * 1000),
             cost_rub=round(self._cost(input_tokens, output_tokens, cached_tokens), 6),
-            cost_usd=reported_cost_usd(usage),
+            reported_cost_usd=reported_cost_usd(usage),
         )
 
     def _cost(self, input_tokens: int, output_tokens: int, cached_tokens: int) -> float:

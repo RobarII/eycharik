@@ -335,7 +335,7 @@ async def test_the_provider_reported_charge_reaches_the_completion() -> None:
 
     result = await gateway.complete(REQUEST)
 
-    assert result.cost_usd == pytest.approx(0.0000055)
+    assert result.reported_cost_usd == pytest.approx(0.0000055)
 
 
 async def test_a_silent_provider_is_not_priced_at_zero() -> None:
@@ -345,4 +345,4 @@ async def test_a_silent_provider_is_not_priced_at_zero() -> None:
 
     result = await gateway.complete(REQUEST)
 
-    assert result.cost_usd is None
+    assert result.reported_cost_usd is None

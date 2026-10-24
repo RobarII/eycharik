@@ -327,7 +327,7 @@ async def test_the_prompt_classifier_records_the_charge_the_provider_reported() 
             responses=[
                 '{"sentiment": "negative", "tags": ["access"], "confidence": 0.9, "reason": "x"}'
             ],
-            cost_usd=0.00042,
+            reported_cost_usd=0.00042,
         ),
         prompts=PromptLibrary(PROMPTS),
         audit=audit,

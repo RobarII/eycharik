@@ -193,8 +193,9 @@ class SentimentClassifier:
             latency_ms=completion.latency_ms,
             cost_rub=completion.cost_rub,
             # The provider's own charge when it reports one. Without it a USD comparison between
-            # the two paths would be arithmetic on prices nobody measured.
-            cost_usd=completion.cost_usd,
+            # the two paths would be arithmetic on prices nobody measured. The audit key stays
+            # ``cost_usd``: it names the currency, not the field it came from.
+            cost_usd=completion.reported_cost_usd,
         )
         return RiskSignal(
             source=source,

@@ -73,9 +73,10 @@ class Completion:
     model: str = ""
     latency_ms: int = 0
     cost_rub: float = 0.0
-    # The provider's own charge, when it reports one (OpenRouter does). ``None`` means "not
-    # reported", which is not the same fact as a zero: only a reported number may be summed.
-    cost_usd: float | None = None
+    # The provider's own charge when it reports one (OpenRouter does), bypassing our price table.
+    # ``cost_rub`` is what we computed, this is what we were billed; ``None`` means "not reported",
+    # which is not the same fact as a zero: only a reported number may be summed as a bill.
+    reported_cost_usd: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

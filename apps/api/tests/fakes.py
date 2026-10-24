@@ -45,7 +45,7 @@ class ScriptedLLM:
     responses: list[str | Exception] = field(default_factory=list)
     requests: list[CompletionRequest] = field(default_factory=list)
     # ``None`` means "the provider said nothing about money", which is not the same as zero.
-    cost_usd: float | None = None
+    reported_cost_usd: float | None = None
 
     async def complete(self, request: CompletionRequest) -> Completion:
         self.requests.append(request)
@@ -59,7 +59,7 @@ class ScriptedLLM:
             input_tokens=10,
             output_tokens=5,
             model="scripted",
-            cost_usd=self.cost_usd,
+            reported_cost_usd=self.reported_cost_usd,
         )
 
 

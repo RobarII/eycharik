@@ -8,7 +8,11 @@ A docs tree without checks rots on the first rename. This script is the gate:
 - every ``make`` target and every repository path in backticks exists;
 - every ADR has a number, a status, and symmetric ``supersedes`` links;
 - every document is Russian, every measurement is short and cites its command;
+- every mermaid block is closed, typed, and has quoted labels with brackets inside;
 - the admin contract lists exactly the routes FastAPI serves.
+
+The root ``README.md`` and ``AGENTS.md`` are the entry points, so their links, paths and ``make``
+targets are gated too. They are not part of the docs tree: no frontmatter, no index entry.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from onboarding.app.settings import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
+ROOT_DOCS = ("README.md", "AGENTS.md")
 MAKEFILE = ROOT / "Makefile"
 GLOSSARY = DOCS / "glossary.yaml"
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -42,13 +47,34 @@ LATIN_WORD = re.compile(r"\b[A-Za-z][A-Za-z'’-]{2,}\b")
 ANCHOR_HOST = re.compile(r"^(?:[a-z]+://|mailto:|/|#)")
 PATH_LIKE = re.compile(r"^(?:apps|scripts|knowledge|infra|docs|deploy)/")
 PROMPT_VERSION = re.compile(r"^v(\d+)$")
+MERMAID_FENCE = "```mermaid"
+MERMAID_TYPES = frozenset(
+    {
+        "flowchart",
+        "graph",
+        "sequenceDiagram",
+        "stateDiagram-v2",
+        "stateDiagram",
+        "classDiagram",
+        "erDiagram",
+        "journey",
+        "gantt",
+        "pie",
+        "mindmap",
+        "timeline",
+        "quadrantChart",
+        "requirementDiagram",
+    }
+)
+MERMAID_SHAPE = re.compile(r"\[([^\]\n]*)\]|\{([^}\n]*)\}|\(([^)\n]*)\)")
+MERMAID_INNER = re.compile(r"[()\[\]{}]")
 MEASURED_QUALITY = re.compile(
     r"\b(?:recall@5|recall_at_5)\s*(?:=|—|-)?\s*\d"
     r"|\bp95(?:_[a-z_]+)?\s*(?:около|≈|~|=)?\s*\d+(?:[.,]\d+)?\s*(?:мс|ms|с|сек|секунд)\b",
     re.IGNORECASE,
 )
 
-SKIP_LANGUAGE = {"docs/README.md", "docs/glossary.md"}
+SKIP_LANGUAGE = {"docs/README.md", "docs/glossary.md", "AGENTS.md"}
 MEASUREMENT_MAX_LINES = 200
 
 # Internal surfaces: the MAX webhook, the scrape endpoint, and FastAPI's own pages.
@@ -76,6 +102,7 @@ def main() -> int:
     problems.extend(_adr_problems(docs))
     problems.extend(_glossary_problems())
     problems.extend(_measurement_problems())
+    problems.extend(_mermaid_problems())
     problems.extend(_product_number_problems())
     problems.extend(_prompt_problems())
     problems.extend(_route_problems())
@@ -107,9 +134,14 @@ def _rel(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def _markdown_files() -> list[Path]:
+    """The docs tree plus the root entry points whose links a reader follows first."""
+    return [*sorted(DOCS.rglob("*.md")), *(ROOT / name for name in ROOT_DOCS)]
+
+
 def _link_problems() -> list[str]:
     problems: list[str] = []
-    for path in sorted(DOCS.rglob("*.md")):
+    for path in _markdown_files():
         text = path.read_text(encoding="utf-8")
         for target in LINK.findall(text):
             if target.startswith(("http://", "https://", "#", "mailto:")):
@@ -144,7 +176,7 @@ def _anchors(path: Path) -> set[str]:
 
 def _anchor_problems() -> list[str]:
     problems: list[str] = []
-    for path in sorted(DOCS.rglob("*.md")):
+    for path in _markdown_files():
         for target in LINK.findall(path.read_text(encoding="utf-8")):
             if "#" not in target or target.startswith(("http://", "https://")):
                 continue
@@ -162,7 +194,7 @@ def _anchor_problems() -> list[str]:
 def _make_problems() -> list[str]:
     targets = set(re.findall(r"^([A-Za-z0-9_-]+):", MAKEFILE.read_text(encoding="utf-8"), re.M))
     problems: list[str] = []
-    for path in sorted(DOCS.rglob("*.md")):
+    for path in _markdown_files():
         for target in set(BACKTICK.findall(path.read_text(encoding="utf-8"))):
             match = re.match(r"^make\s+([A-Za-z0-9_-]+)", target)
             if match and match.group(1) not in targets:
@@ -173,7 +205,7 @@ def _make_problems() -> list[str]:
 def _path_problems() -> list[str]:
     """A path in backticks is a promise the file exists; a rename must not leave it behind."""
     problems: list[str] = []
-    for path in sorted(DOCS.rglob("*.md")):
+    for path in _markdown_files():
         text = path.read_text(encoding="utf-8")
         for token in set(BACKTICK.findall(text)):
             candidate = token.split("#")[0].split("?")[0].strip()
@@ -188,7 +220,7 @@ def _path_problems() -> list[str]:
 def _language_problems() -> list[str]:
     """Docs are Russian. A line of English prose is a leftover translation, not a fact."""
     problems: list[str] = []
-    for path in sorted(DOCS.rglob("*.md")):
+    for path in _markdown_files():
         rel = _rel(path)
         if rel in SKIP_LANGUAGE:
             continue
@@ -303,6 +335,50 @@ def _measurement_problems() -> list[str]:
                 problems.append(f"{_rel(path)}: missing line {required!r}")
         if any(line.startswith("## Cases") or line.startswith("### `") for line in lines):
             problems.append(f"{_rel(path)}: per-case dump belongs to the jsonl artifact")
+    return problems
+
+
+def _mermaid_problems() -> list[str]:
+    """A diagram is text, so a broken fence or an unquoted label breaks the render, not the reader.
+
+    Mermaid has no offline parser here (no chromium, no node dependency). The check is the cheap
+    half that catches what actually breaks: an unclosed block, an unknown diagram type, and a label
+    whose brackets mermaid reads as shape syntax — ``A[оценка (заводской)]`` renders garbage until
+    the label is quoted.
+    """
+    problems: list[str] = []
+    for path in _markdown_files():
+        rel = _rel(path)
+        lines = path.read_text(encoding="utf-8").splitlines()
+        index = 0
+        while index < len(lines):
+            if lines[index].strip() != MERMAID_FENCE:
+                index += 1
+                continue
+            start = index + 1
+            end = start
+            while end < len(lines) and not FENCE.match(lines[end]):
+                end += 1
+            if end == len(lines):
+                problems.append(f"{rel}:{start}: mermaid block is never closed")
+                break
+            problems.extend(_mermaid_block_problems(rel, start, lines[start:end]))
+            index = end + 1
+    return problems
+
+
+def _mermaid_block_problems(rel: str, start: int, body: list[str]) -> list[str]:
+    problems: list[str] = []
+    header = next((line.strip() for line in body if line.strip()), "")
+    kind = header.split()[0] if header else ""
+    if kind not in MERMAID_TYPES:
+        problems.append(f"{rel}:{start}: unknown mermaid diagram type {kind!r}")
+    for offset, line in enumerate(body, start=start + 1):
+        for shape in MERMAID_SHAPE.findall(line):
+            label = next((group for group in shape if group), "")
+            if not label or '"' in label or not MERMAID_INNER.search(label):
+                continue
+            problems.append(f"{rel}:{offset}: quote this mermaid label: {label.strip()}")
     return problems
 
 

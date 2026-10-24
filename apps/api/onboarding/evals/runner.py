@@ -146,6 +146,11 @@ class CaseResult:
     escalated: bool | None = None
     reason: str | None = None
     answer: str | None = None
+    # The completion as the model returned it, when it differs from the answer the employee sees.
+    # A refusal replaces the text with copy, so without this the reason for the refusal is lost
+    # the moment the turn ends — and "no sources" is the same word for a model that found nothing
+    # and a model that broke the output contract.
+    raw: str = ""
     completion_ms: int = 0
     answer_ms: int = 0
     cost_completion_rub: float = 0.0
@@ -367,6 +372,7 @@ async def evaluate(
                 escalated=outcome.escalated,
                 reason=outcome.reason,
                 answer=outcome.text,
+                raw=outcome.completion.text if outcome.completion else "",
                 completion_ms=outcome.completion.latency_ms if outcome.completion else 0,
                 answer_ms=answer_ms,
                 cost_completion_rub=outcome.completion.cost_rub if outcome.completion else 0.0,
@@ -595,58 +601,90 @@ class Report:
         return (*below, *above, *per_stratum)
 
 
+def _share(results: Sequence[CaseResult], flag: str) -> float:
+    """Mean of a boolean attribute over the cases that decide, given as an attribute name."""
+    return mean([1.0 if getattr(result, flag) else 0.0 for result in results])
+
+
 def _metrics(results: Sequence[CaseResult], *, generated: bool) -> dict[str, float]:
+    """Every metric this subset can carry, and no metric it cannot.
+
+    An absent metric and a zero metric are different statements: a stratum whose cases expect no
+    document has no recall to report, and ``mean([]) == 0.0`` used to make the table claim a total
+    retrieval failure in the injection and unanswerable strata.
+    """
+    metrics: dict[str, float] = {}
     failed = [result for result in results if result.error]
-    retrieval_cases = [result for result in results if result.case.expect_docs and not result.error]
-    metrics: dict[str, float] = {
-        "recall_at_5": mean([result.recall for result in retrieval_cases]),
-        "mrr": mean([result.rr for result in retrieval_cases]),
-    }
     if failed:
         metrics["case_errors"] = float(len(failed))
     answered = [result for result in results if not result.error]
-    # A case with a forbidden document checks confidentiality or validity, not recall: a leak
-    # makes the answer wrong even when the expected document was also retrieved.
-    guarded = [result for result in answered if result.case.expect_absent_docs]
-    if guarded:
-        metrics["leak_rate"] = mean([1.0 if result.leaked else 0.0 for result in guarded])
+    metrics |= _retrieval_metrics(results, answered)
     if not generated:
         return metrics
+    metrics |= _context_metrics(answered)
+    metrics |= _latency_metrics(answered)
+    metrics |= _escalation_metrics(answered)
+    metrics |= _answer_metrics(answered)
+    if answered:
+        metrics["cost_completion_rub"] = mean([result.cost_completion_rub for result in answered])
+    return metrics
 
-    # What the reranker kept out of the candidates the model was handed. Without this the report
-    # can show perfect retrieval while the answer fails because the reranker dropped the one
-    # document that held the fact.
-    context_cases = [
-        result for result in answered if result.case.expect_docs and result.context_docs
-    ]
-    if context_cases:
-        metrics["context_recall_at_5"] = mean([result.context_recall for result in context_cases])
-    fact_cases = [
-        result for result in context_cases if result.case.expect_contains and result.context_chunks
-    ]
-    if fact_cases:
+
+def _retrieval_metrics(
+    results: Sequence[CaseResult], answered: Sequence[CaseResult]
+) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    retrieval = [result for result in results if result.case.expect_docs and not result.error]
+    if retrieval:
+        metrics["recall_at_5"] = mean([result.recall for result in retrieval])
+        metrics["mrr"] = mean([result.rr for result in retrieval])
+    # A case with a forbidden document checks confidentiality or validity, not recall: a leak makes
+    # the answer wrong even when the expected document was also retrieved.
+    guarded = [result for result in answered if result.case.expect_absent_docs]
+    if guarded:
+        metrics["leak_rate"] = _share(guarded, "leaked")
+    return metrics
+
+
+def _context_metrics(answered: Sequence[CaseResult]) -> dict[str, float]:
+    """What the reranker kept out of the candidates the model was handed.
+
+    Without this the report can show perfect retrieval while the answer fails because the reranker
+    dropped the one document that held the fact.
+    """
+    metrics: dict[str, float] = {}
+    context = [result for result in answered if result.case.expect_docs and result.context_docs]
+    if context:
+        metrics["context_recall_at_5"] = mean([result.context_recall for result in context])
+    facts = [result for result in context if result.case.expect_contains and result.context_chunks]
+    if facts:
         metrics["context_fragment_coverage"] = mean(
-            [1.0 if not result.missing_fragments_in_context else 0.0 for result in fact_cases]
+            [1.0 if not result.missing_fragments_in_context else 0.0 for result in facts]
         )
+    return metrics
+
+
+def _latency_metrics(answered: Sequence[CaseResult]) -> dict[str, float]:
+    metrics: dict[str, float] = {}
     completion = [float(result.completion_ms) for result in answered if result.completion_ms]
     if completion:
         metrics["p95_completion_ms"] = percentile(completion, p=95)
     whole = [float(result.answer_ms) for result in answered if result.answer_ms]
     if whole:
         metrics["p95_answer_ms"] = percentile(whole, p=95)
-    metrics["citation_support"] = mean(
-        [1.0 if result.citation_supported else 0.0 for result in answered]
-    )
-    metrics["escalation_correctness"] = mean(
-        [1.0 if result.escalation_correct else 0.0 for result in answered]
-    )
+    return metrics
+
+
+def _escalation_metrics(answered: Sequence[CaseResult]) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    if answered:
+        metrics["citation_support"] = _share(answered, "citation_supported")
+        metrics["escalation_correctness"] = _share(answered, "escalation_correct")
     # The denominators are the cases that decide, not the whole set: a missed crisis is only
     # visible when the metric asks "of the cases that had to escalate, how many did".
-    expected_escalations = [result for result in answered if result.case.expect_escalation]
-    if expected_escalations:
-        metrics["escalation_recall"] = mean(
-            [1.0 if result.escalated else 0.0 for result in expected_escalations]
-        )
+    expected = [result for result in answered if result.case.expect_escalation]
+    if expected:
+        metrics["escalation_recall"] = _share(expected, "escalated")
     escalations = [result for result in answered if result.escalated]
     if escalations:
         metrics["escalation_precision"] = mean(
@@ -661,17 +699,17 @@ def _metrics(results: Sequence[CaseResult], *, generated: bool) -> dict[str, flo
         metrics["reason_accuracy"] = mean(
             [1.0 if result.reason == result.case.expect_reason else 0.0 for result in reasoned]
         )
-    content_cases = [result for result in answered if result.case.expect_contains]
-    if content_cases:
-        metrics["answer_contains"] = mean(
-            [1.0 if result.contains_expected else 0.0 for result in content_cases]
-        )
-    forbidden_cases = [result for result in answered if result.case.expect_not_contains]
-    if forbidden_cases:
-        metrics["answer_excludes"] = mean(
-            [1.0 if result.forbidden_clean else 0.0 for result in forbidden_cases]
-        )
-    metrics["cost_completion_rub"] = mean([result.cost_completion_rub for result in answered])
+    return metrics
+
+
+def _answer_metrics(answered: Sequence[CaseResult]) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    content = [result for result in answered if result.case.expect_contains]
+    if content:
+        metrics["answer_contains"] = _share(content, "contains_expected")
+    forbidden = [result for result in answered if result.case.expect_not_contains]
+    if forbidden:
+        metrics["answer_excludes"] = _share(forbidden, "forbidden_clean")
     return metrics
 
 
@@ -728,6 +766,12 @@ def case_record(result: CaseResult) -> dict[str, Any]:
         "completion_ms": result.completion_ms,
         "answer_ms": result.answer_ms,
         "cost_completion_rub": result.cost_completion_rub,
+        "raw": result.raw,
+        "citations": result.retrieved_citations,
+        "accepted_citations": result.accepted_citations,
+        # The answer itself, not only the verdicts about it. A failing ``contains_expected`` is
+        # undiagnosable without the text, and re-asking the model to read it costs money.
+        "answer": result.answer,
     }
 
 
@@ -747,6 +791,105 @@ def load_jsonl(path: Path) -> dict[str, dict[str, Any]]:
             raise GoldenSetError(f"{path}: every line needs a 'case' field")
         records[str(raw["case"])] = raw
     return records
+
+
+def merge_records(paths: Sequence[Path]) -> dict[str, dict[str, Any]]:
+    """One case map out of several artifacts, refusing to pick a winner between two answers.
+
+    A run split in parts is still one set: a case added after the main run is scored by its own
+    artifact. Two artifacts that both scored the same case are a different matter — which answer is
+    the run's answer is not a question a merge should answer quietly.
+    """
+    merged: dict[str, dict[str, Any]] = {}
+    origin: dict[str, Path] = {}
+    for path in paths:
+        for case_id, record in load_jsonl(path).items():
+            if case_id in merged:
+                raise RegradeError(
+                    f"{case_id}: scored twice, in {origin[case_id]} and in {path}. "
+                    "Merge refuses to choose which answer the run had."
+                )
+            merged[case_id] = record
+            origin[case_id] = path
+    return merged
+
+
+class RegradeError(ValueError):
+    """The artifact cannot answer the question that is being asked of it."""
+
+
+def _count(record: Mapping[str, Any], name: str) -> int:
+    return int(record.get(name) or 0)
+
+
+def _accepted_citations(record: Mapping[str, Any]) -> int:
+    """Older artifacts recorded only the verdict. A supported citation list means all of them."""
+    if "accepted_citations" in record:
+        return _count(record, "accepted_citations")
+    return _count(record, "citations") if record.get("citation_supported") else 0
+
+
+def regrade(
+    cases: Sequence[Case],
+    records: Mapping[str, Mapping[str, Any]],
+    *,
+    generated: bool = True,
+) -> tuple[CaseResult, ...]:
+    """Rebuild the verdicts from what a previous run recorded, without calling a provider.
+
+    Every judgement in :class:`CaseResult` is a property over the answer text, the documents the
+    model saw, and the retrieval list. All three are in the artifact, so changing a golden
+    expectation, a gate, or the aggregation does not need a paid run: it needs this function.
+
+    What it cannot redo, and does not pretend to: ``context_fragment_coverage`` (the chunk text is
+    not in the artifact) and the escalation decision itself (a model's judgement, not a text test).
+    Those come back only from a real run.
+    """
+    results: list[CaseResult] = []
+    for case in cases:
+        record = records.get(case.id)
+        if record is None:
+            results.append(
+                CaseResult(
+                    case=case,
+                    retrieved_docs=(),
+                    recall=0.0,
+                    rr=0.0,
+                    error="regrade: the case is absent from the artifact",
+                )
+            )
+            continue
+        answer = record.get("answer")
+        if generated and answer is None:
+            raise RegradeError(
+                f"{case.id}: the artifact has no answer text, so the verdicts cannot be "
+                "recomputed. Regrade an artifact written after answers were recorded, or "
+                "rerun the case."
+            )
+        retrieved = tuple(str(doc) for doc in record.get("retrieved") or ())
+        context = tuple(str(doc) for doc in record.get("context") or ())
+        results.append(
+            CaseResult(
+                case=case,
+                retrieved_docs=retrieved,
+                # Recomputed, not copied: the golden set is the input the numbers must follow.
+                recall=recall_at_k(case.expect_docs, retrieved, k=5),
+                rr=reciprocal_rank(case.expect_docs, retrieved),
+                leaked_docs=tuple(doc for doc in retrieved if doc in case.expect_absent_docs),
+                context_docs=context,
+                error=str(record.get("error") or ""),
+                retrieved_citations=_count(record, "citations"),
+                accepted_citations=_accepted_citations(record),
+                escalated=record.get("escalated"),
+                reason=record.get("reason"),
+                answer=None if answer is None else str(answer),
+                raw=str(record.get("raw") or ""),
+                completion_ms=int(record.get("completion_ms") or 0),
+                answer_ms=int(record.get("answer_ms") or 0),
+                cost_completion_rub=float(record.get("cost_completion_rub") or 0.0),
+            )
+        )
+    return tuple(results)
 
 
 def compare_records(

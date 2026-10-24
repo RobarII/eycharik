@@ -1,6 +1,6 @@
 ---
 name: pymax-user
-description: Работа с аккаунтом MAX через PyMax — неофициальный userbot API. Use when you need to read or act as a real MAX user account — listing chats, reading history, listening for events, sending messages to a chat by id, checking active sessions/devices — using the saved session in ~/.pymax. NOT for the product bot: apps/api uses the official MAX bot API (docs/contracts/max-api.md).
+description: "Работа с аккаунтом MAX через PyMax — неофициальный userbot API. Use when you need to read or act as a real MAX user account — listing chats, reading history, listening for events, sending messages to a chat by id, checking active sessions/devices — using the saved session in ~/.pymax. NOT for the product bot: apps/api uses the official MAX bot API (docs/contracts/max-api.md)."
 ---
 
 # PyMax: юзербот от лица живого аккаунта MAX

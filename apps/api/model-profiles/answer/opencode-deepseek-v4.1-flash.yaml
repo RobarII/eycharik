@@ -7,7 +7,10 @@ json_mode: true
 max_tokens_field: max_tokens
 # The model can reason; an onboarding answer is a lookup, and reasoning tokens are billed as output.
 reasoning_effort: none
-temperature: 0.2
+# Zero, not 0.2: the same question was answered on one run and refused for `no_sources` on another
+# (5 of 137 cases flipped), which moves `answer_contains` and `escalation_precision` by provider
+# noise. A lookup answer has nothing to be creative about.
+temperature: 0.0
 max_tokens: 700
 # Reasoning tokens are billed as output, so effort is off and the timeout stays generous: the
 # gate is p95 completion <= 8000 ms.

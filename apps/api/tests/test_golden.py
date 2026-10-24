@@ -128,8 +128,9 @@ MINIMUM_STRATUM_CASES = {
     "neardup": 3,
     "escalation": 3,
     "unanswerable": 3,
-    "morphology": 2,
-    "injection": 1,
+    "morphology": 6,
+    "multihop": 6,
+    "injection": 3,
 }
 # Bare digits and single tokens match a wrong answer (`3` matches `3 hours, 14 days`). The set
 # carries a few of them from before the rule existed; this list may only shrink.

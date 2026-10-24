@@ -26,6 +26,7 @@ from onboarding.evals.artifact import commit_hash
 from onboarding.evals.runner import (
     Case,
     GoldenSetError,
+    RegradeError,
     Report,
     baseline_json,
     baseline_refusal,
@@ -36,6 +37,8 @@ from onboarding.evals.runner import (
     load_baseline,
     load_cases,
     load_jsonl,
+    merge_records,
+    regrade,
     render_comparison,
     render_markdown,
     summarise,
@@ -85,6 +88,17 @@ def main(argv: list[str] | None = None) -> int:
         help="JSONL artifact of an earlier run; reports a paired bootstrap against it",
     )
     parser.add_argument(
+        "--regrade",
+        type=Path,
+        nargs="+",
+        default=None,
+        help=(
+            "recompute the verdicts of earlier artifacts without calling a provider; several files "
+            "are merged, which is how a run split into parts (a new case added later) is scored "
+            "as one set"
+        ),
+    )
+    parser.add_argument(
         "--fail-on-regression",
         action="store_true",
         help="exit non-zero when a compared metric regressed with the interval excluding zero",
@@ -106,7 +120,36 @@ def main(argv: list[str] | None = None) -> int:
             print(f"unknown case ids: {', '.join(unknown)}", file=sys.stderr)
             return 2
         cases = tuple(case for case in cases if case.id in set(wanted))
+    if args.regrade is not None:
+        return _regrade(args, cases)
     return asyncio.run(_run(args, cases))
+
+
+def _regrade(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
+    """Re-score a stored artifact. No database, no provider, no money: only the aggregation."""
+    settings = Settings()
+    records = merge_records(args.regrade)
+    try:
+        results = regrade(cases, records)
+    except RegradeError as error:
+        print(f"regrade error: {error}", file=sys.stderr)
+        return 2
+    report = summarise(
+        results,
+        generated=not args.retrieval_only,
+        baseline=load_baseline(args.baseline) if args.baseline else None,
+        personal_data=personal_data_contour(settings),
+    )
+    print(_console_table(report))
+    print(_console_strata(report))
+    comparison: tuple[PairedDelta, ...] = ()
+    if args.compare is not None:
+        comparison = _compare(args.compare, report)
+        print("\ncomparison against " + str(args.compare))
+        print(render_comparison(comparison))
+    if args.write:
+        _write(report, args, settings, datetime.now(UTC).date(), comparison)
+    return 1 if report.failures else 0
 
 
 async def _run(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
@@ -223,6 +266,8 @@ def _write(
 ) -> None:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     scope = "retrieval" if args.retrieval_only else "full"
+    if getattr(args, "regrade", None) is not None:
+        scope = "regrade"
     suffix = f"-{args.label}" if args.label else ""
     stem = f"{on_date.isoformat()}-eval-{scope}{suffix}"
     path = args.out_dir / f"{stem}.md"
@@ -230,6 +275,12 @@ def _write(
     write_jsonl(report, artifact)
     command = " ".join(["python -m onboarding.evals", *sys.argv[1:]]).strip()
     note = args.note.strip() or None
+    if getattr(args, "regrade", None) is not None:
+        note = (
+            "пересчёт артефакта: вызовов провайдера нет, вердикты по тексту ответа пересчитаны, "
+            "`context_fragment_coverage` в пересчёте отсутствует"
+            + (f"; {note}" if note else "")
+        )
     if settings.llm_provider == "extractive":
         note = (
             "the offline extractive provider returns zero latency and cost by construction; "

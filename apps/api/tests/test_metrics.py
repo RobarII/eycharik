@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from onboarding.core.metrics import mean, percentile, recall_at_k, reciprocal_rank
@@ -7,8 +9,12 @@ from onboarding.evals.runner import (
     MAXIMUMS,
     Case,
     CaseResult,
+    RegradeError,
     Report,
     _render_metrics,
+    _render_strata,
+    merge_records,
+    regrade,
     summarise,
 )
 
@@ -226,3 +232,188 @@ def test_an_answer_without_a_citation_does_not_pass_citation_support() -> None:
 
     assert summarise((uncited,), generated=True).metrics["citation_support"] == 0.0
     assert summarise((cited,), generated=True).metrics["citation_support"] == 1.0
+
+
+def test_a_stratum_without_documents_reports_no_recall_instead_of_zero() -> None:
+    """``mean([]) == 0.0`` used to make "no such case" read as "total retrieval failure".
+
+    The injection and unanswerable strata expect no document at all, so their recall is not zero —
+    it does not exist. The table renders an absent metric as "-".
+    """
+    case = Case(
+        id="refuse",
+        question="q",
+        audience="all",
+        expect_docs=(),
+        expect_contains=(),
+        expect_escalation=True,
+        expect_reason="no_sources",
+        stratum="unanswerable",
+    )
+    result = CaseResult(
+        case=case, retrieved_docs=(), recall=1.0, rr=0.0, escalated=True, reason="no_sources"
+    )
+
+    report = summarise((result,), generated=True)
+
+    assert "recall_at_5" not in report.strata["unanswerable"]
+    assert "mrr" not in report.strata["unanswerable"]
+    assert _render_strata(report)[-1].endswith("| - | 1.00 | - |")
+
+
+def test_a_stratum_metric_that_exists_is_still_reported() -> None:
+    case = Case(
+        id="fact",
+        question="q",
+        audience="all",
+        expect_docs=("a",),
+        expect_contains=(),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    result = CaseResult(case=case, retrieved_docs=("a",), recall=1.0, rr=1.0)
+
+    report = summarise((result,), generated=False)
+
+    assert report.strata["fact"]["recall_at_5"] == 1.0
+
+
+def test_regrade_recomputes_the_verdicts_from_the_recorded_answer() -> None:
+    """A golden set that changes must move the numbers without a provider call."""
+    case = Case(
+        id="leave",
+        question="q",
+        audience="all",
+        expect_docs=("a",),
+        expect_contains=("14 календарных дней",),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    records = {
+        "leave": {
+            "case": "leave",
+            "retrieved": ["a"],
+            "context": ["a"],
+            "answer": "До 14 календарных дней в год.",
+            "escalated": False,
+            "reason": "answered",
+            "citations": 1,
+            "accepted_citations": 1,
+        }
+    }
+
+    graded = regrade((case,), records)
+
+    assert graded[0].contains_expected is True
+    assert graded[0].recall == 1.0
+    assert graded[0].case.expect_contains == ("14 календарных дней",)
+
+
+def test_regrade_follows_a_changed_golden_expectation() -> None:
+    case = Case(
+        id="leave",
+        question="q",
+        audience="all",
+        expect_docs=("b",),
+        expect_contains=("21 день",),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    records = {
+        "leave": {
+            "case": "leave",
+            "retrieved": ["a"],
+            "context": ["a"],
+            "answer": "До 14 календарных дней в год.",
+            "escalated": False,
+            "reason": "answered",
+            "citations": 1,
+            "accepted_citations": 1,
+        }
+    }
+
+    graded = regrade((case,), records)
+
+    assert graded[0].recall == 0.0
+    assert graded[0].contains_expected is False
+
+
+def test_regrade_refuses_an_artifact_without_answers() -> None:
+    """Old artifacts recorded verdicts, not text: recomputing them would be a guess."""
+    case = Case(
+        id="leave",
+        question="q",
+        audience="all",
+        expect_docs=(),
+        expect_contains=("14 дней",),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    records = {"leave": {"case": "leave", "retrieved": [], "context": []}}
+
+    with pytest.raises(RegradeError, match="no answer text"):
+        regrade((case,), records)
+
+
+def test_regrade_counts_a_case_that_the_golden_set_gained_as_an_error() -> None:
+    case = Case(
+        id="new",
+        question="q",
+        audience="all",
+        expect_docs=(),
+        expect_contains=(),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+
+    report = summarise(regrade((case,), {}), generated=True)
+
+    assert report.metrics["case_errors"] == 1.0
+    assert "case_errors" in report.failures
+
+
+def test_regrade_keeps_a_supported_citation_supported() -> None:
+    case = Case(
+        id="leave",
+        question="q",
+        audience="all",
+        expect_docs=(),
+        expect_contains=("14 дней",),
+        expect_escalation=False,
+        expect_reason=None,
+    )
+    record = {
+        "case": "leave",
+        "retrieved": ["a"],
+        "context": ["a"],
+        "answer": "14 дней.",
+        "escalated": False,
+        "reason": "answered",
+        "citations": 2,
+        "accepted_citations": 2,
+    }
+
+    assert regrade((case,), {"leave": record})[0].citation_supported is True
+
+
+def test_merging_two_artifacts_keeps_both_halves(tmp_path: Path) -> None:
+    """A run split in parts is one set: a case added later is scored by its own artifact."""
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    first.write_text('{"case": "a", "answer": "x"}\n', encoding="utf-8")
+    second.write_text('{"case": "b", "answer": "y"}\n', encoding="utf-8")
+
+    merged = merge_records((first, second))
+
+    assert sorted(merged) == ["a", "b"]
+
+
+def test_merging_refuses_to_choose_between_two_answers(tmp_path: Path) -> None:
+    """Two artifacts that scored the same case are not a merge: one of them is the wrong run."""
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    first.write_text('{"case": "a", "answer": "x"}\n', encoding="utf-8")
+    second.write_text('{"case": "a", "answer": "y"}\n', encoding="utf-8")
+
+    with pytest.raises(RegradeError, match="scored twice"):
+        merge_records((first, second))

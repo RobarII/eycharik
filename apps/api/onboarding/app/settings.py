@@ -225,8 +225,9 @@ class Settings(BaseSettings):
             raise ValueError("EMBED_TIMEOUT_S must be positive")
 
     def _check_sentiment(self) -> None:
-        if self.sentiment_provider == "decisions" and not self.classify_api_key.get_secret_value():
-            raise ValueError("SENTIMENT_PROVIDER=decisions requires CLASSIFY_API_KEY")
+        # The credential belongs to the family, not to the provider name: a local decisions model
+        # behind a sidecar has no key to configure (ADR 0037), so the check happens where the
+        # profile is loaded, in ``build_sentiment``, and not here.
         if self.classify_profile and not _PROFILE_NAME.fullmatch(self.classify_profile):
             raise ValueError("CLASSIFY_PROFILE must match [a-z0-9][a-z0-9._-]*")
         if self.sentiment_rubric and not _RUBRIC_SELECTOR.fullmatch(self.sentiment_rubric):

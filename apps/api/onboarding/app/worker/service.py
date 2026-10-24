@@ -17,6 +17,7 @@ from onboarding.core.models import (
     Action,
     ActionKind,
     Address,
+    CancelReminder,
     EmployeeId,
     Event,
     EventKind,
@@ -29,7 +30,7 @@ from onboarding.core.models import (
     Transition,
 )
 from onboarding.core.risk import assess, keyword_signal, scale_signal
-from onboarding.core.transitions import advance, replay, start
+from onboarding.core.transitions import advance, jump, replay, resume_scheduled, start
 from onboarding.ports import (
     AuditLog,
     Clock,
@@ -99,7 +100,12 @@ class OnboardingService:
         transition = start(scenario, RunId(str(uuid4())), employee_id, now)
         try:
             await self._runs.create(
-                StoredRun(state=transition.state, reminder=transition.reminder, address=address)
+                StoredRun(
+                    state=transition.state,
+                    reminder=transition.reminder,
+                    address=address,
+                    scheduled=transition.scheduled,
+                )
             )
         except RunAlreadyActiveError:
             await self._audit.record("run_creation_raced", employee_id=str(employee_id))
@@ -117,13 +123,18 @@ class OnboardingService:
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
         employee_id = stored.state.employee_id
         now = self._now()
-        transition = replay(scenario, stored.state, now)
+        transition = (
+            resume_scheduled(scenario, stored.state, now)
+            if stored.scheduled is not None
+            else replay(scenario, stored.state, now)
+        )
         await self._runs.save(
             StoredRun(
                 state=transition.state,
                 reminder=transition.reminder,
                 address=address,
                 active=True,
+                scheduled=transition.scheduled,
             )
         )
         if stored.address != address:
@@ -139,12 +150,22 @@ class OnboardingService:
         await self._act(transition.actions, address, employee_id, now.date(), question=None)
         return ServiceResult(handled=True)
 
-    async def handle(
+    async def handle(  # noqa: PLR0911 - explicit command branches are easier to audit
         self,
         employee_id: EmployeeId,
         address: Address,
         event: Event,
     ) -> ServiceResult:
+        now = self._now()
+        command = _command(event.text)
+        # These two commands must work even before there is an active run: /reboot is what makes a
+        # demo account look new again, and /start is still the normal entry point.
+        if event.kind is EventKind.MESSAGE_RECEIVED:
+            if command == "/reboot":
+                return await self.reboot(employee_id, address)
+            if command == "/start":
+                return await self.start(employee_id, address)
+
         stored = await self._runs.find_active_by_employee(employee_id)
         if stored is None:
             await self._audit.record("event_without_run", employee_id=str(employee_id))
@@ -153,11 +174,9 @@ class OnboardingService:
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
         # Reminders are scheduled from processing time, never from a delivery timestamp: a retried
         # update can be hours old, and a timeout due in the past would escalate immediately.
-        now = self._now()
-        command = _command(event.text)
+        if command == "/nextstage":
+            return await self.next_stage(employee_id, address)
         if event.kind is EventKind.MESSAGE_RECEIVED and command is not None:
-            if command == "/start":
-                return await self.start(employee_id, address)
             await self._audit.record(
                 "command_handled", employee_id=str(employee_id), command=command
             )
@@ -174,6 +193,32 @@ class OnboardingService:
                 question=None,
             )
             return ServiceResult(handled=True)
+        if event.kind is EventKind.BUTTON_PRESSED and event.button_id in {
+            "hr_continue",
+            "hr_ask",
+        }:
+            if event.button_id == "hr_continue":
+                return await self.next_stage(employee_id, address)
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=self._executor.ask_question_text()),),
+                address,
+                employee_id,
+                now.date(),
+                question=None,
+            )
+            return ServiceResult(handled=True)
+        if stored.scheduled is not None:
+            # The user wrote before the stage was shown. Do not apply that text to a send step:
+            # ``advance`` would reject it and the job would be retried forever. Commands above
+            # still work, so /nextStage and /reboot remain the escape hatches.
+            await self._audit.record(
+                "event_while_scheduled",
+                employee_id=str(employee_id),
+                step=stored.scheduled.step_id,
+                event=event.kind.value,
+            )
+            return ServiceResult(handled=True)
+
         event_at = event.at if event.at.tzinfo is not None else event.at.replace(tzinfo=UTC)
         effective = event if event_at >= now else replace(event, at=now)
         transition = advance(scenario, stored.state, effective)
@@ -181,12 +226,18 @@ class OnboardingService:
         # The person may answer from any linked messenger. The run follows them: replies and the
         # next reminder go to the address they just used (ADR 0019).
         moved = stored.address != address
+        scheduled = transition.scheduled
+        if scheduled is None and transition.state.step_id == stored.state.step_id:
+            # An idle answer or a repeated question must not cancel a stage that is already
+            # waiting for its due time.
+            scheduled = stored.scheduled
         await self._runs.save(
             StoredRun(
                 state=transition.state,
                 reminder=transition.reminder,
                 address=address,
                 active=not completed,
+                scheduled=scheduled,
             )
         )
         if moved:
@@ -218,6 +269,111 @@ class OnboardingService:
             question=event.text,
         )
         return ServiceResult(handled=True, escalated=escalated, completed=completed)
+
+    async def reboot(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
+        """Close the current run and make the same person start from the welcome again.
+
+        This is a demo command, not an HR action: it exists so a reviewer can show a clean first
+        launch without editing the database. The old run stays in the audit trail as completed.
+        """
+        stored = await self._runs.find_active_by_employee(employee_id)
+        if stored is not None:
+            await self._runs.save(
+                StoredRun(
+                    state=stored.state,
+                    reminder=CancelReminder(),
+                    address=stored.address,
+                    active=False,
+                    scheduled=None,
+                )
+            )
+            await self._audit.record("run_rebooted", employee_id=str(employee_id))
+        return await self.start(employee_id, address)
+
+    async def next_stage(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
+        """Move to the next timeline stage now (demo-only ``/nextStage``)."""
+        stored = await self._runs.find_active_by_employee(employee_id)
+        if stored is None:
+            await self._audit.record("event_without_run", employee_id=str(employee_id))
+            return ServiceResult(handled=False)
+        scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
+        target = _next_stage_target(scenario, stored)
+        now = self._now()
+        if target is None:
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=self._executor.no_next_stage_text()),),
+                address,
+                employee_id,
+                now.date(),
+                question=None,
+            )
+            return ServiceResult(handled=True)
+        transition = jump(scenario, stored.state, target, now)
+        completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
+        await self._runs.save(
+            StoredRun(
+                state=transition.state,
+                reminder=transition.reminder,
+                address=address,
+                active=not completed,
+                scheduled=transition.scheduled,
+            )
+        )
+        await self._audit.record(
+            "stage_skipped",
+            employee_id=str(employee_id),
+            previous_step=stored.state.step_id,
+            step=transition.state.step_id,
+        )
+        await self._act(
+            transition.actions,
+            address,
+            employee_id,
+            now.date(),
+            question=None,
+        )
+        return ServiceResult(handled=True, completed=completed)
+
+    async def resume_scheduled(self, run_id: RunId, step_id: str) -> ServiceResult:
+        """Emit a step whose delay elapsed, if the run is still waiting on that exact step."""
+        stored = await self._runs.load(run_id)
+        if stored is None or not stored.active:
+            return ServiceResult(handled=False)
+        if stored.state.step_id != step_id:
+            await self._audit.record(
+                "scheduled_step_stale",
+                run_id=str(run_id),
+                expected=step_id,
+                actual=stored.state.step_id,
+            )
+            return ServiceResult(handled=False)
+        scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
+        now = self._now()
+        transition = resume_scheduled(scenario, stored.state, now)
+        completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
+        await self._runs.save(
+            StoredRun(
+                state=transition.state,
+                reminder=transition.reminder,
+                address=stored.address,
+                active=not completed,
+                scheduled=transition.scheduled,
+            )
+        )
+        await self._audit.record(
+            "scheduled_step_sent",
+            employee_id=str(stored.state.employee_id),
+            step=step_id,
+            due=True,
+        )
+        await self._act(
+            transition.actions,
+            stored.address,
+            stored.state.employee_id,
+            now.date(),
+            question=None,
+        )
+        return ServiceResult(handled=True, completed=completed)
 
     async def _assess_survey(
         self,
@@ -323,3 +479,34 @@ def _command(text: str | None) -> str | None:
     if not token.startswith("/"):
         return None
     return token.split("@", 1)[0].lower()
+
+
+def _next_stage_target(scenario: Scenario, stored: StoredRun) -> str | None:
+    """The next step a demo should show, preferring a real delayed stage boundary."""
+    if stored.scheduled is not None:
+        return stored.scheduled.step_id
+    target = _following_step(scenario.step(stored.state.step_id))
+    seen: set[str] = set()
+    fallback: str | None = None
+    while target is not None and target not in seen:
+        seen.add(target)
+        step = scenario.step(target)
+        if fallback is None:
+            fallback = target
+        if step.delay is not None or step.kind in {"wait", "survey", "terminal"}:
+            return target
+        target = _following_step(step)
+    return fallback
+
+
+def _following_step(step: object) -> str | None:
+    next_step = getattr(step, "next_step", None)
+    if next_step is not None:
+        return str(next_step)
+    routes = getattr(step, "routes", {})
+    if not routes:
+        return None
+    for key in ("default", "ready", "access_ok", "tone_formal", "tone_you", "done", "yes"):
+        if key in routes:
+            return str(routes[key])
+    return str(next(iter(routes.values())))

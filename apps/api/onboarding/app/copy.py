@@ -27,6 +27,8 @@ class Copy:
     completion: str
     help: str = ""
     unknown_command: str = ""
+    ask_question: str = ""
+    no_next_stage: str = ""
 
     def escalation_for(self, reason: EscalationReason) -> str:
         try:
@@ -61,6 +63,8 @@ def load_copy(path: Path) -> Copy:
         completion=completion,
         help=_text(raw, "help", path),
         unknown_command=_text(raw, "unknown_command", path),
+        ask_question=_text(raw, "ask_question", path),
+        no_next_stage=_text(raw, "no_next_stage", path),
     )
 
 

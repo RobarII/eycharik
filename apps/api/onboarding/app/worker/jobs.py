@@ -10,12 +10,12 @@ from collections.abc import Mapping
 from datetime import datetime
 
 from onboarding.app.files.intake import InboundFileIntake
-from onboarding.app.jobs import EXTRACT_DOCUMENT, INDEX_DOCUMENT, MESSAGE, START, TIMEOUT
+from onboarding.app.jobs import EXTRACT_DOCUMENT, INDEX_DOCUMENT, MESSAGE, SEND_STEP, START, TIMEOUT
 from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.index import DocumentIndexer
 from onboarding.app.worker.payload import JobPayloadError
 from onboarding.app.worker.service import OnboardingService
-from onboarding.core.models import Address, Channel, ChatId, EmployeeId, Event, EventKind
+from onboarding.core.models import Address, Channel, ChatId, EmployeeId, Event, EventKind, RunId
 from onboarding.ports import AuditLog, Clock, InboundFile, JobSink
 
 
@@ -63,6 +63,11 @@ class JobRunner:
             return
         if kind == INDEX_DOCUMENT:
             await self._indexer.run(payload)
+            return
+        if kind == SEND_STEP:
+            await self._service.resume_scheduled(
+                RunId(_text(payload, "run_id")), _text(payload, "step_id")
+            )
             return
         employee_id = EmployeeId(_text(payload, "employee_id"))
         address = Address(

@@ -10,6 +10,7 @@ from sqlalchemy import func, update
 
 from onboarding.app.db.models import JobRow, RunRow
 from onboarding.app.db.session import Database
+from onboarding.app.jobs import SEND_STEP
 
 
 class ReminderScheduler:
@@ -43,4 +44,38 @@ class ReminderScheduler:
                         },
                     )
                 )
-        return len(rows)
+
+            due_sends = (
+                update(RunRow)
+                .where(
+                    RunRow.status == "active",
+                    RunRow.next_send_at.is_not(None),
+                    RunRow.next_send_at <= func.now(),
+                )
+                .values(next_send_at=None)
+                .returning(
+                    RunRow.id,
+                    RunRow.employee_id,
+                    RunRow.channel,
+                    RunRow.chat_id,
+                    RunRow.next_send_step,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            send_rows = (await session.execute(due_sends)).all()
+            for run_id, employee_id, channel, chat_id, step_id in send_rows[: self._batch]:
+                if step_id is None:
+                    continue
+                session.add(
+                    JobRow(
+                        kind=SEND_STEP,
+                        payload={
+                            "run_id": str(run_id),
+                            "employee_id": employee_id,
+                            "channel": channel,
+                            "chat_id": chat_id,
+                            "step_id": step_id,
+                        },
+                    )
+                )
+        return len(rows) + len(send_rows)

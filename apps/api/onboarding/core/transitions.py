@@ -27,6 +27,7 @@ from .models import (
     ReminderPlan,
     RunId,
     Scenario,
+    ScheduledEntry,
     ScheduleReminder,
     Step,
     StepKind,
@@ -78,6 +79,28 @@ def replay(scenario: Scenario, state: StepState, now: datetime) -> Transition:
     return _enter(scenario, state, now)
 
 
+def resume_scheduled(scenario: Scenario, state: StepState, now: datetime) -> Transition:
+    """Emit a step whose delay has elapsed, then continue until the next wait or delay."""
+    return _enter(scenario, state, now, force_step=state.step_id)
+
+
+def jump(scenario: Scenario, state: StepState, target: str, now: datetime) -> Transition:
+    """Move to ``target`` immediately; used by the demo-only ``/nextStage`` command.
+
+    The current step is marked completed so the cabinet still tells the truth about what the run
+    has passed. The target's own delay is ignored once, then normal delays apply again.
+    """
+    if target == state.step_id:
+        return _enter(scenario, state, now, force_step=target)
+    stepped = replace(
+        state,
+        step_id=target,
+        entered_at=now,
+        completed_steps=(*state.completed_steps, state.step_id),
+    )
+    return _enter(scenario, stepped, now, force_step=target)
+
+
 def advance(scenario: Scenario, state: StepState, event: Event) -> Transition:
     """Apply one event to one run."""
     if state.scenario_id != scenario.id or state.scenario_version != scenario.version:
@@ -112,13 +135,32 @@ def _on_event(scenario: Scenario, state: StepState, event: Event) -> Transition:
             return _on_file(scenario, state, event)
 
 
-def _enter(scenario: Scenario, state: StepState, now: datetime) -> Transition:
+def _enter(
+    scenario: Scenario,
+    state: StepState,
+    now: datetime,
+    *,
+    force_step: str | None = None,
+) -> Transition:
     actions: list[Action] = []
     completed = list(state.completed_steps)
     current = state
 
     for _ in range(MAX_SEND_CHAIN):
         step = scenario.step(current.step_id)
+        forced = step.id == force_step
+        if forced:
+            # The scheduler or /nextStage has already waited for this step; do not schedule it
+            # again. The next step may still carry its own delay.
+            force_step = None
+            current = replace(current, entered_at=now)
+        if step.delay is not None and not forced:
+            return Transition(
+                state=replace(current, completed_steps=tuple(completed)),
+                actions=tuple(actions),
+                reminder=KeepReminder(),
+                scheduled=ScheduledEntry(step_id=step.id, due_at=now + step.delay),
+            )
         if step.kind is StepKind.SEND:
             actions.append(
                 Action(
@@ -376,12 +418,12 @@ def _on_button(scenario: Scenario, state: StepState, event: Event) -> Transition
 
 def _on_message(scenario: Scenario, state: StepState, event: Event) -> Transition:
     step = scenario.step(state.step_id)
-    if step.expects is Expects.MESSAGE and not is_question(event.text):
+    if step.expects is Expects.MESSAGE and is_confirmation(event.text):
         target = step.routes.get("default")
         if target is not None:
             return _leave(scenario, state, target, event.at)
-    # A question is never a step acknowledgement. Otherwise asking "а как оформить отпуск?"
-    # would silently advance the scenario and leave the newcomer without an answer.
+    # Free text is not a button. A problem report or a question must reach the assistant, not be
+    # mistaken for "готово" and skip the next month of the timeline.
     return _idle(state, ActionKind.ANSWER)
 
 
@@ -426,6 +468,44 @@ def is_question(text: str | None) -> bool:
         "объясните",
     )
     return normalized.startswith(starts)
+
+
+_CONFIRMATIONS = (
+    "готово",
+    "готов",
+    "отправил",
+    "отправила",
+    "отдал",
+    "отдала",
+    "передал",
+    "передала",
+    "сделал",
+    "сделала",
+    "понятно",
+    "понял",
+    "поняла",
+    "продолжить",
+    "продолжай",
+    "да",
+    "ок",
+    "ok",
+)
+_NEGATIVE_CONFIRMATIONS = ("не готов", "не отдал", "не отправил", "не передал", "пока нет")
+
+
+def is_confirmation(text: str | None) -> bool:
+    """True only for an explicit acknowledgement, never for an arbitrary message.
+
+    The old rule treated every non-question as a confirmation. That is how "не включается
+    компьютер" moved a run from access help through the whole first day and into the two-week
+    survey. The list is intentionally conservative; a problem report goes to the answerer instead.
+    """
+    if not text:
+        return False
+    normalized = " ".join(text.lower().replace("ё", "е").split())
+    if any(phrase in normalized for phrase in _NEGATIVE_CONFIRMATIONS):
+        return False
+    return any(word in normalized.split() for word in _CONFIRMATIONS)
 
 
 def _on_file(scenario: Scenario, state: StepState, event: Event) -> Transition:

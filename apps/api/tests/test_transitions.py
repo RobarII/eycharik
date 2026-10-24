@@ -16,6 +16,7 @@ from onboarding.core.models import (
     Outcome,
     RunId,
     Scenario,
+    ScheduledEntry,
     ScheduleReminder,
     StepState,
     SurveyAnswer,
@@ -26,7 +27,9 @@ from onboarding.core.transitions import (
     ScenarioRunError,
     StepCycleError,
     advance,
+    is_confirmation,
     is_question,
+    resume_scheduled,
     start,
 )
 
@@ -151,6 +154,56 @@ def test_timeout_escalates_without_moving_the_run(scenario: Scenario) -> None:
     assert transition.actions[0].reason is EscalationReason.TIMEOUT
     assert transition.state.step_id == "documents"
     assert isinstance(transition.reminder, CancelReminder)
+
+
+def test_delayed_step_is_selected_but_not_sent_until_due() -> None:
+    document = scenario_document()
+    document["steps"][1]["delay_hours"] = 24
+    scenario = parse_scenario(document)
+
+    started = start(scenario, RunId("run-1"), "employee-1", NOW)
+
+    assert [action.text for action in started.actions] == ["Добро пожаловать в компанию."]
+    assert started.state.step_id == "checklist"
+    assert started.scheduled == ScheduledEntry(
+        step_id="checklist", due_at=NOW + timedelta(hours=24)
+    )
+
+    due = resume_scheduled(scenario, started.state, started.scheduled.due_at)
+
+    assert [action.text for action in due.actions] == ["Отметьте первый день."]
+    assert due.state.step_id == "checklist"
+    assert due.scheduled is None
+    assert isinstance(due.reminder, ScheduleReminder)
+
+
+def test_problem_text_is_not_a_step_confirmation() -> None:
+    document = scenario_document()
+    scenario = parse_scenario(document)
+    state = StepState(
+        run_id=RunId("run-1"),
+        employee_id="employee-1",
+        scenario_id=scenario.id,
+        scenario_version=scenario.version,
+        step_id="documents",
+        entered_at=NOW,
+    )
+
+    transition = advance(
+        scenario,
+        state,
+        Event(
+            kind=EventKind.MESSAGE_RECEIVED,
+            at=NOW,
+            text="Не включается компьютер",
+        ),
+    )
+
+    assert transition.state == state
+    assert [action.kind for action in transition.actions] == [ActionKind.ANSWER]
+    assert is_confirmation("готово")
+    assert is_confirmation("Я всё уже отдал")
+    assert not is_confirmation("Не включается компьютер")
 
 
 def test_timeout_can_move_to_the_next_step() -> None:

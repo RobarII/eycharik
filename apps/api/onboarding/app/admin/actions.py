@@ -34,6 +34,13 @@ from onboarding.core.models import Address, Channel, ChatId
 from onboarding.core.retention import redact_fields
 from onboarding.ports import Clock
 
+HR_REPLY_KEYBOARD = [
+    [
+        {"id": "hr_continue", "text": "Продолжить"},
+        {"id": "hr_ask", "text": "Ещё вопрос"},
+    ]
+]
+
 
 class QuestionNotFoundError(Exception):
     """The question does not exist or belongs to an employee outside the caller's scope."""
@@ -223,7 +230,16 @@ class QuestionResolver:
                 raise QuestionAlreadyResolvedError(f"question {question_id} already resolved")
 
             session.add(
-                MessageRow(channel=row.channel, chat_id=row.chat_id, text=text)
+                MessageRow(
+                    channel=row.channel,
+                    chat_id=row.chat_id,
+                    text=(
+                        f"HR ответил на ваш вопрос:\n«{row.text}»\n\n{text}\n\n"
+                        "Чтобы продолжить, нажмите «Продолжить» или отправьте /nextStage. "
+                        "Если остались вопросы — нажмите «Ещё вопрос» или просто напишите их."
+                    ),
+                    keyboard=HR_REPLY_KEYBOARD,
+                )
             )
             session.add(
                 AuditRow(

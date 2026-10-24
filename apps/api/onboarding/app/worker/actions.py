@@ -56,6 +56,12 @@ class ActionExecutor:
     def unknown_command_text(self) -> str:
         return self._copy.unknown_command
 
+    def ask_question_text(self) -> str:
+        return self._copy.ask_question
+
+    def no_next_stage_text(self) -> str:
+        return self._copy.no_next_stage
+
     async def execute(self, action: Action, context: ActionContext) -> None:
         match action.kind:
             case ActionKind.SEND:

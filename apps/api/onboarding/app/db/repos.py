@@ -24,6 +24,7 @@ from onboarding.core.models import (
     KeepReminder,
     ReminderPlan,
     RunId,
+    ScheduledEntry,
     ScheduleReminder,
     StepState,
     SurveyAnswer,
@@ -55,6 +56,7 @@ class SqlRunRepository:
                 tone=state.tone.value,
                 status="active" if run.active else "completed",
                 **_reminder_columns(run.reminder),
+                **_scheduled_columns(run.scheduled),
             )
         )
         try:
@@ -84,6 +86,7 @@ class SqlRunRepository:
                 tone=state.tone.value,
                 status="active" if run.active else "completed",
                 **_reminder_columns(run.reminder),
+                **_scheduled_columns(run.scheduled),
             )
         )
 
@@ -138,6 +141,7 @@ def _stored_run(row: RunRow) -> StoredRun:
         reminder=_reminder(row),
         address=Address(channel=Channel(row.channel), chat_id=ChatId(row.chat_id)),
         active=row.status == "active",
+        scheduled=_scheduled(row),
     )
 
 
@@ -189,6 +193,18 @@ def _reminder(row: RunRow) -> ReminderPlan:
         step_id=row.step_id,
         action=TimeoutAction(row.reminder_action or TimeoutAction.REMIND),
     )
+
+
+def _scheduled_columns(scheduled: ScheduledEntry | None) -> dict[str, object]:
+    if scheduled is None:
+        return {"next_send_at": None, "next_send_step": None}
+    return {"next_send_at": scheduled.due_at, "next_send_step": scheduled.step_id}
+
+
+def _scheduled(row: RunRow) -> ScheduledEntry | None:
+    if row.next_send_at is None or row.next_send_step is None:
+        return None
+    return ScheduledEntry(step_id=row.next_send_step, due_at=row.next_send_at)
 
 
 class SqlEventDeduper:

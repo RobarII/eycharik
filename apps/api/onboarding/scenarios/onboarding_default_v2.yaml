@@ -49,6 +49,7 @@ steps:
       action: remind
 
   - id: day_before
+    delay_hours: 24
     image: reminder.jpg
     kind: wait
     title: Готовность к первому дню
@@ -70,6 +71,7 @@ steps:
       action: remind
 
   - id: first_day
+    delay_hours: 24
     image: party.jpg
     kind: send
     title: Первый день
@@ -82,6 +84,7 @@ steps:
     next: access_check
 
   - id: access_check
+    delay_hours: 1
     image: support.jpg
     kind: wait
     title: Проверка доступов
@@ -108,8 +111,8 @@ steps:
     kind: wait
     title: Проблема с доступами
     message: >-
-      Напишите, пожалуйста, что именно не открывается и какую ошибку видите. Я передам заявку
-      в ИТ-поддержку и вернусь с ответом.
+      Напишите, пожалуйста, что именно не открывается и какую ошибку видите. Я передам вопрос
+      в HR и поддержку и вернусь с ответом.
     expects: message
     routes:
       default: territory_map
@@ -119,6 +122,7 @@ steps:
       next: territory_map
 
   - id: territory_map
+    delay_hours: 1
     kind: send
     title: Территория
     message: >-
@@ -127,6 +131,7 @@ steps:
     next: lunch
 
   - id: lunch
+    delay_hours: 0.5
     image: lunch.jpg
     kind: send
     title: Обед
@@ -136,6 +141,7 @@ steps:
     next: contacts
 
   - id: contacts
+    delay_hours: 0.5
     image: contacts.jpg
     kind: send
     title: Контакты
@@ -145,6 +151,7 @@ steps:
     next: presentation
 
   - id: presentation
+    delay_hours: 2
     kind: send
     title: О компании
     message: >-
@@ -153,6 +160,7 @@ steps:
     next: first_day_end
 
   - id: first_day_end
+    delay_hours: 3
     image: progress.jpg
     kind: send
     title: Итог первого дня
@@ -162,6 +170,7 @@ steps:
     next: day_three_plan
 
   - id: day_three_plan
+    delay_hours: 48
     image: calm.jpg
     kind: send
     title: План адаптации
@@ -171,6 +180,7 @@ steps:
     next: day_three_survey
 
   - id: day_three_survey
+    delay_hours: 1
     image: questions.jpg
     kind: survey
     title: Опрос третьего дня
@@ -202,6 +212,7 @@ steps:
       action: remind
 
   - id: week_two_plan
+    delay_hours: 264
     image: calm.jpg
     kind: send
     title: Вторая неделя
@@ -211,6 +222,7 @@ steps:
     next: week_two_survey
 
   - id: week_two_survey
+    delay_hours: 1
     kind: survey
     title: Опрос двух недель
     message: >-
@@ -218,7 +230,7 @@ steps:
     questions:
       - id: tasks_clear
         kind: scale
-        prompt: Задачи понятны?
+        prompt: Оцените, насколько задачи понятны, от 1 до 10
         low_threshold: 8
         reason_prompt: Что стоит уточнить в задачах?
       - id: info_access
@@ -267,6 +279,7 @@ steps:
       action: remind
 
   - id: month_two_plan
+    delay_hours: 336
     image: congrats.jpg
     kind: send
     title: Второй месяц
@@ -276,6 +289,7 @@ steps:
     next: month_two_survey
 
   - id: month_two_survey
+    delay_hours: 1
     image: questions.jpg
     kind: survey
     title: Опрос второго месяца
@@ -302,6 +316,7 @@ steps:
       action: remind
 
   - id: probation_reminder
+    delay_hours: 720
     image: reminder.jpg
     kind: send
     title: Испытательный срок
@@ -311,6 +326,7 @@ steps:
     next: probation_survey
 
   - id: probation_survey
+    delay_hours: 1
     image: thanks.jpg
     kind: survey
     title: Итоги испытательного срока

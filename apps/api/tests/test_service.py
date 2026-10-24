@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -486,3 +487,99 @@ async def test_the_classifier_labels_free_text_answers(tmp_path: Path) -> None:
     assert result.escalated
     escalated = next(fields for name, fields in audit.events if name == "risk_escalated")
     assert escalated["to"] == "recruiter"
+
+
+async def test_next_stage_skips_to_the_next_delayed_stage() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/nextStage"),
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert result.handled
+    assert stored.state.step_id == "day_before"
+    assert messaging.sent[-1].text.startswith("Завтра")
+
+
+async def test_reboot_starts_a_fresh_run() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/reboot"),
+    )
+
+    assert result.handled
+    assert len(runs.runs) == 2
+    active = next(run for run in runs.runs.values() if run.active)
+    assert active.state.step_id == "welcome"
+    assert messaging.sent[-1].text.startswith("Здравствуйте! Меня зовут Корсик")
+    assert any(not run.active for run in runs.runs.values())
+
+
+async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    before = len(messaging.sent)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+    assert stored.state.step_id == "day_before"
+    assert stored.scheduled is not None
+    assert len(messaging.sent) == before
+
+    run_id = stored.state.run_id
+    result = await service.resume_scheduled(run_id, "day_before")
+
+    assert result.handled
+    assert messaging.sent[-1].text.startswith("Завтра")
+    assert next(iter(runs.runs.values())).scheduled is None
+
+
+async def test_a_problem_report_does_not_skip_the_timeline() -> None:
+    service, runs, _, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    stored = next(iter(runs.runs.values()))
+    runs.runs[stored.state.run_id] = replace(
+        stored,
+        state=replace(stored.state, step_id="access_help", entered_at=NOW),
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(
+            kind=EventKind.MESSAGE_RECEIVED,
+            at=NOW,
+            text="Не включается компьютер",
+        ),
+    )
+
+    current = next(iter(runs.runs.values()))
+    assert result.handled
+    assert current.state.step_id == "access_help"
+    assert current.scheduled is None

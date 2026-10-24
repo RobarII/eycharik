@@ -1,0 +1,14 @@
+# Reviewers are requested, not required: the gate runs on every pull request anyway, and a hackathon
+# repository with a single owner must not deadlock on its own review.
+*                                   @p4ulbr4dl3y
+
+# The pure core has no I/O and no ambient time; a change there can break every scenario at once.
+/apps/api/onboarding/core/          @p4ulbr4dl3y
+# Contracts and decisions are the source of truth for the code below them.
+/docs/contracts/                    @p4ulbr4dl3y
+/docs/decisions/                    @p4ulbr4dl3y
+# Knowledge is data with an owner per document; it is never edited together with code.
+/knowledge/                         @p4ulbr4dl3y
+# The pipeline that ships production, and the scripts it runs on the host.
+/.github/workflows/                 @p4ulbr4dl3y
+/scripts/                           @p4ulbr4dl3y

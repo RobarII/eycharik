@@ -1,21 +1,23 @@
-# 0012 — No BM25 in the request path, for now
+---
+title: Без BM25 в пути запроса, пока
+summary: Почему ParadeDB и BM25 не включены в продакшене и при каких условиях к ним вернуться.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Date: 2026-10-23
-Status: accepted
+# 0012 — Без BM25 в пути запроса, пока
 
-## Context
+## Контекст
 
-The lexical branch uses Postgres `to_tsvector` + `ts_rank_cd`; it is not BM25. The obvious
-production upgrade is ParadeDB `pg_search`, which adds a real BM25 index to the same database and
-keeps ACL predicates in SQL.
+Лексическая ветка использует Postgres `to_tsvector` + `ts_rank_cd`; это не BM25. Очевидное улучшение для продакшена — ParadeDB `pg_search`, который добавляет настоящий индекс BM25 в ту же базу и оставляет предикаты ACL в SQL.
 
-The corpus is small (10 documents, 13 chunks), so an improvement was not guaranteed. The rule was
-to measure before changing the deployment image.
+Корпус маленький (10 документов, 13 фрагментов), так что улучшение не гарантировано. Правило — измерять до смены образа развёртывания.
 
-## Experiment
+## Эксперимент
 
-A sidecar ParadeDB container (`paradedb/paradedb`, Postgres 18, port 5433) ran the same migrations
-and corpus. The index:
+Боковой контейнер ParadeDB (`paradedb/paradedb`, Postgres 18, порт 5433) прогнал те же миграции и тот же корпус. Индекс:
 
 ```sql
 CREATE INDEX kb_chunks_bm25_idx ON kb_chunks
@@ -23,44 +25,32 @@ USING paradedb (id, (text::pdb.simple('stemmer=russian')))
 WITH (key_field='id');
 ```
 
-The probe added BM25 as a third ranked list to the existing reciprocal rank fusion, on branch
-`experiment/bm25` (commit `d54287d`). Retrieval-only golden set, same embedder, no generation:
+Проба добавила BM25 третьим ранжированным списком к существующему слиянию рангов, в ветке `experiment/bm25` (коммит `d54287d`). Золотой набор только на поиск, тот же эмбеддер, без генерации:
 
-| retrieval | recall@5 | MRR |
+| поиск | recall@5 | MRR |
 |---|---|---|
-| semantic + `ts_rank_cd` (shipped) | 1.000 | 1.000 |
-| + BM25 third list | 1.000 | 0.938 |
+| семантика + `ts_rank_cd` (поставлено) | 1.000 | 1.000 |
+| + третий список BM25 | 1.000 | 0.938 |
 
-Measurements: [shipped](../measurements/2026-10-23-eval-retrieval-tsrank-16.md),
-[BM25](../measurements/2026-10-23-eval-retrieval-parade-bm25.md). Both PASS the gate; MRR is the
-metric that moved.
+Измерения: [поставленное](../measurements/2026-10-23-eval-retrieval-tsrank-16.md), [BM25](../measurements/2026-10-23-eval-retrieval-parade-bm25.md). Оба проходят гейт (PASS); сдвинулась метрика MRR.
 
-The BM25 list displaced the right document in `guest-photo-permission` (RR 1.00 -> 0.25). With 13
-chunks, document frequencies are close to meaningless: one chunk is 7.7% of the corpus, so the IDF
-term swings the fusion instead of informing it.
+Список BM25 вытеснил верный документ в `guest-photo-permission` (RR 1.00 -> 0.25). При 13 фрагментах частоты документов почти ничего не значат: один фрагмент — это 7.7 % корпуса, так что IDF-член качает слияние вместо того, чтобы информировать его.
 
-## Decision
+## Решение
 
-Keep the shipped two-list fusion: dense vectors + Russian `ts_rank_cd`, then the cross-encoder
-reranker. Do not enable ParadeDB in production yet.
+Оставить поставленное слияние двух списков: плотные векторы + русский `ts_rank_cd`, затем кросс-энкодер. Не включать ParadeDB в продакшене пока.
 
-The experiment stays on `experiment/bm25`; it is not merged. Revisit when all three are true:
+Эксперимент остаётся в ветке `experiment/bm25`; он не влит. Вернуться, когда выполнятся все три условия:
 
-1. the corpus is large enough for stable document frequencies (hundreds of chunks, not tens);
-2. a hard negative set exists — acronyms, document numbers, near-duplicate policies;
-3. the golden set shows a retrieval failure that `ts_rank_cd` cannot fix.
+1. корпус достаточно велик для стабильных частот документов (сотни фрагментов, не десятки);
+2. есть набор сложных негативов — аббревиатуры, номера документов, почти одинаковые политики;
+3. золотой набор показывает отказ поиска, который `ts_rank_cd` не лечит.
 
-Then rerun the branch on the larger corpus and decide from MRR and recall, not from the label
-"BM25".
+Тогда перезапустить ветку на большем корпусе и решать по MRR и recall, а не по ярлыку «BM25».
 
-## Consequences
+## Последствия
 
-- The deployment stays on `pgvector/pgvector:pg16`: fewer moving parts, no extension build, no
-  Postgres major-version jump.
-- The lexical branch remains weaker on morphology than a stemmed BM25 index; the reranker covers
-  the gap on the current corpus.
-- If a future corpus justifies BM25, ParadeDB is the first candidate: same SQL, same ACL, no second
-  service. Elasticsearch would need an outbox sync and a new failure domain.
-- The fresh-database migration fix from the same session is independent of this decision and stays:
-  the initial revision builds `Base.metadata`, so later revisions must not assume their columns are
-  absent.
+- Развёртывание остаётся на `pgvector/pgvector:pg16`: меньше движущихся частей, нет сборки расширения, нет прыжка через мажорную версию Postgres.
+- Лексическая ветка по-прежнему слабее морфологически, чем индексированный BM25 со стеммингом; на текущем корпусе разрыв закрывает переранжировщик.
+- Если будущий корпус оправдает BM25, первый кандидат — ParadeDB: тот же SQL, тот же ACL, без второго сервиса. Elasticsearch потребовал бы синхронизации через `outbox` и нового домена отказа.
+- Правка миграции для чистой базы из той же сессии от этого решения не зависит и остаётся: начальная ревизия строит `Base.metadata`, поэтому поздние ревизии не должны предполагать, что их колонок нет.

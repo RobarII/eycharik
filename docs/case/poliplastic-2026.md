@@ -1,160 +1,171 @@
-# Case: POLIPLASTIK onboarding assistant in MAX
+---
+title: Кейс ПОЛИПЛАСТИК, 2026
+summary: Что заказчик просил на хакатоне, что уже было у него до нас и где кончается бриф.
+kind: кейс
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-A transcript of the hackathon brief (Moscow, October 2026), kept so that every product claim has a
-source in the repository. The deck is a scan without a text layer; this file is the transcription.
-Russian fragments are verbatim quotes of the brief and of the client's spreadsheet. Everything else
-is a summary.
+# Кейс: ассистент онбординга ПОЛИПЛАСТИК в MAX
 
-## Source files
+Транскрипт брифа хакатона (Москва, октябрь 2026), сохранённый здесь, чтобы у каждого
+продуктового утверждения был источник в репозитории. Презентация — скан без текстового слоя;
+этот файл — её расшифровка. Русские фрагменты — дословные цитаты брифа и таблицы заказчика.
+Остальное — пересказ.
 
-| File | What it is |
+## Исходные файлы
+
+| Файл | Что это |
 |---|---|
-| `КЕЙС_ПОЛИПЛАСТИК.pdf` | 13-slide brief: problem, tasks, roles, requirements, checkpoints, criteria |
-| `Финал. ТЗ. Чат-бот Корсик- 15.09.xlsx` | the client's scenario of the existing Telegram bot, step by step |
-| `Правила внутреннего трудового распорядка П 3.11-07 Издание 1.pdf` | HR regulation, candidate knowledge source |
-| `Положение о коммерческой тайне.pptx` | internal policy, candidate knowledge source |
-| `Антикоррупционная политика.pptx` | internal policy, candidate knowledge source |
-| `Политика в области качества и экологии.pptx` | internal policy, candidate knowledge source |
+| `КЕЙС_ПОЛИПЛАСТИК.pdf` | бриф на 13 слайдов: проблема, задачи, роли, требования, чек-поинты, критерии |
+| `Финал. ТЗ. Чат-бот Корсик- 15.09.xlsx` | сценарий существующего Telegram-бота от заказчика, шаг за шагом |
+| `Правила внутреннего трудового распорядка П 3.11-07 Издание 1.pdf` | кадровый регламент, источник знаний для кандидата |
+| `Положение о коммерческой тайне.pptx` | внутренняя политика, источник знаний для кандидата |
+| `Антикоррупционная политика.pptx` | внутренняя политика, источник знаний для кандидата |
+| `Политика в области качества и экологии.pptx` | внутренняя политика, источник знаний для кандидата |
 
-Tags of the brief: `МАКС · ML · AI · RAG`.
+Теги брифа: `МАКС · ML · AI · RAG`.
 
-## Problem
+## Проблема
 
 > Основная проблема: невозможность безопасного использования Telegram в корпоративном контуре и
 > отсутствие ИИ-слоя для обработки неструктурированных данных и эмоций сотрудников.
 
-The client already runs a Telegram bot, «Корсик», for onboarding. It is a hard-coded button menu:
-it cannot answer free text, cannot read the sentiment of survey answers, and every change needs a
-developer. Telegram itself is not allowed inside the corporate perimeter, hence the move to MAX.
+У заказчика уже есть Telegram-бот «Корсик» для онбординга. Это жёстко заданное кнопочное меню:
+свободный текст он не понимает, тональность ответов в опросах не читает; каждая правка требует
+разработчика. Сам Telegram в корпоративном контуре запрещён — отсюда переход в MAX.
 
-Secondary problems named in the brief:
+Второстепенные проблемы, названные в брифе:
 
-| Problem | Quote |
+| Проблема | Цитата |
 |---|---|
-| Manual HR load | «HR-специалисты тратят до 40% времени на разбор текстовых ответов в опросах и ответы на типовые вопросы, выходящие за рамки кнопочного меню» |
-| No predictive analytics | «текущий бот фиксирует только свершившиеся факты (например, увольнение сотрудника), но не анализирует причины и эмоциональный фон на ранних этапах» |
-| Scaling cost | «логика Telegram-бота требует привлечения разработчиков для добавления новых филиалов или изменения регламентов» |
+| Ручная нагрузка на HR | «HR-специалисты тратят до 40% времени на разбор текстовых ответов в опросах и ответы на типовые вопросы, выходящие за рамки кнопочного меню» |
+| Нет предиктивной аналитики | «текущий бот фиксирует только свершившиеся факты (например, увольнение сотрудника), но не анализирует причины и эмоциональный фон на ранних этапах» |
+| Стоимость масштабирования | «логика Telegram-бота требует привлечения разработчиков для добавления новых филиалов или изменения регламентов» |
 
-Declared value: up to 70% less routine HR work, faster time to productivity, one communication
-standard inside MAX, and in perspective a reusable product for large corporations.
+Заявленная ценность: до 70% меньше рутины у HR, быстрее выход на продуктивность, один стандарт
+общения внутри MAX и в перспективе переиспользуемый продукт для крупных корпораций.
 
-## Tasks
+## Задачи
 
-1. **Migration to MAX.** Move the bot to the corporate MAX while keeping the proactive timeline
-   (from offer to the end of probation) and personalization for each production site.
-2. **Answers to questions.** Integrate a RAG module for unstructured questions in natural language.
-3. **Sentiment analysis.** The model analyses free-text answers in pulse surveys, finds hidden
-   problems (conflicts in the team, unclear tasks) and escalates red flags to HR.
-4. **Accuracy and escalation.** Control hallucinations and provide seamless escalation to a live
-   recruiter through the MAX API.
+1. **Переезд в MAX.** Перенести бота в корпоративный MAX, сохранив проактивный таймлайн (от
+   оффера до конца испытательного срока) и персонализацию под каждую производственную площадку.
+2. **Ответы на вопросы.** Подключить RAG-модуль для неструктурированных вопросов на естественном
+   языке.
+3. **Анализ тональности.** Модель разбирает свободные ответы в пульс-опросах, находит скрытые
+   проблемы (конфликты в команде, непонятные задачи) и передаёт красные флаги в HR.
+4. **Точность и эскалация.** Держать галлюцинации под контролем и отдавать вопрос живому
+   рекрутёру через MAX API без швов.
 
-Expected result: «ИИ-ассистент (чат-бот) и интеграционный слой для мессенджера «МАКС»».
+Ожидаемый результат: «ИИ-ассистент (чат-бот) и интеграционный слой для мессенджера «МАКС»».
 
-## Roles
+## Роли
 
-| Role | What the role does in the product |
+| Роль | Что роль делает в продукте |
 |---|---|
-| New employee | asks the bot in MAX, for example «Подскажи, как получить доступ к корпоративному порталу?», and gets a step-by-step instruction with links |
-| HR manager | gets a summary of where each newcomer is in onboarding and which topics cause trouble, based on request tags; joins the dialog only in non-standard cases |
-| Head of department | sees the adaptation status of a new subordinate and receives push notifications about a needed personal meeting |
-| Head of the recruitment department | receives a weekly digest «Настроения в коллективе новичков»: the model clusters free-text survey answers («проблемы с доступами», «конфликт с наставником») and highlights risk zones, so HR works ahead of crises |
+| Новый сотрудник | задаёт боту вопросы в MAX, например «Подскажи, как получить доступ к корпоративному порталу?», и получает пошаговую инструкцию со ссылками |
+| HR-менеджер | получает сводку, где каждый новичок в онбординге и какие темы вызывают трудности, по тегам обращений; подключается к диалогу только в нестандартных случаях |
+| Руководитель подразделения | видит статус адаптации нового подчинённого и получает push-уведомления о нужной личной встрече |
+| Руководитель отдела подбора | получает недельный дайджест «Настроения в коллективе новичков»: модель кластеризует свободные ответы опросов («проблемы с доступами», «конфликт с наставником») и подсвечивает зоны риска, чтобы HR работал на опережение |
 
-## Requirements
+## Требования
 
-| Area | Requirement |
+| Область | Требование |
 |---|---|
-| Integration | adapt to MAX API limits, in particular a CRON task planner for proactive sends, interactive cards and attachments (PDF maps, images), escalation buttons |
-| AI architecture | RAG over the knowledge base plus an NLP sentiment module for survey answers |
-| Safety | strict hallucination control; no invented answers to HR and legal questions; mandatory escalation to an HR specialist |
-| Tone | answers follow the corporate communication style |
-| UX | friendly interface that supports both text input and a hybrid flow: button menu plus free dialog |
-| Scale | rollout to all new employees, up to 100%, with the option to replicate to subsidiaries |
+| Интеграция | адаптация к лимитам MAX API, в частности CRON-планировщик задач для проактивных отправок, интерактивные карточки и вложения (PDF-карты, изображения), кнопки эскалации |
+| Архитектура ИИ | RAG по базе знаний плюс NLP-модуль тональности для ответов в опросах |
+| Безопасность | жёсткий контроль галлюцинаций; никаких выдуманных ответов на HR- и юридические вопросы; обязательная эскалация специалисту HR |
+| Тон | ответы в корпоративном стиле общения |
+| UX | дружелюбный интерфейс, который держит и текстовый ввод, и гибридный поток: кнопочное меню плюс свободный диалог |
+| Масштаб | раскатка на всех новых сотрудников, до 100%, с возможностью тиражирования на дочерние компании |
 
-UX detail from the role slide: the employee can either type or press, and the bot must not lose the
-thread when the employee deviates from the menu.
+Деталь UX со слайда о ролях: сотрудник может либо напечатать, либо нажать, и бот не должен
+терять нить, когда сотрудник уходит из меню.
 
-## Channels and checkpoints
+## Каналы и чек-поинты
 
-- Chat in MAX is the product; MTS Link is the platform for the defense.
-- Three checkpoints: **23.10 18:00**, **24.10 11:00**, **24.10 18:00** (Moscow time). A team that
-  misses two checkpoints is out of the competition. Teams must join their own slot; the link is in
-  the participant cabinet, tab «Чек-поинты».
-- Defense starts **25.10 at 12:00**; upload deadline **25.10 10:00**. The defense slot and the link
-  are in the cabinet, tab «Защита». Other teams' defenses are open to watch.
-- After the first checkpoint the team must publish a link where experts can view the solution, even
-  if it is still empty. All mandatory artifacts and a `README` must be attached to the cabinet.
+- Чат в MAX — это продукт; MTS Link — платформа для защиты.
+- Три чек-поинта: **23.10 18:00**, **24.10 11:00**, **24.10 18:00** (московское время). Команда,
+  пропустившая два чек-поинта, выбывает. Команды заходят в свой слот; ссылка в кабинете
+  участника, вкладка «Чек-поинты».
+- Защита начинается **25.10 в 12:00**; дедлайн загрузки **25.10 10:00**. Слот защиты и ссылка —
+  в кабинете, вкладка «Защита». Защиты других команд открыты для просмотра.
+- После первого чек-поинта команда публикует ссылку, где эксперты видят решение, даже если оно
+  ещё пустое. Все обязательные артефакты и `README` прикладываются в кабинет.
 
-## Judging criteria
+## Критерии оценки
 
-1. **Prototype** — does the actual functionality match what the team claims?
-2. **Solves the main problem** — does the product remove the stated blocker?
-3. **Build and rollout** — does the effect justify the cost of development and adoption?
-4. **Novel ideas** — own features or a new approach, not a copy of existing solutions.
-5. **UI/UX** — how well the interface is designed.
-6. **Secondary problems** — are the named, and any noticed, secondary problems solved?
-7. **Analytics** — depth of analysis of the target audience, UX problems, and comparable digital
-   products.
+1. **Прототип** — совпадает ли реальный функционал с тем, что команда заявляет?
+2. **Решает главную проблему** — убирает ли продукт названный блокер?
+3. **Сборка и раскатка** — оправдывает ли эффект стоимость разработки и внедрения?
+4. **Новые идеи** — свои фичи или новый подход, а не копия существующих решений.
+5. **UI/UX** — насколько хорошо спроектирован интерфейс.
+6. **Второстепенные проблемы** — решены ли названные и замеченные второстепенные проблемы?
+7. **Аналитика** — глубина разбора целевой аудитории, проблем UX и похожих цифровых продуктов.
 
-## Baseline bot «Корсик» (Telegram)
+## Базовый бот «Корсик» (Telegram)
 
-The spreadsheet describes the current product that must be migrated and upgraded. Its shape:
+Таблица заказчика описывает текущий продукт, который надо перенести и улучшить. Его устройство:
 
-- A named persona, «Корсик», speaks informally, uses emoji and postcards, and lets the employee
-  choose «ты» or «вы» at the start.
-- The journey runs from 2–3 days before the first working day to the last day of probation; every
-  message has a trigger time and a site tag: `GrPP`, `Luzhniki`, `GTP`.
-- Messages are button-driven. Branching exists only inside a step: every survey answer has a
-  prepared reply, and negative answers offer «передать проблему в отдел подбора персонала через
-  Корсика» or «связаться с рекрутером».
-- Content includes documents checklist, transport routes, territory and floor maps, lunch places,
-  contacts book, corporate presentation, gym, corporate events and photo archive, movie and book
-  lists, music playlist, and postcards as image attachments.
-- Surveys: first day, third day (3 questions), two weeks (9 scale questions, any score below 8 asks
-  for a reason), two months (3 questions), end of probation (3 questions plus 9 scale questions).
-- Reminders: a survey that is not completed within one day is reminded the next day and the day
-  after.
-- A free question outside the scenario answers: «Какие-то вопросы слишком сложные, чтобы я мог
+- Именная персона «Корсик» говорит неформально, использует эмодзи и открытки и даёт сотруднику
+  выбрать «ты» или «вы» в начале.
+- Путь начинается за 2–3 дня до первого рабочего дня и идёт до последнего дня
+  испытательного срока; у каждого сообщения есть время срабатывания и тег площадки: `GrPP`,
+  `Luzhniki`, `GTP`.
+- Сообщения идут по кнопкам. Ветвление есть только внутри шага: у каждого ответа в опросе
+  заготовлен ответ, а негативные варианты предлагают «передать проблему в отдел подбора персонала
+  через Корсика» или «связаться с рекрутером».
+- В контенте — чек-лист документов, маршруты транспорта, карты территории и этажей, места обедов,
+  книга контактов, корпоративная презентация, спортзал, корпоративные события и фотоархив, списки
+  фильмов и книг, музыкальный плейлист и открытки как вложения-изображения.
+- Опросы: первый день, третий день (3 вопроса), две недели (9 вопросов со шкалой, любой балл ниже
+  8 просит причину), два месяца (3 вопроса), конец испытательного срока (3 вопроса плюс 9
+  вопросов со шкалой).
+- Напоминания: опрос, не пройденный за сутки, получает напоминание на следующий день и ещё через
+  день.
+- Свободный вопрос вне сценария получает ответ: «Какие-то вопросы слишком сложные, чтобы я мог
   решить их самостоятельно. Я посоветуюсь с коллегами из подбора персонала и вернусь с ответом!»
 
-### Timeline of the spreadsheet
+### Таймлайн таблицы заказчика
 
-| When | What the client sends |
+| Когда | Что присылает заказчик |
 |---|---|
-| 2–3 days before day one | bot introduction and capabilities, «ты/вы» choice, documents checklist, corporate transport by site, company facts, goodbye |
-| Day before | first-day readiness question, documents reminder |
-| Day one 10:00 | congratulations, access and equipment |
-| Day one 11:00 | territory map, office floor map |
-| Day one 12:00 | access check with «Да, все есть» / «Нет» |
-| Day one 12:01 | postcard |
-| Day one 12:30 | where to have lunch |
-| Day one 13:00 | contacts book link, warning about the corporate network |
-| Day one 15:00 | corporate presentation, mission |
-| Day one 18:00 | end of the first day |
-| Day two | recruiter-triggered introduction post with a photo |
-| Day three 09:00 | adaptation plan from the manager |
-| Day three 11:00 | gym |
-| Day three 17:30 | three-question survey with branching and escalation buttons |
-| Day ten | corporate events and photo archive |
-| Two weeks | nine-question check-in: clear tasks, information, manager availability and feedback, colleagues, IT support, access timing, HR support |
-| Month two, day one | congratulations, adaptation plan progress |
-| Month two plus two weeks | reminder of the meeting with the recruiter, movie list |
-| Month two plus three weeks | postcard, three-question survey (mood, who helps, what would speed up adaptation) |
-| Month three, day one | finish line, book list |
-| Month three plus two weeks | postcard |
-| Last day of probation | three-question survey, nine scale questions, playlist, farewell with postcard |
+| за 2–3 дня до первого дня | знакомство с ботом и его возможностями, выбор «ты/вы», чек-лист документов, корпоративный транспорт по площадкам, факты о компании, прощание |
+| день накануне | вопрос о готовности к первому дню, напоминание о документах |
+| первый день, 10:00 | поздравление, доступы и оборудование |
+| первый день, 11:00 | карта территории, план этажа офиса |
+| первый день, 12:00 | проверка доступов с «Да, все есть» / «Нет» |
+| первый день, 12:01 | открытка |
+| первый день, 12:30 | где пообедать |
+| первый день, 13:00 | ссылка на книгу контактов, предупреждение о корпоративной сети |
+| первый день, 15:00 | корпоративная презентация, миссия |
+| первый день, 18:00 | конец первого дня |
+| второй день | вводный пост с фотографией по триггеру рекрутёра |
+| третий день, 09:00 | план адаптации от руководителя |
+| третий день, 11:00 | спортзал |
+| третий день, 17:30 | опрос из трёх вопросов с ветвлением и кнопками эскалации |
+| десятый день | корпоративные события и фотоархив |
+| две недели | чек-ин из девяти вопросов: понятны ли задачи, хватает ли информации, доступен ли руководитель и даёт ли обратную связь, коллеги, поддержка ИТ, сроки доступов, поддержка HR |
+| второй месяц, первый день | поздравление, прогресс по плану адаптации |
+| второй месяц плюс две недели | напоминание о встрече с рекрутёром, список фильмов |
+| второй месяц плюс три недели | открытка, опрос из трёх вопросов (настроение, кто помогает, что ускорило бы адаптацию) |
+| третий месяц, первый день | финишная прямая, список книг |
+| третий месяц плюс две недели | открытка |
+| последний день испытательного срока | опрос из трёх вопросов, девять вопросов со шкалой, плейлист, прощание с открыткой |
 
-Tags `GrPP` and `Luzhniki` share office copy; `GTP` has its own transport, contacts (`http://ats/`)
-and gym texts. The surveys differ between office sites and the plant: the plant variant omits the
-remote-work option.
+Теги `GrPP` и `Luzhniki` делят офисный текст; у `GTP` свои тексты про транспорт, контакты
+(`http://ats/`) и спортзал. Опросы различаются между офисными площадками и заводом: заводской
+вариант опускает вопрос про удалённую работу.
 
-## Notes for the implementation
+## Заметки для реализации
 
-Recorded here so that the transcript is not later read as a promise:
+Записано здесь, чтобы транскрипт потом не прочитали как обещание:
 
-- The brief asks for a CRON planner; our worker currently ticks reminders itself.
-- The brief asks for PDF and image attachments and escalation buttons; the MAX adapter today sends
-  text plus an inline keyboard, and file upload is a known gap in
+- Бриф просит CRON-планировщик; наш воркер тикает напоминания сам.
+- Бриф просит PDF-вложения, вложения-изображения и кнопки эскалации; адаптер MAX сегодня
+  отправляет текст плюс инлайн-клавиатуру, а загрузка файлов — известный пробел в
   [contracts/max-api.md](../contracts/max-api.md).
-- The brief asks HR to upload regulations without code; ingestion today is a CLI command.
-- The 70% figure is the client's expectation, not our measurement. Any number we publish needs a
-  command, an environment and a commit under [measurements/](../measurements/TEMPLATE.md).
+- Бриф просит, чтобы HR загружал регламенты без кода; сегодня индексация — команда CLI.
+- 70% — ожидание заказчика, а не наше измерение. Любое число, которое мы публикуем, требует
+  команды, окружения и коммита в [measurements/](../measurements/TEMPLATE.md).

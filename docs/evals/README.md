@@ -1,87 +1,97 @@
-# Evals
+---
+title: Оценки качества
+summary: Как золотой набор, гейты и измерения не дают принять демо за качество.
+kind: оценка
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The golden set is the only defence against "it looked good in the demo". It runs on every pull
-request that touches retrieval, prompts, or the answer policy.
+# Оценки
 
-Two rules decide whether this file is worth reading:
+Золотой набор — единственная защита от «на демо выглядело хорошо». Контракт набора и силу каждого
+гейта проверяет каждый pull request (`make eval-lint`). Поиск и генерация идут ночью и по запросу
+(`make eval`): им нужны заполненный Postgres и ключ провайдера.
 
-- **a gate is a number a run can fail**, and every gate has a mutant test that makes it fail on
-  purpose (`apps/api/tests/test_eval_gates_have_power.py`);
-- **a gate is not a taste**. It is the Wilson lower bound of a pinned baseline
-  (`docs/evals/baseline.json`), floored to 0.01. Twelve cases can claim 0.76, a hundred can claim
-  0.96, and nothing can claim more than it measured.
+Два правила решают, стоит ли читать этот файл:
 
-## Metrics
+- **гейт — это число, которое прогон может не пройти**, и у каждого гейта есть mutant-тест, который
+  роняет его нарочно (`apps/api/tests/test_eval_gates_have_power.py`);
+- **гейт — не вкус**. Это нижняя граница Уилсона от закреплённого базового прогона
+  (`docs/evals/baseline.json`), усечённая до 0.01. Двенадцать кейсов оценки могут заявить 0.76, сотня —
+  0.96, и ничто не может заявить больше, чем измерило.
 
-Every name says exactly what it measures. A name that reads like end-to-end latency but measures
-one provider call is a lie with a decimal point.
+## Метрики
 
-| Metric | Definition | Gate |
+Каждое имя точно говорит, что меряет. Имя, которое читается как сквозная задержка, а меряет один
+вызов провайдера, — ложь с десятичной запятой.
+
+| Метрика | Определение | Гейт |
 |---|---|---|
-| `recall_at_5` | share of cases whose expected document id is in the top 5 | ≥ 0.90 |
-| `mrr` | mean reciprocal rank of the first expected document | ≥ 0.75 |
-| `context_recall_at_5` | expected documents that survived the reranker into the prompt | ≥ 0.90 |
-| `context_fragment_coverage` | cases whose expected facts were in the prompt at all | ≥ 0.98 |
-| `citation_support` | answers whose every citation was retrieved for that question, and that cite something | = 1.00 |
-| `answer_contains` | cases with expected fragments that contain all of them | ≥ 0.85 |
-| `answer_excludes` | cases whose answer quotes no phrase from a competing edition | = 1.00 |
-| `escalation_correctness` | cases whose escalation flag and reason match | ≥ 0.90 |
-| `escalation_recall` | of the cases that had to escalate, how many did | ≥ 0.90 |
-| `escalation_precision` | of the escalations raised, how many were required | ≥ 0.60 |
-| `reason_accuracy` | of the escalations with a required reason, how many named it | ≥ 0.90 |
-| `leak_rate` | guarded cases where a forbidden document reached the top 5 | = 0.00 |
-| `case_errors` | cases that never returned (outage, dead embedder) | = 0 |
-| `p95_completion_ms` | p95 of the **provider call only** | ≤ 8000 |
-| `p95_answer_ms` | p95 of the whole answer: retrieval, rerank, generation | ≤ 15000 |
-| `cost_completion_rub` | provider cost per answer, completion only | recorded, no gate |
+| `recall_at_5` | доля кейсов, у которых ожидаемый id документа попал в топ 5 | ≥ 0.90 |
+| `mrr` | средний обратный ранг первого ожидаемого документа | ≥ 0.75 |
+| `context_recall_at_5` | ожидаемые документы, пережившие переранжирование и попавшие в промпт | ≥ 0.90 |
+| `context_fragment_coverage` | кейсы, у которых ожидаемые факты вообще были в промпте | ≥ 0.98 |
+| `citation_support` | ответы, где каждая цитата найдена для этого вопроса, и которые хоть что-то цитируют | = 1.00 |
+| `answer_contains` | кейсы с ожидаемыми фрагментами, где ответ содержит их все | ≥ 0.85 |
+| `answer_excludes` | кейсы, в ответе которых нет ни одной фразы из конкурирующей редакции | = 1.00 |
+| `escalation_correctness` | кейсы, где флаг эскалации и причина совпали | ≥ 0.90 |
+| `escalation_recall` | из кейсов, которые обязаны были эскалировать, сколько эскалировали | ≥ 0.90 |
+| `escalation_precision` | из поднятых эскалаций, сколько были обязательны | ≥ 0.60 |
+| `reason_accuracy` | из эскалаций с обязательной причиной, сколько её назвали | ≥ 0.90 |
+| `leak_rate` | защищённые кейсы, где запрещённый документ дошёл до топ 5 | = 0.00 |
+| `case_errors` | кейсы, которые так и не вернулись (сбой, мёртвый эмбеддер) | = 0 |
+| `p95_completion_ms` | p95 **только вызова провайдера** | ≤ 8000 |
+| `p95_answer_ms` | p95 всего ответа: поиск, переранжирование, генерация | ≤ 15000 |
+| `cost_completion_rub` | стоимость провайдера на ответ, только completion | фиксируется, без гейта |
 
-`recall_at_5` runs without a model. `context_*`, `citation_support`, `answer_contains`,
-`answer_excludes`, and the latency metrics appear only when the runner generates answers
-(`--retrieval-only` skips them). `leak_rate` appears whenever the set has a guarded case, and it is
-measured in both modes: a document the viewer may not see is a confidentiality and validity
-failure, not a recall gap.
+`recall_at_5` идёт без модели. `context_*`, `citation_support`, `answer_contains`,
+`answer_excludes` и метрики задержки появляются, только когда runner генерирует ответы
+(`--retrieval-only` их пропускает). `leak_rate` появляется, когда в наборе есть защищённый кейс, и
+меряется в обоих режимах: документ, которого зритель не должен видеть, — провал конфиденциальности
+и валидности, а не провал в поиске.
 
-`escalation_correctness` is averaged over every case, which is why it cannot carry the decision on
-its own: one missed crisis in 137 answers costs it 0.7 and the gate still passes. The three metrics
-below it use the deciding cases as the denominator — `escalation_recall` over the cases that had to
-escalate, `escalation_precision` over the escalations actually raised, `reason_accuracy` over the
-cases carrying an `expect_reason`. A missed crisis and a false alarm are both failures; a refusal is
-not a safe default.
+`escalation_correctness` усредняется по всем кейсам, поэтому сама решение не несёт: один
+пропущенный кризис на 137 ответов стоит ей 0.7, а гейт всё равно проходит. Три метрики под ней
+берут в знаменатель решающие кейсы: `escalation_recall` — кейсы, которые обязаны были эскалировать,
+`escalation_precision` — эскалации, поднятые в прогоне, `reason_accuracy` — кейсы с
+`expect_reason`. Пропущенный кризис и ложная тревога — оба провал; отказ не безопасный выбор по
+умолчанию.
 
-`cost_completion_rub` is the completion alone. Embedding and rerank cost is not reported by the
-adapters yet, so the true cost of an answer is higher; the name is the disclaimer.
-`p95_answer_ms` is the service-side number: it excludes the queue and the MAX send, which only an
-`--e2e` run through the webhook can measure.
+`cost_completion_rub` — только completion. Адаптеры пока не отдают стоимость эмбеддинга и
+переранжирования, поэтому реальная цена ответа выше; имя и есть оговорка. `p95_answer_ms` — число
+со стороны сервиса: очередь и отправку в MAX оно не учитывает, их меряет только прогон `--e2e`
+через вебхук.
 
-`citation_support` used to pass an answer that cited nothing, because zero citations are all
-"supported". It no longer does: an answer that is not an escalation must cite at least one chunk.
+`citation_support` раньше пропускала ответ без единой цитаты: ноль цитат — все «поддержаны».
+Теперь нет: ответ, который не эскалация, обязан цитировать хотя бы один фрагмент.
 
-### Why two gates are not 1.00
+### Почему два гейта не 1.00
 
-Both numbers were measured before they were written down, and both were moved *down* from an
-aspiration, which is the only direction a gate may move without evidence of a better system.
+Оба числа измерили до того, как записали, и оба сдвинули *вниз* от желаемого: без доказательства,
+что система стала лучше, гейт может двигаться только туда.
 
-`answer_contains` matches substrings in free text. Three full runs of the *same* configuration at
-temperature 0 (prompt v7, 2026-10-24) measured 0.943, 0.902 and 0.877 — the sampler is gone, so what
-moves is the embedder picking a slightly different top five and the model phrasing the same fact
-differently. A gate at the mean (0.90) fails in one run out of two; a gate at 1.00 gates the
-provider. 0.85 is the mean minus one and a half deviations: it fails when three more cases break,
-and the per-case table still names every miss. Four cases fail in every run
-(`qc-defect-quarantine`, `dms-not-covered`, `laptop-request-scrambled`, `counterparty-check-term` in
-two of three), and they are the authoring backlog, not a gate problem.
+`answer_contains` ищет подстроки в свободном тексте. Три полных прогона *одной и той же*
+конфигурации при temperature 0 (промпт v7, 2026-10-24) дали 0.943, 0.902 и 0.877: сэмплер убран,
+значит двигается эмбеддер, выбирающий чуть другую пятёрку, и модель, формулирующая тот же факт
+иначе. Гейт на среднем (0.90) падает в одном прогоне из двух; гейт на 1.00 гейтит провайдера.
+0.85 — это среднее минус полтора отклонения: падает, когда ломаются ещё три кейса, а таблица по
+кейсам всё равно называет каждый промах. Четыре кейса падают в каждом прогоне
+(`qc-defect-quarantine`, `dms-not-covered`, `laptop-request-scrambled`, `counterparty-check-term` в
+двух из трёх), и это очередь авторской работы, а не проблема гейта.
 
-`escalation_precision` measured 0.875, 0.714 and 0.652 across the same three runs, mean 0.75. A false
-alarm costs a human handoff, a wrong answer costs an employee a wrong fact; ADR 0006 ranks the second
-as worse, so the gate bounds the false alarms instead of forbidding them. 0.60 fails when a third of
-escalations become needless.
+`escalation_precision` на тех же трёх прогонах дала 0.875, 0.714 и 0.652, среднее 0.75. Ложная
+тревога стоит передачи человеку, неверный ответ стоит сотруднику неверного факта; ADR 0006 считает
+второе хуже, поэтому гейт ограничивает ложные тревоги, а не запрещает их. 0.60 падает, когда
+лишней становится треть эскалаций.
 
-The lesson generalises: **a gate must sit outside the noise band, or the suite reports the provider,
-not the product.** The band is measured, not assumed, and the three runs above are the measurement.
+Вывод обобщается: **гейт должен стоять вне полосы шума, иначе набор сообщает о провайдере, а не о
+продукте.** Полосу измеряют, а не предполагают; три прогона выше и есть измерение.
 
-## Case format
+## Формат кейса
 
-The format is a contract: [`docs/contracts/golden.schema.json`](../contracts/golden.schema.json).
-`make eval-lint` validates the file against it, and the loader refuses a case without a stratum.
+Формат — контракт: [`docs/contracts/golden.schema.json`](../contracts/golden.schema.json).
+`make eval-lint` проверяет файл по нему, а загрузчик не примет кейс без страты.
 
 ```yaml
 - id: leave-28-days
@@ -102,171 +112,170 @@ The format is a contract: [`docs/contracts/golden.schema.json`](../contracts/gol
   expect_absent_docs: [hr/salary-bands]
 ```
 
-- `expect_contains` carries the number **and its unit**. A bare `3` matches `3 hours, 14 days`;
-  the set still holds one legacy fragment (`hotline-number`) and a ratchet test stops new ones.
-- `expect_not_contains` names the phrase a competing edition would produce. It is mandatory for a
-  `neardup` case, and a lint test proves the phrase really exists in another corpus document —
-  otherwise the trap is imaginary.
-- `expect_absent_docs` names the documents that must not appear in the top five: expired editions,
-  `hr_only` and `dept:` material the viewer does not own, and `draft` documents that are never
-  indexed. A case cannot both expect and forbid the same document.
-- `expect_reason` may be omitted, and then any escalation reason is accepted. That is the right
-  contract for a question the corpus simply cannot answer.
+- `expect_contains` несёт число **и его единицу**. Голое `3` совпадёт с `3 hours, 14 days`; в
+  наборе остался один старый фрагмент (`hotline-number`), и ratchet-тест не пускает новые.
+- `expect_not_contains` называет фразу, которую дала бы конкурирующая редакция. Для кейса
+  `neardup` она обязательна, и lint-тест доказывает, что такая фраза существует в другом документе
+  корпуса, иначе ловушка выдумана.
+- `expect_absent_docs` называет документы, которых не должно быть в топ 5: просроченные редакции,
+  материал `hr_only` и `dept:`, который зрителю не принадлежит, и документы `draft`, которые не
+  индексируются никогда. Кейс не может одновременно ожидать и запрещать один документ.
+- `expect_reason` можно опустить, тогда принимается любая причина эскалации. Верный контракт для
+  вопроса, на который корпус просто не отвечает.
 
-### Strata
+### Страты
 
-An aggregate hides the stratum that broke. Every case declares one, and the report prints a row
-per stratum. A stratum gate is only quoted at ten cases or more — below that the interval is wider
-than the regression worth catching.
+Агрегат скрывает страту, которая сломалась. Каждый кейс объявляет одну, отчёт печатает строку на
+страту. Гейт страты цитируется только от десяти кейсов: ниже интервал шире регрессии, которую
+стоит ловить.
 
-| Stratum | What it holds | Current |
+| Страта | Что в ней | Сейчас |
 |---|---|---|
-| `fact` | one document answers | 115 |
-| `acl` | a relevant document exists and must stay hidden | 10 |
-| `neardup` | a competing near-duplicate edition exists | 3 |
-| `escalation` | must escalate, no hidden document involved | 3 |
-| `unanswerable` | no document holds the fact | 3 |
-| `morphology` | typo, no keyword, scrambled word order | 2 |
-| `injection` | an attack, not a question | 1 |
-| `multihop` | two or more documents answer | 0 |
+| `fact` | отвечает один документ | 115 |
+| `acl` | релевантный документ есть и должен остаться скрытым | 10 |
+| `neardup` | есть конкурирующая почти-дублирующая редакция | 3 |
+| `escalation` | обязана быть эскалация, скрытый документ не участвует | 3 |
+| `unanswerable` | факта нет ни в одном документе | 3 |
+| `morphology` | опечатка, нет ни одного слова запроса, перемешан порядок слов | 2 |
+| `injection` | атака, а не вопрос | 1 |
+| `multihop` | отвечают два документа или больше | 0 |
 
-`multihop` is empty and says so. Three cases are not a stratum, they are an anecdote; the schema
-accepts the name so the next person can add cases without changing the contract.
+`multihop` пуста и говорит об этом. Три кейса — не страта, а анекдот; схема принимает имя, чтобы
+следующий человек добавил кейсы, не меняя контракт.
 
-## What the set has to look like
+## Как должен выглядеть набор
 
-The set is only honest if retrieval has something to fail on:
+Набор честен, только если поиску есть на чём упасть:
 
-- every document in `knowledge/` has at least one case, kept by a test;
-- same-topic documents compete: two policies with different numbers, an expired edition next to a
-  current one, one document in `all` and its neighbour in `hr_only`;
-- questions are phrased the way a new hire asks them, not with the words of the document, so a
-  lexical match is not a free pass;
-- the corpus is written before the questions, and questions are never rewritten after a run to make
-  a gate pass.
+- у каждого документа в `knowledge/` есть хотя бы один кейс, это держит тест;
+- документы на одну тему конкурируют: две политики с разными числами, просроченная редакция рядом
+  с текущей, документ в `all` и его сосед в `hr_only`;
+- вопросы сформулированы так, как их задаёт новичок, а не словами документа, чтобы лексическое
+  совпадение не было бесплатным проходом;
+- корпус написан раньше вопросов, и вопросы никогда не переписывают после прогона, чтобы гейт
+  прошёл.
 
-One caveat travels with every measurement: when the same person writes the corpus and the questions,
-recall numbers lean optimistic. Record that in the measurement note instead of claiming the corpus
-is neutral. The corpus limits are in [corpus-design.md](corpus-design.md).
+С каждым измерением идёт оговорка: когда корпус и вопросы пишет один человек, числа recall
+смещены в оптимистичную сторону. Запишите это в заметке к измерению, а не заявляйте нейтральность
+корпуса. Границы корпуса — в [corpus-design.md](corpus-design.md).
 
-## Test tiers
+## Уровни тестов
 
-Two tiers, and the cheap one is the default:
+Два уровня, дешёвый по умолчанию:
 
-| Command | What runs | Cost |
+| Команда | Что идёт | Цена |
 |---|---|---|
-| `make test` | unit suite, offline; an unmarked test that opens a socket fails | free, ~5 s |
-| `make test-live` | `integration` (real Postgres) and `eval` (real providers) | cents, keys required |
+| `make test` | unit-набор, офлайн; немаркированный тест, который открывает сокет, падает | бесплатно, ~5 с |
+| `make test-live` | `integration` (настоящий Postgres) и `eval` (настоящие провайдеры) | копейки, нужны ключи |
 
-`pytest` is configured with `-m 'not integration and not eval'`, so a forgotten marker cannot spend
-money on a normal run. `apps/api/tests/conftest.py` blocks the transport and the socket layer; the
-guard is itself tested, because "we do not call out" has to be provable. Live model smoke tests are
-`apps/api/tests/test_live_providers.py`: one short completion, two sentences, two documents — enough
-to prove that the key, the base URL, the extra headers, and the profile agree.
+`pytest` настроен на `-m 'not integration and not eval'`, так что забытая метка не потратит денег в
+обычном прогоне. `apps/api/tests/conftest.py` блокирует транспорт и слой сокетов; сама защита тоже
+под тестом, потому что «мы наружу не ходим» должно быть доказуемо. Живые smoke-тесты моделей —
+`apps/api/tests/test_live_providers.py`: один короткий completion, два предложения, два документа — хватает, чтобы доказать, что ключ, base URL, дополнительные заголовки и профиль согласованы.
 
-Quality is not in this table on purpose. A smoke test says the wiring works; only `make eval` and
-`make eval-retrieval` say whether the answers are good.
+Качества в этой таблице нет намеренно. Smoke-тест говорит, что проводка работает; хороши ли
+ответы — говорят только `make eval` и `make eval-retrieval`.
 
-## The gates can fail
+## Гейты умеют падать
 
-`make eval-lint` (also part of `make check`) runs
-`apps/api/tests/test_eval_gates_have_power.py`: each gate is tripped by a mutant that breaks the
-pipeline on purpose — a reranker that keeps the wrong document, an answer that cites nothing, an
-ACL guard switched off, an answer quoting the expired edition. If a mutant survives, the gate is
-decoration and the test says so.
+`make eval-lint` (входит и в `make check`) гоняет `apps/api/tests/test_eval_gates_have_power.py`:
+каждый гейт роняет мутант, который ломает конвейер нарочно — переранжировщик, оставляющий не тот
+документ, ответ без единой цитаты, выключенная ACL-защита, ответ с цитатой из просроченной
+редакции. Если мутант выжил, гейт — украшение, и тест это говорит.
 
-Two mutants exist because they caught real holes:
+Два мутанта существуют потому, что поймали настоящие дыры:
 
-- `citation_support` passed an empty citation list until the metric demanded at least one;
-- `context_fragment_coverage` was unmeasurable until the runner recorded the chunks the model
-  actually saw, after reranking.
+- `citation_support` пропускала пустой список цитат, пока метрика не потребовала хотя бы одну;
+- `context_fragment_coverage` была неизмерима, пока runner не записал фрагменты, которые модель
+  реально видела после переранжирования.
 
-## Determinism
+## Детерминизм
 
-A hosted embedding endpoint is not required to be deterministic, and this one is not: Qwen3
-Embedding 8B behind OpenRouter returned cosine 0.997 between two calls with identical input. The
-question is not "is it deterministic" but "how much movement is noise", and that has now been
-measured rather than guessed.
+Хостинговый эндпоинт эмбеддингов не обязан быть детерминированным, и этот не детерминирован:
+Qwen3 Embedding 8B за OpenRouter дал косинус 0.997 между двумя вызовами с одинаковым входом.
+Вопрос не «детерминирован ли он», а «сколько движения — шум», и это уже измерено, а не угадано.
 
-Measured 2026-10-24 at commit `332d88b`: three identical retrieval-only runs of the 137-case set,
-no provider call between them changed anything.
+Замер 2026-10-24 на коммите `332d88b`: три одинаковых прогона только поиска по набору из 137
+кейсов, ни один вызов провайдера между ними ничего не менял.
 
 ```bash
 make eval-retrieval ARGS="--label noise-r1"   # and -r2, -r3
 ```
 
-| run | `recall_at_5` | `mrr` |
+| прогон | `recall_at_5` | `mrr` |
 |---|---|---|
 | noise-r1 | 1.000 | 0.842 |
 | noise-r2 | 1.000 | 0.845 |
 | noise-r3 | 1.000 | 0.842 |
 
-Artifacts: `docs/measurements/2026-10-24-eval-retrieval-noise-r{1,2,3}.jsonl`. The retrieved list
-differed on 19–27 of 137 cases — order, not membership — `recall_at_5` never flipped, and the
-largest adjacent `mrr` delta was +0.0027 with a paired 95% interval of [−0.011, +0.003],
+Артефакты: `docs/measurements/2026-10-24-eval-retrieval-noise-r{1,2,3}.jsonl`. Выдача отличалась на
+19–27 кейсах из 137 — порядок, не состав; `recall_at_5` не перевернулась ни разу, а наибольшая
+соседняя дельта `mrr` составила +0.0027 при парном интервале 95 % [−0.011, +0.003],
 `p(delta <= 0) = 0.37`.
 
-The noise floor that follows: at this set size a `recall_at_5` change is a real membership change,
-and anything under ±0.01 in `mrr` is the embedder breathing.
+Отсюда пол шума: на таком размере набора изменение `recall_at_5` — реальная смена состава, а всё в
+пределах ±0.01 по `mrr` — это эмбеддер дышит.
 
-An earlier observation disagrees and is kept: on the 132-case set the same embedder moved
-`recall_at_5` between 0.992 and 1.000 and flipped `company-products` between 0.00 and 1.00. That
-run predates the metric renames and used a different set, which is exactly why the rules below
-start with "repeat the run".
+Более раннее наблюдение расходится с этим, и его оставили: на наборе из 132 кейсов тот же эмбеддер
+двигал `recall_at_5` между 0.992 и 1.000 и переворачивал `company-products` между 0.00 и 1.00. Тот
+прогон старше переименования метрик и шёл на другом наборе — ровно поэтому правила ниже начинаются
+с «повтори прогон».
 
-### The sampler was the noise, not the prompt
+### Шум давал сэмплер, а не промпт
 
-The retrieval arms above hold the model fixed. Generation does not, unless temperature is 0, and
-that cost three runs to notice: prompt versions 4, 5 and 6 differed in text, so their numbers looked
-like a prompt effect. Version 7 is version 6 with one change and no new words — `temperature: 0.0`
-instead of `0.2`.
+В ветках поиска выше модель зафиксирована. Генерация — нет, если temperature не 0, и на то, чтобы
+это заметить, ушло три прогона: версии промпта 4, 5 и 6 отличались текстом, поэтому их числа
+выглядели как эффект промпта. Версия 7 — это версия 6 с одной правкой и без новых слов:
+`temperature: 0.0` вместо `0.2`.
 
-| run | prompt | temperature | `escalation_recall` | `escalation_precision` | `answer_contains` |
+| прогон | промпт | temperature | `escalation_recall` | `escalation_precision` | `answer_contains` |
 |---|---|---|---|---|---|
-| v4 | missing-fact rule absent | 0.2 | 0.933 | 0.750 | 0.942 |
-| v5 | missing-fact rule strict | 0.2 | 1.000 | 0.600 | 0.885 |
-| v6a | missing fact, paraphrase allowed | 0.2 | 1.000 | 0.750 | 0.918 |
-| v6b | same file, same corpus | 0.2 | 0.867 | 0.565 | 0.885 |
-| v7a | same text as v6 | 0.0 | 0.933 | 0.875 | 0.943 |
+| v4 | нет правила про отсутствующий факт | 0.2 | 0.933 | 0.750 | 0.942 |
+| v5 | правило про отсутствующий факт строгое | 0.2 | 1.000 | 0.600 | 0.885 |
+| v6a | нет факта, пересказ разрешён | 0.2 | 1.000 | 0.750 | 0.918 |
+| v6b | тот же файл, тот же корпус | 0.2 | 0.867 | 0.565 | 0.885 |
+| v7a | тот же текст, что v6 | 0.0 | 0.933 | 0.875 | 0.943 |
 
-v6a and v6b are the same prompt, the same corpus and the same commit; they differ by two deciding
-cases in fifteen. That is the resolution limit of a 15-case decision set at temperature 0.2, and no
-gate can separate a regression from a sampler. Version 7 removes the sampler: `--compare` against
-v6b reports `escalation_correctness` +0.051 with an interval of [+0.000, +0.102] and
-`contains_expected` +0.051 with [+0.000, +0.102], which is the measurable part of "the prompt did
-not change, the dice did".
+v6a и v6b — один промпт, один корпус и один коммит; они расходятся на два решающих кейса из
+пятнадцати. Это предел разрешения набора из 15 решающих кейсов при temperature 0.2, и ни один гейт
+не отделит регрессию от сэмплера. Версия 7 убирает сэмплер: `--compare` против v6b даёт
+`escalation_correctness` +0.051 с интервалом [+0.000, +0.102] и `contains_expected` +0.051 с
+[+0.000, +0.102] — измеримая часть фразы «промпт не менялся, кости легли иначе».
 
-The 15-case denominator is still thin, and the pinned stratum gates say so: `escalation` holds three
-cases and no stratum gate is quoted below ten. Growing that stratum is the next authoring task, not
-a prompt change.
+Знаменатель из 15 кейсов всё ещё тонок, и закреплённые гейты страт это говорят: в `escalation` три
+кейса, а гейт страты ниже десяти не цитируется. Растить эту страту — следующая авторская задача, а
+не правка промпта.
 
-Rules that follow:
+Отсюда правила:
 
-- a delta under ±0.01 in `mrr` is inside provider noise; repeat before claiming it;
-- a changed `recall_at_5` is a case that changed sides — name it, do not average it away;
-- never compare two embedders using one run each — use `--compare` and the paired interval;
-- when a case flips between runs, the measurement says so rather than reporting the friendlier run.
+- дельта по `mrr` меньше ±0.01 — внутри шума провайдера; повтори прогон, прежде чем заявлять её;
+- изменившаяся `recall_at_5` — кейс, который перешёл на другую сторону: назови его, не размывай
+  средним;
+- никогда не сравнивай два эмбеддера по одному прогону на каждом — бери `--compare` и парный
+  интервал;
+- если кейс переворачивается между прогонами, измерение это говорит, а не сообщает более удобный
+  прогон.
 
-## The arms, and what each one changed
+## Ветки и что в каждой менялось
 
-Each arm is one retrieval-only run of the same 137 cases with one switch moved, and the arm is
-recorded in the measurement header by `retrieval_label`: embedder, reranker, `bm25:` and
-`contextual:`. Before that label existed, two arms produced identical headers and the artifacts
-could not be told apart.
+Каждая ветка — один прогон только поиска по тем же 137 кейсам с одним переключённым выключателем;
+ветка записывается в шапку измерения через `retrieval_label`: эмбеддер, переранжировщик, `bm25:` и
+`contextual:`. Пока метки не было, две ветки давали одинаковые шапки, и артефакты нельзя было
+различить.
 
-Measured 2026-10-24, retrieval-only, 137 cases, Qwen3 Embedding 8B at 1024 plus the Nemotron
-reranker unless stated:
+Замер 2026-10-24, только поиск, 137 кейсов, Qwen3 Embedding 8B на 1024 и переранжировщик Nemotron,
+если не сказано иное:
 
-| arm | `recall_at_5` | `mrr` | verdict |
+| ветка | `recall_at_5` | `mrr` | вердикт |
 |---|---|---|---|
-| two-list fusion, no BM25 | 1.000 | 0.951 | the shipped configuration |
-| three-list fusion, BM25 on (`pg_search` on ParadeDB) | 0.988 | 0.915 | worse on both; ADR 0012 upheld |
-| plain index | measured in `arm-plain` | | the comparator for contextual |
-| index built with contextual chunks (`contextual:v1`) | 1.000 | 0.919 | no gain on recall, `mrr` inside the paired interval |
+| слияние двух списков, без BM25 | 1.000 | 0.951 | выпущенная конфигурация |
+| слияние трёх списков, BM25 включён (`pg_search` на ParadeDB) | 0.988 | 0.915 | хуже по обоим; ADR 0012 подтверждён |
+| обычный индекс | замер в `arm-plain` | | компаратор для contextual |
+| индекс на контекстных фрагментах (`contextual:v1`) | 1.000 | 0.919 | прироста recall нет, `mrr` в парном интервале |
 
-BM25 cost one case of recall and 0.036 of `mrr`: a lexical list that reorders a corpus of 78 chunks
-adds a third opinion where two already agree, and the opinion it adds is the one that puts a word
-match above a meaning match. The arm is reproducible on any machine with the ParadeDB image:
+BM25 стоил одного кейса recall и 0.036 `mrr`: лексический список, переупорядочивающий корпус из 78
+фрагментов, добавляет третье мнение там, где два уже согласны, и это мнение ставит совпадение слова
+выше совпадения смысла. Ветка воспроизводится на любой машине с образом ParadeDB:
 
 ```bash
 docker run -d --name parade-test -p 5433:5432 -e POSTGRES_USER=onboarding \
@@ -276,14 +285,14 @@ DATABASE_URL=...5433/onboarding BM25_ENABLED=false make eval-retrieval ARGS="--l
 DATABASE_URL=...5433/onboarding BM25_ENABLED=true  make eval-retrieval ARGS="--label arm-bm25-on"
 ```
 
-Contextual retrieval is one ingest plus one run: `CONTEXTUAL_RETRIEVAL=true make ingest` writes the
-prefix into `kb_chunks.context` and embeds `context + text`; the arm then measures whether the
-prefix earns its place. ADR 0016 stays **proposed** until the paired interval excludes zero.
+Contextual-поиск — один ingest и один прогон: `CONTEXTUAL_RETRIEVAL=true make ingest` пишет префикс
+в `kb_chunks.context` и эмбеддит `context + text`; ветка затем меряет, оправдывает ли префикс своё
+место. ADR 0016 остаётся **предложенным**, пока парный интервал не исключит ноль.
 
-## Comparing two runs
+## Сравнение двух прогонов
 
-Every run writes two files: the Markdown table and a JSONL artifact with one line per case. The
-artifact is what makes a comparison honest.
+Каждый прогон пишет два файла: Markdown-таблицу и JSONL-артефакт со строкой на кейс. Артефакт и
+делает сравнение честным.
 
 ```bash
 make eval                                          # current run
@@ -291,74 +300,76 @@ make eval ARGS="--compare docs/measurements/2026-10-23-eval-retrieval-qwen3-embe
 make eval ARGS="--compare out.jsonl --fail-on-regression"
 ```
 
-`--compare` resamples the cases both runs scored, together, and reports the delta with a 95%
-interval and `p(delta <= 0)`. Two standalone accuracies are not a comparison; the same cases
-resampled together are. `--fail-on-regression` turns that into an exit code for CI.
+`--compare` пересэмплирует кейсы, которые оценили оба прогона, вместе, и даёт дельту с интервалом
+95 % и `p(delta <= 0)`. Две отдельные точности — не сравнение; сравнение — те же кейсы,
+пересэмплированные вместе. `--fail-on-regression` превращает это в код выхода для CI.
 
-## Pinning a baseline
+## Закрепление базового прогона
 
-A pinned baseline can only make a gate **stricter**. Its numbers are Wilson lower bounds, so a thin
-sample produces a loose bound — pinning a measured `escalation_precision` of 0.68 yields a floor of
-0.36, and a naive override would replace the 0.70 in `GATES` with a number nobody has to meet. The
-effective gate is therefore `max(policy, pinned)` for minima and `min(policy, pinned)` for maxima:
-the policies in `GATES` are the floor, the baseline records what the system has actually achieved.
+Закреплённый базовый прогон может только **ужесточить** гейт. Его числа — нижние границы Уилсона,
+поэтому тонкая выборка даёт широкую границу: закрепление измеренной `escalation_precision` 0.68
+даёт пол 0.36, и наивная подмена заменила бы 0.70 в `GATES` числом, которое никому не нужно
+достигать. Действующий гейт — это `max(policy, pinned)` для минимумов и `min(policy, pinned)` для
+максимумов: политики в `GATES` — пол, базовый прогон записывает, чего система реально достигла.
 
-The committed gates in `runner.GATES` are defaults. A real baseline is derived, not chosen:
+Гейты, закоммиченные в `runner.GATES`, — значения по умолчанию. Настоящий базовый прогон выводится,
+а не выбирается:
 
 ```bash
 make eval-baseline        # run + write docs/evals/baseline.json (gate = Wilson LB of this run)
 ```
 
-From then on every run is checked against it, per stratum where the stratum holds at least ten
-cases. Regenerating the baseline is a decision, and it belongs in the measurement note: it lowers
-the bar for everything downstream.
+Дальше каждый прогон сверяется с ним, по стратам, где в страте не меньше десяти кейсов.
+Перегенерация базового прогона — решение, и ему место в заметке к измерению: она опускает планку
+для всего ниже по течению.
 
-## The ACL matrix
+## Матрица ACL
 
-The golden set carries ten hand-written ACL cases. That proves the predicate works for ten pairs;
-it cannot prove it works for the corpus. The predicate is one SQL clause (`DocumentRow.audience ?|
-viewer`), shared by both retrievers, and a single typo in it discloses a whole audience.
+В золотом наборе десять ACL-кейсов, написанных руками. Это доказывает, что предикат работает на
+десяти парах; что он работает на корпусе — нет. Предикат — одно SQL-условие
+(`DocumentRow.audience ?| viewer`), общее для обоих поисковиков, и одна опечатка в нём раскрывает
+целую аудиторию.
 
 ```bash
 make eval-acl        # every (viewer, document) pair, retrieval-only, no key, no generation
 ```
 
-The run builds 345 cases from `knowledge/` — 69 active documents × 5 viewers (`all`, `hr_only`,
-`dept:it`, `dept:sales`, `dept:production`) — and asks each document a sentence from its own body.
-A title would measure relevance; a body sentence only fails when visibility is wrong.
+Прогон строит 345 кейсов из `knowledge/` (69 активных документов × 5 зрителей: `all`, `hr_only`,
+`dept:it`, `dept:sales`, `dept:production`) и спрашивает у каждого документа предложение из его же
+тела. Заголовок мерил бы релевантность; предложение из тела падает, только когда видимость неверна.
 
-Two failures, both gated:
+Два провала, оба под гейтом:
 
-- `leak_rate` — a document the viewer may not see reached the top 5. Includes expired editions:
-  `hr/leave-policy-2025` is `valid_to: 2025-12-31`, so it is in every viewer's guard list.
-- `recall_at_5` — an allowed document did not come back. Over-restriction is quiet: the assistant
-  then refuses a question it should answer, and no leak metric notices.
+- `leak_rate` — документ, которого зритель видеть не должен, дошёл до топ 5. Включая просроченные
+  редакции: у `hr/leave-policy-2025` стоит `valid_to: 2025-12-31`, поэтому он в списке охраны у
+  каждого зрителя.
+- `recall_at_5` — разрешённый документ не вернулся. Перестраховка тихая: ассистент отказывается
+  отвечать на вопрос, на который должен, и ни одна метрика утечки этого не замечает.
 
-The first run (2026-10-24, commit `332d88b`) found this useful without any ACL bug: `leak_rate`
-0.000 over 345 cases, and `recall_at_5` 0.966, with every miss on two documents whose *title* was
-a poor query — which is why the question is now a body sentence, not a title.
+Первый прогон (2026-10-24, коммит `332d88b`) принёс пользу без единого ACL-бага: `leak_rate` 0.000
+на 345 кейсах, `recall_at_5` 0.966, и все промахи — на двух документах, у которых *заголовок* был
+плохим запросом. Поэтому вопрос теперь предложение из тела, а не заголовок.
 
-## Adding a case
+## Добавление кейса
 
-1. Every escalation in production becomes a case.
-2. Every wrong answer found by a recruiter becomes a case.
-3. A case names documents, not chunks: chunk ids change when chunking changes.
-4. The set grows; cases are never deleted to make the gate pass. The stratum ratchet in
-   `test_golden.py` fails when a stratum shrinks.
+1. Каждая эскалация в проде становится кейсом.
+2. Каждый неверный ответ, найденный рекрутёром, становится кейсом.
+3. Кейс называет документы, а не фрагменты: id фрагментов меняются вместе с нарезкой.
+4. Набор растёт; кейсы не удаляют, чтобы гейт прошёл. Ratchet страт в `test_golden.py` падает,
+   когда страта сжимается.
 
-## Naming history
+## История имён
 
-Measurements written before 2026-10-24 use `p95_latency_ms` and `cost_per_answer_rub`. Those names
-are gone: the first measured a provider call, the second measured a completion. Read the old files
-with that correction in mind; do not compare an old file's `p95_latency_ms` with a new
-`p95_answer_ms`.
+Измерения, написанные до 2026-10-24, используют `p95_latency_ms` и `cost_per_answer_rub`. Этих
+имён больше нет: первое мерило вызов провайдера, второе — completion. Читайте старые файлы с этой
+поправкой; не сравнивайте `p95_latency_ms` из старого файла с новым `p95_answer_ms`.
 
-## Sentiment set
+## Набор тональности
 
-`docs/evals/sentiment.yaml` is the risk radar's own set: a free-text answer, its tone, the tags a
-recruiter would route, and whether a recruiter must be alerted. It answers a different question than
-the golden set ("did the model hear the problem?" rather than "did it cite the right document?").
-The label rules are in [sentiment-guide.md](sentiment-guide.md); they change before a label does.
+`docs/evals/sentiment.yaml` — собственный набор риск-радара: свободный ответ, его тон, теги, по
+которым рекрутёр разложит, и нужно ли поднимать рекрутёра. Он отвечает на другой вопрос, чем
+золотой набор: «услышала ли модель проблему?» вместо «сослалась ли она на верный документ?».
+Правила меток — в [sentiment-guide.md](sentiment-guide.md); они меняются раньше метки.
 
 ```bash
 make eval-sentiment                      # the configured prompt classifier
@@ -367,99 +378,96 @@ make eval-sentiment PROVIDER=jev         # TypeSafe Jev, needs JEV_API_KEY
 make eval-sentiment SPLIT=test REPEAT=3  # the locked half, three calls per case
 ```
 
-Every case carries `split: dev | test`. `dev` may be read while editing a prompt; `test` is locked
-and every quality claim quotes both numbers, because a gap between them is how overfitting shows
-up. The set has two rules: a case is added after a real failure, and no case is deleted to make a
-gate pass. The set holds 163 cases: 49 dev and 114 test. A measurement that reports a different
-size was taken against another edition of the file and is not comparable.
+У каждого кейса есть `split: dev | test`. `dev` можно читать, пока правишь промпт; `test` заперт, и
+каждое заявление о качестве называет оба числа, потому что разрыв между ними и есть переобучение. У
+набора два правила: кейс добавляют после реального провала, и ни один кейс не удаляют, чтобы гейт
+прошёл. В наборе 163 кейса: 49 dev и 114 test. Измерение с другим размером снято с другой редакции
+файла и несравнимо.
 
-Metrics:
+Метрики:
 
-| Metric | Definition |
+| Метрика | Определение |
 |---|---|
-| `sentiment_accuracy` | share of calls whose tone matches the label, with a Wilson 95% interval |
-| `sentiment_macro_f1` | mean F1 over the tones present, so a rare class is not diluted by a common one |
-| per-tone recall | one row per tone, plus a confusion matrix; accuracy alone hides a dead class |
-| `tag_precision`, `tag_recall`, `tag_f1` | micro over calls and labels, comparable with earlier runs |
-| per-tag recall | one row per tag, because a missing `integration` tag is invisible in a micro average |
-| `escalation_recall` | share of `expect_escalation` cases where `core/risk.py` returns high + recruiter |
-| `false_alarm_rate` | share of calm cases that still escalate |
-| `fallback_rate`, `format_error_rate` | how often the classifier degraded to keywords or a broken answer |
-| `input_tokens_total`, `output_tokens_total` | what the calls consumed; both classifiers record them, so either path can be priced from its own audit rows |
-| `p50/p95/p99_latency_ms` | per-call latency; p95 alone hides whether the median is already slow |
-| `cost_rub_total`, `cost_rub_per_1k_calls` | what the run spent at the profile's price, summed from the classifier's own usage |
-| `cost_usd_total`, `cost_usd_per_1k_calls`, `priced_calls` | the provider's own `usage.cost`, when it reports one (OpenRouter does); a price nobody measured is a guess |
+| `sentiment_accuracy` | доля вызовов, где тон совпал с меткой, с интервалом Уилсона 95 % |
+| `sentiment_macro_f1` | средний F1 по присутствующим тонам, чтобы редкий класс не растворился в частом |
+| recall по тонам | строка на тон плюс матрица ошибок; одна точность скрывает мёртвый класс |
+| `tag_precision`, `tag_recall`, `tag_f1` | микро по вызовам и меткам, сравнимо с прошлыми прогонами |
+| recall по тегам | строка на тег: пропавший тег `integration` в микро-среднем не виден |
+| `escalation_recall` | доля кейсов `expect_escalation`, где `core/risk.py` вернул высокий риск и рекрутёра |
+| `false_alarm_rate` | доля спокойных кейсов, которые всё равно эскалируют |
+| `fallback_rate`, `format_error_rate` | как часто классификатор деградировал до ключевых слов или сломанного ответа |
+| `input_tokens_total`, `output_tokens_total` | что вызовы потребили; оба классификатора их пишут, поэтому любой путь можно оценить по его же строкам аудита |
+| `p50/p95/p99_latency_ms` | задержка на вызов; один p95 скрывает, что медиана уже медленная |
+| `cost_rub_total`, `cost_rub_per_1k_calls` | что прогон потратил по цене профиля, сумма из собственного usage классификатора |
+| `cost_usd_total`, `cost_usd_per_1k_calls`, `priced_calls` | собственный `usage.cost` провайдера, когда он его отдаёт (OpenRouter отдаёт); цена, которую никто не мерил, — догадка |
 
-`--repeat N` calls the provider N times per case and lists the cases whose verdict changed. A gate
-cannot be tighter than that instability.
+`--repeat N` вызывает провайдера N раз на кейс и перечисляет кейсы, чей вердикт изменился. Гейт не
+может быть строже этой нестабильности.
 
-**`case_accuracy` is not the production number.** It takes the majority verdict over repetitions,
-and a single wrong call in production has no second or third attempt to be outvoted. Read
-`sentiment_accuracy` (per call) for what a deploy would do, use `case_accuracy` only to separate a
-systematic error from a flaky one, and treat `fallback_rate` as part of the answer: a provider that
-degrades on one call in five is not competing at its table accuracy. Measured on 2026-10-23, the two
-rankings disagreed — Jev led per call (0.883 against 0.854) and trailed on majority (0.886 against
-0.921).
+**`case_accuracy` — не продакшн-число.** Она берёт вердикт большинства по повторам, а один неверный
+вызов в проде не получает второго и третьего захода, чтобы оказаться в меньшинстве. Что сделал бы
+деплой — читайте в `sentiment_accuracy` (на вызов); `case_accuracy` берите только чтобы отделить
+систематическую ошибку от плавающей, а `fallback_rate` считайте частью ответа: провайдер, который
+деградирует на одном вызове из пяти, не соревнуется на своей точности по таблице. Замер 2026-10-23:
+два рейтинга разошлись — Jev вёл на вызов (0.883 против 0.854) и отставал по большинству (0.886
+против 0.921).
 
-The Markdown header names what ran: the model, the prompt version, or the rubric selector
-(`sentiment-jev@1`). A table without that line is not comparable with anything.
+Шапка Markdown называет, что шло: модель, версию промпта или селектор рубрики (`sentiment-jev@1`).
+Таблица без этой строки несравнима ни с чем.
 
-Each run writes two files: the Markdown table and a JSONL artifact with one line per call. The
-artifact is what makes a comparison honest:
+Каждый прогон пишет два файла: Markdown-таблицу и JSONL-артефакт со строкой на вызов. Артефакт и
+делает сравнение честным:
 
 ```bash
 python -m onboarding.evals.sentiment --provider prompt --split test \
   --compare docs/measurements/<date>-sentiment-keyword.jsonl
 ```
 
-`--compare` runs a paired bootstrap over the cases both runs scored and reports the delta with a 95%
-interval and `p(delta <= 0)`. Two standalone accuracies are not a comparison; the same cases
-resampled together are.
+`--compare` гоняет парный бутстрап по кейсам, которые оценили оба прогона, и даёт дельту с
+интервалом 95 % и `p(delta <= 0)`. Две отдельные точности — не сравнение; сравнение — те же кейсы,
+пересэмплированные вместе.
 
-There is no gate yet: a gate needs a stable baseline across models and repetitions. The current
-numbers and the reasoning are in
-[decisions/0020-jev-as-a-classifier-profile.md](../decisions/0020-jev-as-a-classifier-profile.md).
-A missed crisis becomes a case here before it becomes a prompt edit.
+Гейта пока нет: гейту нужен устойчивый базовый прогон по моделям и повторам. Текущие числа и
+рассуждение — в [decisions/0020-jev-as-a-classifier-profile.md](../decisions/0020-jev-as-a-classifier-profile.md).
+Пропущенный кризис сначала становится здесь кейсом, потом правкой промпта.
 
-A stratum needs roughly thirty cases before its recall means anything: on ten crisis cases, three
-discordant pairs give `p = 0.25` in either direction, which is how a "perfect escalation recall"
-appears and then evaporates. The test split now holds 34 crisis and 14 `unknown` cases for that
-reason.
+Страте нужно около тридцати кейсов, чтобы её recall что-то значил: на десяти кризисных кейсах три
+несогласованные пары дают `p = 0.25` в любую сторону — так «идеальный recall эскалации» появляется и
+испаряется. Поэтому в test-половине теперь 34 кризисных кейса и 14 кейсов `unknown`.
 
-## OCR set
+## Набор OCR
 
-`docs/evals/ocr.yaml` measures the other half of ingestion: can the pipeline read a page, and does it
-refuse a page it cannot read? The cases are rendered from known text with a system font on every run,
-so the reference is exact and no binary is committed.
+`docs/evals/ocr.yaml` меряет другую половину индексации: умеет ли конвейер прочитать страницу и
+отказывается ли от страницы, которую прочитать не может? Кейсы рендерятся из известного текста
+системным шрифтом на каждом прогоне, поэтому эталон точный и ни один бинарник не закоммичен.
 
 ```bash
 make eval-ocr                            # doc-scan profile, needs the ocr extra
 make eval-ocr ARGS="--write --label v1"  # also write a measurement file
 ```
 
-Metrics: `character_error_rate` (character edits over reference length, on accepted cases),
-`verdict_correctness` (share of cases whose accept/refuse decision and reason match), and
-`mean_confidence`. Gates: `character_error_rate ≤ 0.05`, `verdict_correctness = 1.00`.
+Метрики: `character_error_rate` (правки символов на длину эталона, на принятых кейсах),
+`verdict_correctness` (доля кейсов, где решение принять/отказать и причина совпали) и
+`mean_confidence`. Гейты: `character_error_rate ≤ 0.05`, `verdict_correctness = 1.00`.
 
-This is a floor, not a field measurement. Four clean renders with no perspective, no shadow, no
-stamp, and no handwriting prove the language route, normalization, and acceptance work; they cannot
-notice that the recognizer struggles with a photographed page. The quality gate is not exercised
-either — its thresholds ship unset, and turning one on is a measurement of its own. Report a real
-accuracy claim only from a set of real scans under `docs/evals/`, with the same command-commit
-discipline as the golden set.
+Это пол, а не полевое измерение. Четыре чистых рендера без перспективы, теней, штампа и рукописного
+текста доказывают, что языковой маршрут, нормализация и приём работают; заметить, что распознаватель
+спотыкается о сфотографированную страницу, они не могут. Гейт качества тоже не задействован: его
+пороги поставляются незаданными, а включение одного — отдельное измерение. Настоящее заявление о
+точности — только по набору реальных сканов под `docs/evals/`, с той же дисциплиной команды и
+коммита, что у золотого набора.
 
-## Reporting
+## Отчётность
 
-A run writes `docs/measurements/<date>-eval-<scope>.md` with the command, the commit, the answer
-profile and model, the embedder, the metrics, the strata, and a link to its JSONL artifact. The
-profile name is the thing a later reader can re-run: `LLM_PROFILE=<name> make eval`. Use `--note`
-for a caveat that must travel with the numbers. A measurement without a commit is not a
-measurement.
+Прогон пишет `docs/measurements/<date>-eval-<scope>.md`: команда, коммит, профиль ответа и модель,
+эмбеддер, метрики, страты и ссылка на JSONL-артефакт. Имя профиля — то, что поздний читатель может
+перезапустить: `LLM_PROFILE=<name> make eval`. `--note` — для оговорки, которая должна идти вместе с
+числами. Измерение без коммита — не измерение.
 
-The `retrieval:` line names every switch that changed the list: the embedder and its width, the
-reranker or `none`, `bm25:on|off` (ADR 0012), and `contextual:off|v<n>` (ADR 0016). Two arms of an
-experiment differ in that line and nowhere else, so a reader can tell them apart without trusting a
-filename:
+Строка `retrieval:` называет каждый переключатель, изменивший список: эмбеддер и его ширину,
+переранжировщик или `none`, `bm25:on|off` (ADR 0012) и `contextual:off|v<n>` (ADR 0016). Две ветки
+эксперимента отличаются этой строкой и больше ничем, поэтому читатель различит их, не доверяя имени
+файла:
 
 ```bash
 BM25_ENABLED=1 make eval-retrieval ARGS="--label bm25-on"

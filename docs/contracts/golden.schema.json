@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/polypiast/onboarding/docs/contracts/golden.schema.json",
-  "title": "Golden set",
-  "description": "The question set of record. One case names documents, never chunks, so a chunking change does not rewrite the set. `stratum` is mandatory: a metric reported over one aggregate hides the stratum that broke.",
+  "title": "Золотой набор",
+  "description": "Эталонный набор вопросов. Кейс называет документы, а не фрагменты, поэтому правка нарезки не переписывает набор. `stratum` обязателен: метрика по одному агрегату скрывает сломанную страту.",
   "type": "object",
   "additionalProperties": false,
   "required": ["cases"],
@@ -17,7 +17,7 @@
     "docId": {
       "type": "string",
       "pattern": "^[a-z0-9_-]+/[a-z0-9_-]+$",
-      "description": "`<folder>/<document>`, matching the frontmatter `id` in knowledge/."
+      "description": "`<folder>/<document>`, совпадает с `id` во frontmatter в knowledge/."
     },
     "case": {
       "type": "object",
@@ -27,17 +27,17 @@
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]+$",
-          "description": "Stable slug. Renaming a case destroys comparability with earlier measurements."
+          "description": "Стабильный слаг. Переименование кейса ломает сравнимость с прошлыми измерениями."
         },
         "question": {
           "type": "string",
           "minLength": 5,
-          "description": "Phrased the way a new hire asks it, not in the words of the document."
+          "description": "Сформулирован так, как спросит новичок, а не словами документа."
         },
         "audience": {
           "type": "string",
           "pattern": "^(all|hr_only|dept:[a-z0-9_-]+)$",
-          "description": "The viewer's audience for this case."
+          "description": "Аудитория смотрящего для этого кейса."
         },
         "stratum": {
           "type": "string",
@@ -51,29 +51,29 @@
             "unanswerable",
             "morphology"
           ],
-          "description": "fact: one document answers. neardup: a competing near-duplicate exists. multihop: two or more documents answer. acl: a relevant document exists and must stay hidden. escalation: must escalate, no hidden document involved. injection: an attack, not a question. unanswerable: no document holds the fact. morphology: degraded phrasing — typos, no keywords, scrambled word order."
+          "description": "fact: отвечает один документ. neardup: есть конкурирующий почти-дубль. multihop: отвечают два документа или больше. acl: релевантный документ есть и должен остаться скрытым. escalation: нужна эскалация, скрытый документ ни при чём. injection: атака, а не вопрос. unanswerable: факта нет ни в одном документе. morphology: испорченная формулировка — опечатки, нет ключевых слов, перемешан порядок слов."
         },
         "expect_docs": {
           "type": "array",
           "items": { "$ref": "#/$defs/docId" },
           "uniqueItems": true,
-          "description": "Documents that must reach the top five. Empty for escalation-only cases."
+          "description": "Документы, которые обязаны попасть в топ-5. Пусто для кейсов только на эскалацию."
         },
         "expect_absent_docs": {
           "type": "array",
           "items": { "$ref": "#/$defs/docId" },
           "uniqueItems": true,
-          "description": "Documents that must never reach the top five: other audiences, expired editions, never-indexed drafts."
+          "description": "Документы, которые не должны попасть в топ-5 никогда: чужие аудитории, истёкшие редакции, неиндексированные черновики."
         },
         "expect_contains": {
           "type": "array",
           "items": { "type": "string", "minLength": 2 },
-          "description": "Full phrases with the number and its unit, not bare digits. A bare `3` matches `3 hours, 14 days`."
+          "description": "Целые фразы с числом и единицей, не голые цифры. Голое `3` совпадёт с `3 hours, 14 days`."
         },
         "expect_not_contains": {
           "type": "array",
           "items": { "type": "string", "minLength": 2 },
-          "description": "Phrases that mark a wrong answer even when the expected phrase is present: the other edition's number, the draft's number. Mandatory for a neardup case."
+          "description": "Фразы, которые выдают неверный ответ даже при наличии ожидаемой: число другой редакции, число черновика. Обязательны для кейса neardup."
         },
         "expect_escalation": {
           "type": "boolean",
@@ -82,7 +82,7 @@
         "expect_reason": {
           "type": "string",
           "enum": ["no_sources", "low_confidence", "restricted", "out_of_scope", "unavailable"],
-          "description": "Omitted means any escalation reason is accepted; a named one is asserted."
+          "description": "Пропущено — принимается любая причина эскалации; названная проверяется."
         }
       },
       "allOf": [

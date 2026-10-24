@@ -1,33 +1,43 @@
-# 0022 — A knowledge upload is accepted, not indexed, in the request
+---
+title: Загрузка документа асинхронна
+summary: Запрос принимает документ и ставит в очередь, индексирует воркер.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+supersedes: [14]
+---
 
-Date: 2026-10-25
-Status: accepted
-Supersedes: 0014 (partially: the markdown upload no longer calls the embedder in the request path)
+# 0022 — Загрузка документа принимается в запросе, а не индексируется
 
-## Context
+Дополняет [0014](0014-cabinet-writes-through-the-outbox.md) частично: загрузка markdown больше не
+зовёт эмбеддер в пути запроса.
 
-Markdown upload validated the frontmatter and then called `ingest_document` and the embedding
-provider inside the HTTP request. That made the request hold a database transaction open across a
-network call, tied the admin API to the embedder, and made the API container contain a model that
-the route was not supposed to own. The file upload already did the right thing: store, enqueue,
-answer `202`, let the worker index.
+## Контекст
 
-## Decision
+Загрузка markdown проверяла frontmatter, а затем звала `ingest_document` и провайдера эмбеддингов
+внутри HTTP-запроса. Запрос держал транзакцию базы открытой через сетевой вызов, админ-API
+привязывался к эмбеддеру, а контейнер API получал модель, которой маршрут владеть не должен был.
+Загрузка файла уже делала правильно: сохранить, поставить в очередь, ответить `202`, дать воркеру
+проиндексировать.
 
-1. `POST /admin/api/knowledge` validates the frontmatter, stores the bytes by SHA-256, inserts a
-   `queued` extraction row, and enqueues `index_document` in one transaction.
-2. It answers `202 Accepted` with `{"content_hash", "status": "queued"}`.
-3. The worker validates the stored text again and writes the chunks. The cabinet polls
-   `GET /admin/api/knowledge/files/{content_hash}`.
-4. `SubmitKnowledge` depends on `KnowledgeSubmitter`, not on `Database`, `PostgresKnowledgeWriter`,
-   or `Embedder`. The API container therefore has no embedder at all.
+## Решение
 
-## Consequences
+1. `POST /admin/api/knowledge` проверяет frontmatter, сохраняет байты по SHA-256, вставляет строку
+   извлечения в статусе `queued` и ставит `index_document` в очередь — одной транзакцией.
+2. Отвечает `202 Accepted` с `{"content_hash", "status": "queued"}`.
+3. Воркер проверяет сохранённый текст ещё раз и пишет фрагменты. Кабинет опрашивает
+   `GET /admin/api/knowledge/files/{content_hash}`.
+4. `SubmitKnowledge` зависит от `KnowledgeSubmitter`, а не от `Database`,
+   `PostgresKnowledgeWriter` или `Embedder`. Поэтому эмбеддера в контейнере API нет вообще.
 
-- The request is bounded by validation and one insert; a slow provider cannot time out an upload.
-- A repeated upload of the same bytes and profile adds no second job (`queued=false` internally;
-  the route still reports `queued` and the poll resolves immediately).
-- The admin API contract changes from `201 {id,title,chunks}` to `202 {content_hash,status}`; the
-  cabinet polls, as it already does for files.
-- An invalid document is rejected before storage when it can be, and by the worker with a
-  `rejected` row when the stored bytes disagree with the frontmatter.
+## Последствия
+
+- Запрос ограничен проверкой и одной вставкой; медленный провайдер не может уронить загрузку по
+  таймауту.
+- Повторная загрузка тех же байтов с тем же профилем не добавляет второй задачи (внутри
+  `queued=false`, маршрут всё равно отвечает `queued`, а опрос разрешается сразу).
+- Контракт админ-API меняется с `201 {id,title,chunks}` на `202 {content_hash,status}`; кабинет
+  опрашивает, как уже делает для файлов.
+- Неверный документ отвергается до сохранения, когда это возможно, а воркером — строкой
+  `rejected`, когда сохранённые байты расходятся с frontmatter.

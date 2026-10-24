@@ -1,58 +1,65 @@
-# Runbook: retention and offboarding
+---
+title: Хранение и офбординг
+summary: Что система хранит, сколько и как проверить, что чистка прошла.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-What the system keeps, for how long, and how to check that a purge happened.
+# Прогон: хранение и офбординг
 
-## What is covered
+Что система хранит, как долго и как проверить, что чистка прошла.
 
-| Data | Where | Retention |
+## Что покрыто
+
+| Данные | Где | Хранение |
 |---|---|---|
-| Escalated questions and answers | `questions` | `DATA_RETENTION_DAYS` after `asked_at` |
-| Replies written in the cabinet | `questions.resolution` | same as the question |
-| Outbound message text (including replies) | `messages` outbox | delivered rows after `sent_at` + window; undelivered rows after `created_at` + window; offboarding deletes every row for the employee's chats immediately |
-| Personal fields in the audit log (`evidence`, `quote`, `question`, `text`) | `audit_log.fields` | replaced by null after `DATA_RETENTION_DAYS`; the row stays |
-| Runs, risk signals, jobs, events | `runs`, `risk_*`, `jobs`, `events` | not purged; they carry ids, not free text |
-| Knowledge documents | `kb_*` | not personal data; versioned by `valid_from` / `valid_to` |
+| Вопросы в эскалации и ответы | `questions` | `DATA_RETENTION_DAYS` после `asked_at` |
+| Ответы, написанные в кабинете | `questions.resolution` | как у вопроса |
+| Текст исходящих сообщений (включая ответы) | `messages` outbox | доставленные строки после `sent_at` + окно; недоставленные после `created_at` + окно; офбординг сразу удаляет все строки по чатам сотрудника |
+| Персональные поля в аудите (`evidence`, `quote`, `question`, `text`) | `audit_log.fields` | заменяются на null после `DATA_RETENTION_DAYS`; строка остаётся |
+| Прогоны, сигналы риска, задачи, события | `runs`, `risk_*`, `jobs`, `events` | не чистятся; в них id, не свободный текст |
+| Документы базы знаний | `kb_*` | не персональные данные; версионируются по `valid_from` / `valid_to` |
 
-`DATA_RETENTION_DAYS` defaults to 365, must be at least 1, and is read at process start. It is a
-policy value: change it in the deployment environment, not in the database.
+`DATA_RETENTION_DAYS` по умолчанию 365, должен быть не меньше 1 и читается при старте процесса. Это
+значение политики: меняйте его в окружении деплоя, не в базе.
 
-## Offboarding an employee
+## Офбординг сотрудника
 
-HR only. The call is idempotent: a second `DELETE` returns zero counts and `200`.
+Только HR. Вызов идемпотентен: второй `DELETE` возвращает нулевые счётчики и `200`.
 
 ```bash
 curl -X DELETE "https://$HOST/admin/api/employees/$EMPLOYEE_ID" \
   -H "Authorization: Bearer $HR_TOKEN"
 ```
 
-Expected response: `{"employee_id": "...", "runs_closed": 1, "questions_deleted": 3,
-"audit_rows_redacted": 7}`. The employee disappears from the directory and from every scoped list;
-the row remains with `status='left'` and `left_at`.
+Ожидаемый ответ: `{"employee_id": "...", "runs_closed": 1, "questions_deleted": 3, "audit_rows_redacted": 7}`.
+Сотрудник исчезает из справочника и из всех списков по скоупу; строка остаётся с `status='left'` и `left_at`.
 
-## The outbox is a queue
+## `outbox` — это очередь
 
-`messages` is not an archive. A claimed row holds a lease in `available_at`; a worker that dies
-between the claim and the send leaves `status='sending'`, and the next dispatcher pass returns it to
-`pending` when the lease expires. The retention pass then applies one rule:
+`messages` не архив. Взятая строка держит аренду в `available_at`; воркер, который умер между
+взятием и отправкой, оставляет `status='sending'`, и следующий проход диспетчера возвращает её в
+`pending`, когда аренда истечёт. Дальше проход хранения применяет одно правило:
 
-- `sent` → delete when `sent_at` (or `created_at` if a legacy row has no `sent_at`) is outside the
-  window;
-- `pending`, `sending`, `failed` → delete when `created_at` is outside the window; a year-old
-  undelivered message will never be useful.
+- `sent`: удалить, когда `sent_at` (или `created_at`, если у легаси-строки нет `sent_at`) вне окна;
+- `pending`, `sending`, `failed`: удалить, когда `created_at` вне окна; недоставленное сообщение
+  годовой давности не понадобится никогда.
 
-Deletion is batched (`LIMIT` per statement), so a large first pass does not hold one long lock.
-The pass writes `messages_deleted` to `retention_purged`.
+Удаление идёт пакетами (`LIMIT` на каждый оператор), поэтому большой первый проход не держит одну
+длинную блокировку. Проход пишет `messages_deleted` в `retention_purged`.
 
-## How the scheduled purge runs
+## Как идёт чистка по расписанию
 
-- Worker: once an hour, next to the scheduler tick.
-- Cron entrypoint (`python -m onboarding.scheduler`): once per tick, after the outbox drain.
-- Each pass writes `retention_purged` to `audit_log` with `questions` and `audit_rows` counts.
+- Воркер: раз в час, рядом с тиком планировщика.
+- Точка входа для cron (`python -m onboarding.scheduler`): раз за тик, после разбора `outbox`.
+- Каждый проход пишет `retention_purged` в `audit_log` со счётчиками `questions` и `audit_rows`.
 
-A pass is safe to re-run: it deletes by cutoff and redaction only touches fields that are still
-present.
+Проход можно смело повторять: он удаляет по отсечке, а обнуление трогает только ещё присутствующие
+поля.
 
-## Verify
+## Проверка
 
 ```sql
 -- oldest retained question; should be newer than now() - DATA_RETENTION_DAYS
@@ -79,16 +86,15 @@ order by created_at desc
 limit 5;
 ```
 
-If the first query is older than the window, the worker is not running or the pass is failing; read
-the worker log for `retention` and the `retention_purged` rows. If the audit query is non-zero, a
-field name was added to an audit event without being added to `PERSONAL_AUDIT_KEYS` in
-`apps/api/onboarding/core/retention.py`. Rows stuck in `sending` with a future `available_at` are
-inside a live lease; rows with a past `available_at` are reclaimed by the next dispatcher pass.
+Если первый запрос старше окна, воркер не работает или проход падает; читайте лог воркера по
+`retention` и строки `retention_purged`. Если запрос по аудиту даёт не ноль, значит имя поля
+добавили в событие аудита, но не добавили в `PERSONAL_AUDIT_KEYS` в
+`apps/api/onboarding/core/retention.py`. Строки в `sending` с `available_at` в будущем внутри живой
+аренды; строки с прошедшим `available_at` забирает следующий проход диспетчера.
 
-## Notes
+## Замечания
 
-- This runbook describes the mechanism, not the legal sufficiency of the window. The retention
-  period is owned by the company's data protection policy; 365 days is a placeholder that must be
-  confirmed before a production deployment.
-- Offboarding is immediate and irreversible. Export anything the policy requires before calling
-  `DELETE`.
+- Этот ранбук описывает механизм, а не юридическую достаточность окна. Сроком хранения владеет
+  политика защиты данных компании; 365 дней — заглушка, которую надо подтвердить до продового
+  деплоя.
+- Офбординг делается сразу и необратим. Экспортируйте всё, что требует политика, до вызова `DELETE`.

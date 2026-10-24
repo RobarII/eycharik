@@ -1,117 +1,126 @@
-# Business case: onboarding assistant, Russian-hosted pilot
+---
+title: Бизнес-кейс
+summary: Сколько стоит ответ и от каких вводов заказчика зависит выгода пилота.
+kind: продукт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: draft for the client. Prices live in [vendor-comparison.md](vendor-comparison.md), token
-counts in [the token budget measurement](../measurements/2026-10-25-token-budget.md). This document
-does not restate either — it spends them.
+# Бизнес-кейс: ассистент онбординга, пилот в российском контуре
 
-Two rules this document follows:
+Статус: черновик для заказчика. Цены живут в [vendor-comparison.md](vendor-comparison.md), счётчики
+токенов — в [измерении бюджета токенов](../measurements/2026-10-25-token-budget.md). Этот документ не
+пересказывает ни то, ни другое: он их тратит.
 
-1. **No invented numbers.** Where an input belongs to the client, the row says so and stays empty
-   until the client fills it. An empty cell is cheaper than a wrong one.
-2. **Arithmetic is not a recommendation.** A break-even is a division. Whether to buy the GPU is a
-   decision with reasons that may have nothing to do with the division.
+Два правила, которых держится документ:
 
-## The question this document answers
+1. **Никаких выдуманных чисел.** Где ввод принадлежит заказчику, строка это говорит и остаётся
+   пустой, пока заказчик её не заполнит. Пустая ячейка дешевле неверной.
+2. **Арифметика — не рекомендация.** Точка окупаемости — это деление. Покупать ли GPU — решение с
+   причинами, которые могут не иметь отношения к делению.
 
-At onboarding volumes, does the assistant cost less than the HR time it removes — and does a
-self-hosted GPU change that answer?
+## На какой вопрос отвечает документ
 
-Short version: the model cost is small enough that the answer hinges on the HR inputs, not on the
-vendor. The GPU is a decision about the contour, not about money.
+При онбординговых объёмах ассистент стоит дешевле времени HR, которое он снимает, — и меняет ли
+ответ свой GPU?
 
-## Inputs
+Коротко: стоимость модели настолько мала, что ответ держится на вводах от HR, а не на вендоре. GPU — решение про контур, а не про деньги.
 
-| Input | Value | Type | Owner |
+## Вводы
+
+| Ввод | Значение | Тип | Владелец |
 |---|---|---|---|
-| Input tokens per answer, `GigaChat3-10B` tokenizer | 2 208 (5 chunks) | measured | repo |
-| Completion, 700 Russian characters | 175 tokens | measured | repo |
-| Profile output ceiling | 700 tokens | policy | repo (4× the measured answer) |
-| Chat + embeddings + rerank | 0.0306 ₽/answer | list price, class B | [vendor-comparison](vendor-comparison.md) |
-| One-off corpus reindex | 0.013 ₽ | derived | [vendor-comparison](vendor-comparison.md) |
-| Answers per employee per month | **to be measured** | from MAX logs after two weeks | client |
-| New employees per month | **to be supplied** | HR plan | client |
-| HR FTE loaded cost | **to be supplied** | payroll | client |
-| Share of HR time on routine questions | **to be measured** | the brief claims 40%, the pilot measures it | client + repo evals |
-| Share of that routine the bot removes | **to be measured** | A/B in the pilot | client + repo evals |
+| Токены на входе, токенизатор `GigaChat3-10B` | 2 208 (5 фрагментов) | измерено | репозиторий |
+| Completion, 700 русских символов | 175 токенов | измерено | репозиторий |
+| Потолок вывода в профиле | 700 токенов | политика | репозиторий (4× измеренного ответа) |
+| Чат + эмбеддинги + переранжирование | 0.0306 ₽/ответ | прайс-лист, класс B | [сравнение вендоров](vendor-comparison.md) |
+| Разовая переиндексация корпуса | 0.013 ₽ | выведено | [сравнение вендоров](vendor-comparison.md) |
+| Ответов на сотрудника в месяц | **надо измерить** | из логов MAX через две недели | заказчик |
+| Новых сотрудников в месяц | **надо получить** | план HR | заказчик |
+| Стоимость HR FTE с накладными | **надо получить** | payroll | заказчик |
+| Доля времени HR на типовые вопросы | **надо измерить** | бриф заявляет 40 %, пилот измеряет | заказчик + оценки репозитория |
+| Доля этой рутины, которую снимает бот | **надо измерить** | A/B в пилоте | заказчик + оценки репозитория |
 
-No row is filled with a guess. The two "measures" are the point of the pilot: without them the
-business case is a brochure.
+Ни одна строка не заполнена догадкой. Два «надо измерить» и есть смысл пилота: без них бизнес-кейс — буклет.
 
-## Cost per answer
+## Стоимость ответа
 
-Base: 0.0306 ₽. Recomputed with the same price list, per tokenizer where it matters:
+База: 0.0306 ₽. Пересчёт по тому же прайсу, по токенизатору там, где это важно:
 
-| Change | ₽/answer | vs base |
+| Изменение | ₽/ответ | К базе |
 |---|---|---|
-| Base: 5 chunks, 700-char answer, `bge-reranker-v2-m3` | 0.0306 | — |
-| Chunks at p95 size (299 tokens) | 0.0351 | +15% |
-| Eight chunks instead of five | 0.0389 | +27% |
-| Answer at the 700-token profile ceiling | 0.0370 | +21% |
-| Worst case: eight p95 chunks and the ceiling | 0.0524 | +71% |
-| Reranker on `Qwen3-Reranker-0.6B` instead | 0.0345 | +13% |
-| Chat on `GigaChat 3 Pro` | 0.1936 | ×6.3 |
-| Chat on `DeepSeek V4 Flash` | 0.1349 | ×4.4 |
+| База: 5 фрагментов, ответ 700 символов, `bge-reranker-v2-m3` | 0.0306 | — |
+| Фрагменты размера p95 (299 токенов) | 0.0351 | +15 % |
+| Восемь фрагментов вместо пяти | 0.0389 | +27 % |
+| Ответ на потолке профиля 700 токенов | 0.0370 | +21 % |
+| Худший случай: восемь p95-фрагментов и потолок | 0.0524 | +71 % |
+| Переранжирование на `Qwen3-Reranker-0.6B` | 0.0345 | +13 % |
+| Чат на `GigaChat 3 Pro` | 0.1936 | ×6.3 |
+| Чат на `DeepSeek V4 Flash` | 0.1349 | ×4.4 |
 
-The range 0.031–0.052 ₽ holds under every geometric change. Only the choice of chat model moves the
-number materially, and even the most expensive sensible model stays under 0.27 ₽.
+Диапазон 0.031–0.052 ₽ держится при любом геометрическом изменении. Число заметно двигает только
+выбор чат-модели, и даже самая дорогая разумная модель остаётся ниже 0.27 ₽.
 
-## Monthly cost at a given volume
+## Месячная стоимость при данном объёме
 
-`answers/month × 0.0306 ₽`, plus the fixed platform cost that is **not** in this document (host,
-Postgres, backups, monitoring: quotes, see [vendor-comparison](vendor-comparison.md)).
+`answers/month × 0.0306 ₽` плюс фиксированная стоимость платформы, которой в этом документе **нет**
+(хост, Postgres, бэкапы, мониторинг: это коммерческие предложения, см.
+[сравнение вендоров](vendor-comparison.md)).
 
-| Answers/month | Variable ₽/month | What that volume looks like |
+| Ответов/месяц | Переменные ₽/месяц | Как выглядит такой объём |
 |---|---|---|
-| 2 000 | 61 | a pilot of ~100 newcomers |
-| 20 000 | 612 | one plant |
-| 100 000 | 3 060 | a company of 5 000 employees at 20 answers each |
-| 1 000 000 | 30 600 | above any realistic onboarding load |
+| 2 000 | 61 | пилот на ~100 новичков |
+| 20 000 | 612 | один завод |
+| 100 000 | 3 060 | компания на 5 000 сотрудников по 20 ответов |
+| 1 000 000 | 30 600 | выше любой реалистичной онбординговой нагрузки |
 
-The variable line is not the budget. The platform and the people are.
+Переменная строка — не бюджет. Бюджет — платформа и люди.
 
-## Self-hosted GPU: what it really costs
+## Self-hosted GPU: полная цена
 
-Fixed, from VK Cloud (class A, with VAT, 30 days):
+Фиксированные, из VK Cloud (класс A, с НДС, 30 дней):
 
-| Item | ₽/month | Status |
+| Позиция | ₽/месяц | Статус |
 |---|---|---|
-| L4 24 GB | 71 456 | list price |
-| L40S 48 GB | 173 479 | list price |
-| Model weights | 0 | MIT / Apache-2.0 |
-| Corpus reindex | 0 | local |
-| Ops owner (0.25–0.5 FTE) | **quote** | not priced here |
-| Backup, monitoring, storage, second node for HA | **quote** | not in the price list |
-| Throughput on that card | **unmeasured** | needs a load test |
+| L4 24 GB | 71 456 | прайс-лист |
+| L40S 48 GB | 173 479 | прайс-лист |
+| Веса модели | 0 | MIT / Apache-2.0 |
+| Переиндексация корпуса | 0 | локально |
+| Владелец эксплуатации (0.25–0.5 FTE) | **предложение** | здесь не оценено |
+| Бэкап, мониторинг, хранилище, вторая нода для HA | **предложение** | нет в прайс-листе |
+| Пропускная способность на этой карте | **не измерена** | нужен нагрузочный тест |
 
-Without the last three lines the GPU looks cheaper than it is. With them, at onboarding volume, it
-is not cheaper at all:
+Без последних трёх строк GPU выглядит дешевле, чем он есть. С ними, на онбординговом объёме, он не
+дешевле вовсе:
 
 ```
 break-even answers/month = 71 456 ÷ 0.0306 ≈ 2.3 million
 ```
 
-A company of 5 000 employees at 20 answers each produces 0.1 million per month — 23× below the
-break-even. The managed API stays cheaper until roughly 11 000 employees, and even then the GPU
-needs an owner who does not exist in the pilot team.
+Компания на 5 000 сотрудников по 20 ответов даёт 0.1 млн в месяц — в 23 раза ниже точки
+окупаемости. Хостинговый API остаётся дешевле примерно до 11 000 сотрудников, и даже тогда GPU нужен
+владелец, которого в команде пилота нет.
 
-## The comparison that actually decides
+## Сравнение, которое решает
 
-| Criterion | Managed RU API | Self-hosted GPU |
+| Критерий | Хостинговый API в РФ | Self-hosted GPU |
 |---|---|---|
-| Variable cost | 0.031 ₽/answer | unmeasured |
-| Fixed cost | ≈ 0 | 71 456 ₽/month |
-| Time to first answer | a profile and a key | a week of setup, a load test, an owner |
-| Data contour | vendor's Russian region, with an errand of processing | fully inside the operator's contour |
-| Vendor failure | escalate to a human, second profile ready | the box is yours to fix |
-| Model choice | the vendor's catalogue | anything with a licence |
-| Compliance paperwork | errand of processing, attestation of the vendor's segment | the operator's own attestation |
+| Переменная стоимость | 0.031 ₽/ответ | не измерена |
+| Фиксированная стоимость | ≈ 0 | 71 456 ₽/месяц |
+| Время до первого ответа | профиль и ключ | неделя настройки, нагрузочный тест, владелец |
+| Хранение и обработка | российский регион вендора, с поручением на обработку | целиком внутри контура оператора |
+| Отказ вендора | эскалация человеку, второй профиль наготове | коробка ваша, и чинить вам |
+| Выбор модели | каталог вендора | что угодно с лицензией |
+| Бумаги по соответствию | поручение на обработку, аттестация сегмента вендора | собственная аттестация оператора |
 
-The GPU wins on exactly two rows: the contour and the model choice. If the client needs neither, the
-managed API is the answer.
+GPU выигрывает ровно в двух строках: контур и выбор модели. Если заказчику не нужно ни то, ни
+другое, ответ — хостинговый API.
 
-## HR economics: the inputs that matter
+## Экономика HR: какие вводы важны
 
-The assistant is worth what it frees. That is computed from client data, not from the vendor's price:
+Ассистент стоит столько, сколько он освобождает. Это считается по вводам заказчика, а не по цене
+вендора:
 
 ```
 hours_freed_per_month = newcomers_per_month × minutes_saved_per_newcomer ÷ 60
@@ -119,56 +128,57 @@ saving_per_month      = hours_freed_per_month × hourly_HR_cost
 payback_months        = setup_cost ÷ (saving_per_month − opex_per_month)
 ```
 
-What the repo can contribute is one honest anchor: at a loaded HR cost of 90 000 ₽/month (an
-illustration, not a client input), one HR minute costs ≈ 8.9 ₽, so **one bot answer at 0.031 ₽ costs
-about 0.2 seconds of HR time**. Whatever the pilot measures for `minutes_saved_per_newcomer`, the
-model cost will not be the limiting term.
+Что репозиторий может дать — один честный якорь: при стоимости HR с накладными 90 000 ₽/месяц
+(иллюстрация, не ввод заказчика) одна минута HR стоит ≈ 8.9 ₽, поэтому **один ответ бота за 0.031 ₽
+стоит около 0.2 секунды времени HR**. Что бы пилот ни измерил в `minutes_saved_per_newcomer`,
+стоимость модели не станет ограничивающим слагаемым.
 
-The brief's "up to 70% less routine HR work" is the client's expectation, not our measurement, and
-this document does not repeat it as a result.
+«До 70 % меньше рутины у HR» из брифа — ожидание заказчика, а не наше измерение, и документ не
+повторяет это как результат.
 
-## Costs the per-answer number hides
+## Издержки, которые скрывает цена ответа
 
-| Cost | How to price it | Owner |
+| Издержка | Как оценить | Владелец |
 |---|---|---|
-| App host, Postgres, object storage | invoice from the chosen Russian cloud | DevOps |
-| Backups and restore drills | storage + the drill time twice a year | DevOps |
-| Monitoring, on-call, incident response | 0.25–0.5 FTE | DevOps |
-| 152-ФЗ paperwork | legal hours; errand of processing, DPA review | client DPO |
-| Corpus maintenance | HR edits knowledge, reindex is one command | HR + engineer |
-| Vendor switch | one day of work + ~4 ₽ of eval tokens | engineer |
-| Retention storage | grows with `DATA_RETENTION_DAYS`, unmeasured | client policy |
-| Price change | vendor's right; ask for a 90-day lock | procurement |
+| Хост приложения, Postgres, объектное хранилище | счёт из выбранного российского облака | DevOps |
+| Бэкапы и учения по восстановлению | хранилище + время учений дважды в год | DevOps |
+| Мониторинг, on-call, реакция на инциденты | 0.25–0.5 FTE | DevOps |
+| Бумаги по 152-ФЗ | часы юристов; поручение на обработку, ревью DPA | DPO заказчика |
+| Сопровождение корпуса | HR правит знания, переиндексация — одна команда | HR + инженер |
+| Смена вендора | день работы + ~4 ₽ токенов на оценки | инженер |
+| Хранилище ретеншна | растёт с `DATA_RETENTION_DAYS`, не измерено | политика заказчика |
+| Изменение цены | право вендора; просите фиксацию на 90 дней | закупка |
 
-## Decision triggers
+## Триггеры решения
 
-Written down so that the choice is revisited on evidence, not on mood:
+Записаны, чтобы выбор пересматривали по доказательствам, а не по настроению:
 
-| Trigger | Action |
+| Триггер | Действие |
 |---|---|
-| Measured answers/month > 2 million | re-open the GPU comparison with a real load test |
-| A vendor publishes a price validity term and it is ≥ 90 days | prefer that vendor at equal quality |
-| `make eval` on a cheaper profile stays green | move down the price list |
-| Escalation rate rises above the gate on a cheaper model | move back up; quality is the product |
-| The client requires the data to stay in its own contour | GPU or on-prem, cost becomes secondary |
-| Errand of processing cannot be signed for the vendor's segment | same as above |
-| One vendor outage costs more than the GPU difference | second vendor or GPU, decided by numbers from the pilot |
+| Измеренных ответов/месяц > 2 млн | открыть сравнение GPU заново, с настоящим нагрузочным тестом |
+| Вендор публикует срок действия цены ≥ 90 дней | предпочесть этого вендора при равном качестве |
+| `make eval` на более дешёвом профиле зелёный | спуститься ниже по прайсу |
+| Доля эскалаций выше гейта на более дешёвой модели | вернуться наверх; качество и есть продукт |
+| Заказчик требует, чтобы всё оставалось в его контуре | GPU или on-prem, стоимость становится вторичной |
+| Поручение на обработку не подписать для сегмента вендора | то же самое |
+| Один отказ вендора стоит дороже разницы с GPU | второй вендор или GPU, по числам из пилота |
 
-## Gates before a purchase order
+## Гейты перед заказом
 
-1. `make eval` green on the candidate profile, with a measurement file under `docs/measurements/`.
-2. Errand of processing signed; data localised per 152-ФЗ; evidence pack per
+1. `make eval` зелёный на профиле-кандидате, с файлом измерения в `docs/measurements/`.
+2. Поручение на обработку подписано, локализация по 152-ФЗ выполнена; пакет доказательств по
    [152fz-checklist.md](../runbooks/152fz-checklist.md).
-3. Written offer with currency, VAT, price validity term, volume break, and price-change clause.
-4. Written answer on training on our data: off.
-5. A named owner for the deployment, with the on-call hours in their plan.
-6. Exit plan: who reindexes, how long, what it costs.
+3. Письменное предложение с валютой, НДС, сроком действия цены, скидкой от объёма и пунктом об
+   изменении цены.
+4. Письменный ответ про обучение на нашем материале: нет.
+5. Названный владелец развёртывания, с часами on-call в его плане.
+6. План выхода: кто переиндексирует, сколько времени, сколько стоит.
 
-## What this document does not claim
+## Чего документ не заявляет
 
-- It does not claim savings. Two of the three inputs that produce savings belong to the client.
-- It does not price the platform: those are quotes, and a number invented here would be a lie with a
-  decimal point.
-- It does not compare answer quality across vendors; only [evals](../evals/README.md) do that, per
-  profile, with a measurement file.
-- It does not treat the break-even as a recommendation. It is a division with a reason attached.
+- Не заявляет экономию. Два из трёх вводов, дающих экономию, принадлежат заказчику.
+- Не оценивает платформу: это коммерческие предложения, а придуманное здесь число было бы ложью с
+  десятичной запятой.
+- Не сравнивает качество ответов у вендоров; это делают только [оценки](../evals/README.md), по
+  профилю, с файлом измерения.
+- Не считает точку окупаемости рекомендацией. Это деление с причиной рядом.

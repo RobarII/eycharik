@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moshackathon.local/contracts/jev-rubric.schema.json",
   "title": "JevRubric",
-  "description": "The questions sent to TypeSafe Jev, as a versioned prompt artifact: docs/prompts/<name>/v<version>.yaml. Jev is not a chat model, so the rubric is the prompt. Wordings are Russian, like the survey answers they label. The schema owns the shape; the adapter owns the meaning (the sentiment question must be a choice over the Sentiment enum, and every tag_ question must name a SignalTag).",
+  "description": "Вопросы, которые уходят в TypeSafe Jev, как версионированный артефакт промпта: docs/prompts/<name>/v<version>.yaml. Jev — не чат-модель, поэтому рубрика и есть промпт. Формулировки русские, как и ответы на опрос, которые они размечают. Схема держит форму; адаптер держит смысл (вопрос sentiment обязан быть выбором по enum Sentiment, а каждый вопрос tag_ обязан назвать SignalTag).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -20,19 +20,19 @@
     "version": {
       "type": "integer",
       "minimum": 1,
-      "description": "Matches v<version>.yaml and the version named by the classifier profile or SENTIMENT_RUBRIC."
+      "description": "Совпадает с v<version>.yaml и версией из профиля классификатора или SENTIMENT_RUBRIC."
     },
     "tag_threshold": {
       "type": "number",
       "minimum": 0,
       "maximum": 1,
-      "description": "A tag is routed when its probability reaches this value. One tag always survives: the most likely one."
+      "description": "Тег маршрутизируется, когда его вероятность достигает этого значения. Один тег выживает всегда: самый вероятный."
     },
     "max_tags": {
       "type": "integer",
       "minimum": 1,
       "maximum": 3,
-      "description": "Must not exceed the sentiment contract's maxItems for tags."
+      "description": "Не больше maxItems для tags из контракта sentiment."
     },
     "questions": {
       "type": "object",
@@ -68,7 +68,7 @@
             "criteria": {
               "type": "object",
               "minProperties": 2,
-              "description": "Option name to the sentence that tells the model what that option means. Jev wants a record here, not a list: the key is the value it may answer with. A list is rejected with 400 invalid_type.",
+              "description": "Имя опции к предложению, которое объясняет модели смысл опции. Jev ждёт здесь запись, а не список: ключ — значение, которым можно ответить. Список отклоняется с 400 invalid_type.",
               "additionalProperties": {
                 "type": "string",
                 "minLength": 1

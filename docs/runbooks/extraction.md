@@ -1,9 +1,19 @@
-# Runbook: an uploaded document did not reach the corpus
+---
+title: Документ не дошёл до корпуса
+summary: Где искать загруженный файл, что значит каждый отказ извлечения и как перечитать его с другим профилем.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Extraction runs in the worker (ADR 0015). A file is stored, queued, extracted, decided, and only
-then indexed. Every step leaves a row, so a refusal is diagnosable without logs.
+# Прогон: загруженный документ не дошёл до корпуса
 
-## 1. Where is the file?
+Извлечение идёт в воркере (ADR 0015). Файл сохраняется, попадает в очередь, извлекается, получает
+решение и только потом индексируется. Каждый шаг оставляет строку, поэтому отказ диагностируется
+без логов.
+
+## 1. Где файл?
 
 ```bash
 psql "$DATABASE_URL" -c "select id, filename, media_type, size, created_at from kb_files order by created_at desc limit 10"
@@ -11,76 +21,76 @@ psql "$DATABASE_URL" -c "select status, reason, engine, route, pages, min_confid
 psql "$DATABASE_URL" -c "select id, kind, attempts, last_error from jobs where kind = 'extract_document' order by id desc limit 10"
 ```
 
-The cabinet shows the same thing: `GET /admin/api/knowledge/files/{hash}`. No row at all means the
-job has not run yet; check that the worker is up (`make logs`).
+Кабинет показывает то же самое: `GET /admin/api/knowledge/files/{hash}`. Строки нет вообще — задача
+ещё не шла; проверьте, что воркер поднят (`make logs`).
 
-## 2. Read the reason
+## 2. Прочитайте причину
 
-| `reason` | Meaning | Fix |
+| `reason` | Значение | Что делать |
 |---|---|---|
-| `unsupported` | format is not PDF or PPTX, or no reader owns the declared type | convert to PDF |
-| `encrypted` | the PDF needs a password | upload a decrypted copy |
-| `no_pages` | the parser found no pages: a broken or truncated file | re-export from the source |
-| `too_many_pages` | above `EXTRACTION_MAX_PAGES` | split the document, or raise the limit |
-| `low_dpi` | the raster is under `quality.min_dpi` | upload the original, not a photo of a printout |
-| `blurry` | high-frequency detail under `quality.min_edge_energy` (unset by default) | steady the camera, use the scanner app |
-| `unreadable` | the raster is not a decodable image | re-export the page |
-| `low_confidence` | a page scored under `acceptance.min_confidence`: glare, a stamp, or handwriting | re-shoot that page, or use a stronger profile |
-| `too_short` | the accepted text is under `acceptance.min_chars` | the file is not a document |
-| `empty` | every page produced no text | same |
+| `unsupported` | формат не PDF и не PPTX, или объявленным типом не владеет ни один ридер | конвертировать в PDF |
+| `encrypted` | PDF требует пароль | загрузить расшифрованную копию |
+| `no_pages` | парсер не нашёл страниц: файл битый или обрезанный | переэкспортировать из источника |
+| `too_many_pages` | больше `EXTRACTION_MAX_PAGES` | разделить документ или поднять лимит |
+| `low_dpi` | растр меньше `quality.min_dpi` | загрузить оригинал, а не фото распечатки |
+| `blurry` | высокочастотная детализация ниже `quality.min_edge_energy` (по умолчанию не задан) | держать камеру устойчивее, использовать приложение сканера |
+| `unreadable` | растр не декодируется как изображение | переэкспортировать страницу |
+| `low_confidence` | страница набрала меньше `acceptance.min_confidence`: блик, печать или рукопись | переснять эту страницу или взять профиль посильнее |
+| `too_short` | принятый текст меньше `acceptance.min_chars` | файл не документ |
+| `empty` | ни одна страница не дала текста | то же |
 
-A refusal is not an error: the job completed. Nothing is indexed and nothing is retried, because the
-answer would be identical.
+Отказ — не ошибка: задача завершилась. Ничего не проиндексировано и ничего не повторяется, потому
+что ответ был бы тем же.
 
-## 3. Re-read the same file with a better profile
+## 3. Перечитайте тот же файл с лучшим профилем
 
-The cache is keyed by `(content_hash, profile_hash)`, so changing `EXTRACTION_PROFILE` and restarting
-the worker re-reads the same bytes without a new upload:
+Кэш ключуется по `(content_hash, profile_hash)`, поэтому смена `EXTRACTION_PROFILE` и перезапуск
+воркера перечитывает те же байты без новой загрузки:
 
 ```bash
 EXTRACTION_PROFILE=doc-scan uv run python -m onboarding.cli extract --file regulation.pdf
 ```
 
-That dry run prints the route, the engine, the page count, and the verdict, and touches no database.
-If it accepts, switch the worker to the same profile, then enqueue the file again:
+Этот dry-run печатает маршрут, движок, число страниц и вердикт и не трогает базу. Если он принимает
+файл, переключите воркер на тот же профиль и поставьте файл в очередь заново:
 
 ```bash
 psql "$DATABASE_URL" -c "insert into jobs (kind, payload) values ('extract_document', jsonb_build_object('blob_id','<hash>','filename','regulation.pdf','media_type','application/pdf','metadata','{}'::jsonb))"
 ```
 
-For a real upload use the cabinet or `curl -F` against `POST /admin/api/knowledge/files` with the
-metadata part; an empty `metadata` is rejected by the contract, by design.
+Для настоящей загрузки используйте кабинет или `curl -F` на `POST /admin/api/knowledge/files` с
+частью metadata; пустой `metadata` контракт отвергает, так и задумано.
 
-## 4. Turn recognition on
+## 4. Включите распознавание
 
-Recognition is an optional extra. Without it the `native` profile refuses every scan with
-`unsupported` and digital files are unaffected.
+Распознавание — необязательная надстройка. Без него профиль `native` отвергает любой скан с
+`unsupported`, а цифровые файлы не страдают.
 
 ```bash
 uv sync --extra ocr            # rapidocr + onnxruntime, CPU, no Paddle runtime
 EXTRACTION_PROFILE=doc-scan make up
 ```
 
-The first job downloads nothing: RapidOCR ships PP-OCRv5 weights inside the wheel. Apple Silicon is
-supported; no GPU is required or used.
+Первая задача ничего не скачивает: RapidOCR везёт веса PP-OCRv5 внутри wheel. Apple Silicon
+поддерживается; GPU не нужен и не используется.
 
-## 5. Recalibrate the gate
+## 5. Перекалибруйте порог
 
-Thresholds are provisional until measured. The blur proxy is the mean absolute high-frequency
-detail of the raster, and it depends on resolution and ink coverage, so it may only be compared
-within one reader and one profile. There is no glare score on purpose: the share of saturated
-pixels is ~0.96 on a perfectly clean page, so it would refuse every document.
+Пороги предварительные, пока не измерены. Прокси размытия — средняя абсолютная высокочастотная
+детализация растра, и она зависит от разрешения и плотности заливки, поэтому сравнивать её можно
+только внутри одного ридера и одного профиля. Оценки блика нет намеренно: доля насыщенных пикселей
+~0,96 на идеально чистой странице, так что она отвергла бы любой документ.
 
 ```bash
 make eval-ocr                  # character error rate and refusal correctness on docs/evals/ocr.yaml
 ```
 
-Change a threshold only with a measurement file in `docs/measurements/` that names the command, the
-environment, and the commit. A profile's `fingerprint()` changes with its thresholds, so the cache is
-invalidated automatically — no manual purging.
+Меняйте порог только с файлом измерения в `docs/measurements/`, где названы команда, окружение и
+коммит. `fingerprint()` профиля меняется вместе с порогами, поэтому кэш инвалидируется сам — руками
+чистить не нужно.
 
-## 6. Bytes are gone after the retention window
+## 6. Байты пропадают после окна хранения
 
-`RetentionPurger` deletes `kb_files` rows older than `DATA_RETENTION_DAYS`. The accepted markdown is
-already a document in `kb_documents`, so the text survives; only the source bytes are removed. A
-cached extraction record without its file cannot be re-read — upload the file again in that case.
+`RetentionPurger` удаляет строки `kb_files` старше `DATA_RETENTION_DAYS`. Принятый markdown уже
+документ в `kb_documents`, поэтому текст выживает; удаляются только исходные байты. Кэшированную
+запись извлечения без её файла перечитать нельзя — в этом случае загрузите файл снова.

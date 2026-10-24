@@ -1,35 +1,45 @@
-# Observability
+---
+title: Наблюдаемость
+summary: Что процесс отдаёт в метриках, по каким порогам ставить алерты и что сознательно не собирается.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-What the process exposes, what to alert on, and what it deliberately does not collect.
+# Наблюдаемость
 
-## What is exposed
+Что процесс отдаёт, по чему ставить алерты и что он сознательно не собирает.
 
-`GET /metrics` returns the Prometheus text format. When `METRICS_TOKEN` is set, the endpoint
-requires `Authorization: Bearer <token>` and answers `401` otherwise; when it is empty it is open
-like `/healthz`, which is only acceptable for a local demo. Production refuses to start without
-`METRICS_TOKEN`, and the host nginx exposes `/metrics` only to loopback.
+## Что отдаётся
 
-| metric | type | labels | meaning |
+`GET /metrics` возвращает текстовый формат Prometheus. Когда `METRICS_TOKEN` задан, эндпоинт
+требует `Authorization: Bearer <token>` и иначе отвечает `401`; когда пуст — открыт, как `/healthz`,
+что допустимо только для локального демо. Продакшен отказывается стартовать без `METRICS_TOKEN`, а
+nginx хоста отдаёт `/metrics` только на loopback.
+
+| метрика | тип | метки | смысл |
 |---|---|---|---|
-| `onboarding_http_requests_total` | counter | `method`, `route`, `status` | requests by route template; unknown paths collapse to `unmatched` |
-| `onboarding_http_request_seconds` | histogram | `method`, `route` | request latency |
-| `onboarding_answer_total` | counter | `reason`, `escalated` | answers by grounding verdict |
-| `onboarding_answer_stage_seconds` | histogram | `stage` = `retrieval`, `rerank`, `generate` | pipeline latency, the part the webhook cannot see |
-| `onboarding_answer_citations` | histogram | — | citations per answer |
-| `onboarding_llm_tokens_total` | counter | `direction` = `input`, `output` | provider usage |
-| `onboarding_answer_cost_rub_total` | counter | — | answer cost from the provider's token prices |
+| `onboarding_http_requests_total` | counter | `method`, `route`, `status` | запросы по шаблону роута; неизвестные пути схлопываются в `unmatched` |
+| `onboarding_http_request_seconds` | histogram | `method`, `route` | задержка запроса |
+| `onboarding_answer_total` | counter | `reason`, `escalated` | ответы по вердикту обоснованности |
+| `onboarding_answer_stage_seconds` | histogram | `stage` = `retrieval`, `rerank`, `generate` | задержка конвейера, та часть, которую вебхук не видит |
+| `onboarding_answer_citations` | histogram | — | цитат на ответ |
+| `onboarding_llm_tokens_total` | counter | `direction` = `input`, `output` | расход у провайдера |
+| `onboarding_answer_cost_rub_total` | counter | — | стоимость ответа по токенным ценам провайдера |
 
-Every non-health request gets an `X-Request-ID` response header and one JSON log line
-`{"event":"http_request",...}`. The webhook work happens asynchronously; correlate it through the
-audit log, which stores the same `answer_completed` fields plus the run and employee id.
+Каждый не-health запрос получает заголовок ответа `X-Request-ID` и одну JSON-строку лога
+`{"event":"http_request",...}`. Работа вебхука идёт асинхронно; связывайте её через аудит-лог, где
+те же поля `answer_completed` плюс id прогона и сотрудника.
 
-Metrics are per process. With two API replicas the scraper sums counters; histograms need
-`histogram_quantile` per instance first, then a max across instances, or a real metrics backend.
+Метрики считаются по процессу. При двух репликах `api` скрейпер суммирует счётчики; гистограммам
+нужен `histogram_quantile` по каждому инстансу, затем максимум по инстансам, либо настоящий бэкенд
+метрик.
 
-## What to alert on
+## По чему ставить алерты
 
-Thresholds are policy, not measurements. The latency budget is 8000 ms (ADR 0009); the eval p95 is
-recorded in `docs/measurements/`.
+Пороги — политика, а не измерение. Бюджет задержки — 8000 ms (ADR 0009); p95 в оценках записан в
+`docs/measurements/`.
 
 ```promql
 # 95% of answer-stage time above 8 s for 10 minutes
@@ -49,27 +59,27 @@ rate(onboarding_http_requests_total{status=~"5.."}[5m]) > 0
 increase(onboarding_answer_cost_rub_total[1h]) > 100
 ```
 
-The first two are the product signals: latency and refusal. A 5xx burst on `/webhook/max` is a MAX
-delivery problem, not an answer problem.
+Первые два — продуктовые сигналы: задержка и отказ. Всплеск 5xx на `/webhook/max` — проблема
+доставки MAX, не ответов.
 
-## What is not collected
+## Что не собирается
 
-- No question text, employee id, chat id, or document title in labels. Cardinality and personal
-  data both stay out of the metrics endpoint.
-- No prompt or completion bodies in logs. The audit log already stores the minimum needed for the
-  risk radar, under the retention policy in `docs/product/roles.md`.
-- No external tracing yet. A trace needs a collector and a sampling policy; the stage histogram is
-  the cheap first step and answers the same latency question.
+- Ни текста вопроса, ни id сотрудника, ни id чата, ни названия документа в метках. И
+  кардинальность, и персональные данные остаются вне эндпоинта метрик.
+- Ни тел промптов, ни тел ответов в логах. Аудит-лог уже хранит минимум для радара риска, по
+  политике хранения в `docs/product/roles.md`.
+- Внешнего трейсинга пока нет. Трейс требует коллектора и политики сэмплирования; гистограмма по
+  стадиям — дешёвый первый шаг и отвечает на тот же вопрос о задержке.
 
-## Local check
+## Локальная проверка
 
 ```bash
 make run
 curl -s -H "Authorization: Bearer $METRICS_TOKEN" localhost:8000/metrics | grep onboarding_answer
 ```
 
-For a local process with an empty `METRICS_TOKEN`, drop the header; production does not start
-without one.
+Для локального процесса с пустым `METRICS_TOKEN` заголовок не нужен; продакшен без него не
+стартует.
 
-If the file is empty, no answer has been produced in this process yet. `/metrics` itself and
-`/healthz` are not logged to keep the access log readable.
+Если вывод пуст, в этом процессе ещё не было ни одного ответа. `/metrics` и `/healthz` не пишутся в
+лог, чтобы журнал доступа оставался читаемым.

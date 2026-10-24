@@ -6,8 +6,8 @@ max_tokens: 700
 supersedes: 5
 eval: docs/measurements/2026-10-24-eval-full-prompt-v6.md
 notes: >
-  Version 5 fixed the blocked question and overcorrected: it refused ten facts whose answer was in
-  the context under another wording ("четырнадцать календарных дней" instead of "14 календарных
-  дней"), because rule 1 made the model doubt the fact rather than the formulation. Version 6 keeps
-  the missing-fact test and separates it from wording: a paraphrase, a number written as a word, or
-  a fact split across two fragments is still an answer.
+  Версия 5 закрыла заблокированный вопрос и перестаралась: отказала по десяти фактам, ответ на
+  которые был в контексте в другой формулировке («четырнадцать календарных дней» вместо «14
+  календарных дней»), потому что правило 1 заставило модель сомневаться в факте, а не в
+  формулировке. Версия 6 оставляет проверку на отсутствие факта и отделяет её от формулировки:
+  пересказ, число словом или факт, разнесённый по двум фрагментам, — всё ещё ответ.

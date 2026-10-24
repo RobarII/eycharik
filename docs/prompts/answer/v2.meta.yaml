@@ -4,7 +4,7 @@ model: gigachat-2-pro
 temperature: 0.2
 max_tokens: 700
 supersedes: 1
-eval: null        # filled only from docs/measurements/, never guessed
+eval: null        # заполняется только из docs/measurements/, никогда на глаз
 notes: >
-  Clarifies that a citation is the exact <doc id> (no extra #0), names personal topics that must be
-  restricted, and routes instruction-injection attempts to out_of_scope.
+  Уточняет, что цитата — это точный <doc id> (без лишнего #0), называет личные темы, которые надо
+  ограничить, и отправляет попытки инъекции инструкций в out_of_scope.

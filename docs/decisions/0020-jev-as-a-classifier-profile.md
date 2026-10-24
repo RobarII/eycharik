@@ -1,197 +1,201 @@
-# 0020 — Jev is a classifier profile, not a special case
+---
+title: Jev как профиль классификатора
+summary: Почему Jev переехал в профиль классификатора, что это дало и что показали два прогона.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+supersedes: [11]
+superseded_by: [21]
+---
 
-Date: 2026-10-24
-Status: accepted — the structure shipped and the classifier was measured through OpenRouter
-Supersedes: 0011 (partially: model selection, envelope, and prices leave the adapter)
+# 0020 — Jev — профиль классификатора, а не особая ветка
 
-## Context
+Принято: структура вышла, а классификатор измерен через OpenRouter.
 
-ADR 0011 added Jev behind `SENTIMENT_PROVIDER=jev` and got the layering right: one port, a
-versioned rubric, strict parsing, and a keyword fallback. Reviewed against the rules this
-repository already applies to every other model call, four things were out of place:
+## Контекст
 
-- **No profile.** ADR 0013 moved model identity, envelope, and prices out of code and into
-  `apps/api/model-profiles/<role>/<name>.yaml`. Jev kept its model inside the rubric file, its
-  timeouts in `Settings`, and its price nowhere. A second classifier would have needed another
-  branch in `container.py`.
-- **A version in code.** `RUBRIC_VERSION = 1` and `version != 1` meant a rubric v2 is a code
-  change, which is exactly what ADR 0004 forbids for prompts. The file path was also written out
-  twice (`container.py`, `evals/sentiment.py`).
-- **A private envelope.** Jev called `httpx` itself: no circuit breaker, no shared backoff, no
-  usage accounting. A dead endpoint cost three timeouts per answer (`8 s × 3`), sequentially, in
-  the risk radar loop. The chat path opens a breaker and fails fast on the same outage.
-- **Two fallback copies.** `_fallback` (audit + `keyword_signal`) existed in both classifiers, and
-  `MAX_TAGS`, `_TAGS`, and the 2000-character cap were duplicated. A change to the fallback policy
-  had two homes.
+ADR 0011 добавил Jev за `SENTIMENT_PROVIDER=jev` и слоистость сделал правильно: один порт,
+версионированная рубрика, строгий разбор и фолбэк на `keyword`. Сверка с правилами, которые
+репозиторий применяет к любому другому вызову модели, нашла четыре несоответствия:
 
-None of this changes a single label. That is why it is a structure ADR, not a quality one.
+- **Профиля нет.** ADR 0013 вынес идентичность модели, конверт и цены из кода в
+  `apps/api/model-profiles/<role>/<name>.yaml`. Jev оставил модель внутри файла рубрики, таймауты в
+  `Settings`, а цену нигде. Второму классификатору понадобилась бы ещё одна ветка в `container.py`.
+- **Версия в коде.** `RUBRIC_VERSION = 1` и проверка `version != 1` означали, что рубрика v2 — это
+  правка кода, ровно то, что ADR 0004 запрещает для промптов. Путь к файлу тоже был выписан дважды
+  (`container.py`, `evals/sentiment.py`).
+- **Свой конверт.** Jev звал `httpx` сам: без предохранителя, без общего backoff, без учёта
+  расхода. Мёртвый эндпоинт стоил три таймаута на ответ (`8 s × 3`), последовательно, в цикле радара.
+  Путь чата на том же отказе открывает предохранитель и падает быстро.
+- **Две копии фолбэка.** `_fallback` (аудит и `keyword_signal`) жил в обоих классификаторах, а
+  `MAX_TAGS`, `_TAGS` и потолок в 2000 символов дублировались. У правки политики фолбэка было два
+  дома.
 
-## Decision
+Ни одна из этих правок не меняет метку. Поэтому ADR структурный, а не про качество.
 
-Jev becomes the first model with `role: classify`:
+## Решение
 
-- `apps/api/model-profiles/classify/<name>.yaml` holds the model, the rubric reference
-  (`sentiment-jev@1`), the envelope (`timeout_s`, `max_retries`), and the input price. The schema
-  branch is in
-  [`contracts/model-profile.schema.json`](../contracts/model-profile.schema.json), so a wrong key
-  stops the process at startup.
-- `SENTIMENT_RUBRIC` overrides the rubric reference; `CLASSIFY_PROFILE` selects the profile. With
-  neither set, the adapter builds an in-memory profile named `env` from `JEV_MODEL` and friends,
-  the same migration path ADR 0013 gave the other roles.
-- The rubric is loaded by `RubricLibrary` (`apps/api/onboarding/app/llm/rubric.py`), validated
-  against
-  [`contracts/jev-rubric.schema.json`](../contracts/jev-rubric.schema.json), then checked for the
-  meaning a schema cannot express: the `sentiment` question is a `choice` over the `Sentiment`
-  enum, and every `tag_*` question names a `SignalTag`. The version comes from the file and the
-  selector, never from a constant.
-- `apps/api/onboarding/app/llm/transport.py` owns the retry matrix, the circuit breaker, and one
-  deadline for the whole call. The gateway and the classifier both use it, so "provider down"
-  means the same thing on both paths: one bounded wait, then the safe fallback.
-- `apps/api/onboarding/app/llm/fallback.py` owns the keyword fallback, the shared limits, and the
-  audit event. Both classifiers call it, so the two paths cannot drift.
-- `build_sentiment()` in `apps/api/onboarding/app/llm/sentiment.py` is the only place that chooses
-  a classifier. The container and the eval runner call it; neither knows a rubric path.
+Jev становится первой моделью с `role: classify`:
 
-Cost accounting now flows: the `sentiment_classified` audit event carries `model`, `rubric`,
-`input_tokens`, `latency_ms`, and `cost_rub`. The eval artifact header names the model, the rubric,
-and the prompt version instead of hard-coding `rubric_version: 1`, and `--from-artifact` reads them
-back.
+- `apps/api/model-profiles/classify/<name>.yaml` хранит модель, ссылку на рубрику (`sentiment-jev@1`),
+  конверт (`timeout_s`, `max_retries`) и цену входа. Ветка схемы — в
+  [`contracts/model-profile.schema.json`](../contracts/model-profile.schema.json), так что неверный
+  ключ останавливает процесс на старте.
+- `SENTIMENT_RUBRIC` переопределяет ссылку на рубрику, `CLASSIFY_PROFILE` выбирает профиль. Если не
+  задан ни один, адаптер собирает профиль `env` в памяти из `JEV_MODEL` и соседей — тот же путь
+  миграции, который ADR 0013 дал остальным ролям.
+- Рубрику загружает `RubricLibrary` (`apps/api/onboarding/app/llm/rubric.py`), проверяет по
+  [`contracts/jev-rubric.schema.json`](../contracts/jev-rubric.schema.json), затем проверяется
+  смысл, которого схема выразить не может: вопрос `sentiment` — это `choice` по перечислению
+  `Sentiment`, а каждый вопрос `tag_*` называет `SignalTag`. Версия берётся из файла и селектора,
+  никогда из константы.
+- `apps/api/onboarding/app/llm/transport.py` владеет матрицей повторов, предохранителем и одним
+  дедлайном на весь вызов. Шлюз и классификатор используют его оба, поэтому «провайдер лежит»
+  значит на обоих путях одно: одно ограниченное ожидание, затем безопасный фолбэк.
+- `apps/api/onboarding/app/llm/fallback.py` владеет фолбэком на `keyword`, общими лимитами и
+  событием аудита. Оба классификатора зовут его, поэтому пути не расходятся.
+- `build_sentiment()` в `apps/api/onboarding/app/llm/sentiment.py` — единственное место, которое
+  выбирает классификатор. Контейнер и раннер оценок зовут его; пути к рубрике не знает ни тот ни
+  другой.
 
-### Two surfaces, one adapter
+Учёт расхода теперь идёт: событие аудита `sentiment_classified` несёт `model`, `rubric`,
+`input_tokens`, `latency_ms` и `cost_rub`. Заголовок артефакта оценки называет модель, рубрику и
+версию промпта вместо жёсткого `rubric_version: 1`, а `--from-artifact` читает их обратно.
 
-Jev is also served through OpenRouter at `POST /api/v1/systemone`, which is the same path this
-adapter already builds from `JEV_BASE_URL`, so the switch is configuration and not code:
-`JEV_BASE_URL=https://openrouter.ai/api/v1`, `JEV_API_KEY` as the OpenRouter key, and
-`CLASSIFY_PROFILE=openrouter-jev-1.14` (model `typesafe/jev-1.14`). OpenRouter reports the charge
-per call in `usage.cost`, in USD. The profile price stays `0` rather than converting dollars at an
-invented exchange rate, and the run reports `cost_usd_total` and `priced_calls` from the provider's
-own number. A ruble price is still the only honest way to price the direct endpoint, which reports
-tokens and nothing else.
+### Две поверхности, один адаптер
 
-## Measured
+Jev отдаётся и через OpenRouter по `POST /api/v1/systemone` — это тот же путь, который адаптер уже
+строит из `JEV_BASE_URL`, так что переключение остаётся конфигурацией, а не кодом:
+`JEV_BASE_URL=https://openrouter.ai/api/v1`, `JEV_API_KEY` как ключ OpenRouter и
+`CLASSIFY_PROFILE=openrouter-jev-1.14` (модель `typesafe/jev-1.14`). OpenRouter сообщает списание за
+вызов в `usage.cost`, в долларах. Цена в профиле остаётся `0`, а не пересчитывается по выдуманному
+курсу, и прогон отчитывается `cost_usd_total` и `priced_calls` по числу самого провайдера. Рублёвая
+цена по-прежнему единственный честный способ оценить прямой эндпоинт, который сообщает токены и
+ничего больше.
 
-Two runs, both on the test split with three repetitions per case. The first used the original
-58 cases; the second widened the crisis and `unknown` strata to 114 cases after discovering that
-the first could not support the claim it seemed to make.
+## Измерено
 
-### First pass, 58 cases, rubric v1
+Два прогона, оба на test-разбиении с тремя повторами на кейс. Первый взял исходные 58 кейсов; второй
+расширил страты кризиса и `unknown` до 114 кейсов после того, как выяснилось, что первый не выдержит
+вывода, который навязывал.
 
-`docs/measurements/2026-10-23-sentiment-jev.md`, commit `4e8901f`:
+### Первый прогон, 58 кейсов, рубрика v1
 
-| provider | `sentiment_accuracy` | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
+`docs/measurements/2026-10-23-sentiment-jev.md`, коммит `4e8901f`:
+
+| провайдер | `sentiment_accuracy` | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
 |---|---|---|---|---|---|---|---|
-| `keyword` | 0.345 | 0.600 | 0.188 | 0.694 | 0 | 0 | 0 |
-| `prompt` (`opencode-deepseek-v4.1-flash`, one repetition) | 0.741 | 0.700 | 0.375 | 0.770 | 0.224 | 4701 | not in the profile |
-| `jev` (`typesafe/jev-1.14`) | 0.833 | 1.000 | 0.396 | 0.637 | 0 | 525 | 0.0432 |
+| `keyword` | 0.345 | 0.600 | 0.188 | 0.694 | 0 | 0 | 0 |
+| `prompt` (`opencode-deepseek-v4.1-flash`, один повтор) | 0.741 | 0.700 | 0.375 | 0.770 | 0.224 | 4701 | нет в профиле |
+| `jev` (`typesafe/jev-1.14`) | 0.833 | 1.000 | 0.396 | 0.637 | 0 | 525 | 0.0432 |
 
-The obvious reading — Jev escalates every crisis, the prompt path misses three — was wrong, and the
-paired bootstrap against the prompt run said so (`delta +0.086`, 95% CI `[-0.05, 0.22]`,
-`p = 0.129`). The escalation advantage rested on ten crisis cases with three discordant pairs:
-`p = 0.25` by an exact sign test. A number that weak is not a finding.
+Очевидное чтение — Jev эскалирует каждый кризис, путь prompt пропускает три — было неверным, и
+парный бутстрап против прогона prompt это сказал (`delta +0.086`, 95 % ДИ `[-0.05, 0.22]`,
+`p = 0.129`). Преимущество в эскалации держалось на десяти кризисных кейсах с тремя несогласованными
+парами: `p = 0.25` по точному критерию знаков. Число такой силы — не находка.
 
-### Second pass, 114 cases, rubric v1 and v2
+### Второй прогон, 114 кейсов, рубрика v1 и v2
 
-`docs/measurements/2026-10-23-sentiment-jev-expanded-v{1,2}.md` and
+`docs/measurements/2026-10-23-sentiment-jev-expanded-v1.md` и `...-v2.md` и
 [`2026-10-23-sentiment-prompt-expanded.md`](../measurements/2026-10-23-sentiment-prompt-expanded.md),
-all at commit `460d91f`, which holds the widened set and rubric v2 together. 34 crisis cases,
-14 `unknown`, 342 calls per provider, no fallbacks on either Jev run.
+всё на коммите `460d91f`, где расширенный набор и рубрика v2 лежат вместе. 34 кризисных кейса, 14
+`unknown`, 342 вызова на провайдера, без фолбэков ни в одном прогоне Jev.
 
-| provider | `sentiment_accuracy` (per call) | `case_accuracy` (majority) | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
+| провайдер | `sentiment_accuracy` (на вызов) | `case_accuracy` (большинство) | `escalation_recall` | `false_alarm_rate` | `tag_f1` | `fallback_rate` | `p95_latency_ms` | `cost_usd_per_1k_calls` |
 |---|---|---|---|---|---|---|---|---|
-| `prompt` | 0.848 | 0.904 | 0.912 | 0.371 | 0.691 | 0.170 | 3078 | not in the profile |
-| `jev`, rubric v1 | 0.877 | 0.877 | 0.971 | 0.338 | 0.587 | 0 | 493 | 0.0430 |
-| `jev`, rubric v2 | 0.883 | 0.886 | 0.971 | 0.338 | 0.626 | 0 | 520 | 0.0430 |
+| `prompt` | 0.848 | 0.904 | 0.912 | 0.371 | 0.691 | 0.170 | 3078 | нет в профиле |
+| `jev`, рубрика v1 | 0.877 | 0.877 | 0.971 | 0.338 | 0.587 | 0 | 493 | 0.0430 |
+| `jev`, рубрика v2 | 0.883 | 0.886 | 0.971 | 0.338 | 0.626 | 0 | 520 | 0.0430 |
 
-Paired bootstrap over the 114 shared cases:
+Парный бутстрап по 114 общим кейсам:
 
-| comparison | delta | 95% CI | `p(delta <= 0)` | discordant pairs |
+| сравнение | дельта | 95 % ДИ | `p(delta <= 0)` | несогласованные пары |
 |---|---|---|---|---|
-| `case_accuracy`, Jev v2 vs prompt | −0.018 | [−0.088, +0.053] | 0.729 | 1 / 0 |
-| `case_accuracy`, Jev v2 vs v1 | +0.009 | [+0.000, +0.026] | 0.372 | 1 / 0 |
-| `escalation_recall`, Jev v2 vs prompt | +0.059 | [−0.059, +0.176] | 0.223 | 3 swapped / 1 swapped |
+| `case_accuracy`, Jev v2 против prompt | −0.018 | [−0.088, +0.053] | 0.729 | 1 / 0 |
+| `case_accuracy`, Jev v2 против v1 | +0.009 | [+0.000, +0.026] | 0.372 | 1 / 0 |
+| `escalation_recall`, Jev v2 против prompt | +0.059 | [−0.059, +0.176] | 0.223 | 3 замены / 1 замена |
 
-Every interval contains zero. The honest statement is therefore: **on this set the two providers
-are indistinguishable on quality**, and the earlier "Jev escalates every crisis" was ten cases of
-luck. Jev misses `crisis-quit-direct` (one call in three came back `neutral`); the prompt path
-misses the two humiliation cases and `workload-crisis-cant`, where its three calls returned
-`unknown` and fell back to keywords.
+Каждый интервал содержит ноль. Честное утверждение поэтому такое: **на этом наборе два провайдера
+неразличимы по качеству**, а прежнее «Jev эскалирует каждый кризис» было десятью кейсами везения. Jev
+пропускает `crisis-quit-direct` (один вызов из трёх вернулся `neutral`); путь prompt пропускает два
+кейса унижения и `workload-crisis-cant`, где его три вызова вернули `unknown` и ушли в `keyword`.
 
-What does separate them is not accuracy: Jev is 5.9 times faster at the tail, never degrades to
-keywords, and costs 4.3 cents per thousand calls. The prompt path is slower, and one call in six
-goes to keywords, whose own accuracy on this set is 0.345.
+Разделяет их не точность: Jev в 5.9 раза быстрее на хвосте, никогда не деградирует до `keyword` и
+стоит 4.3 цента за тысячу вызовов. Путь prompt медленнее, и один вызов из шести уходит в
+`keyword`, чья собственная точность на этом наборе 0.345.
 
-The tag fix came from data, not from a hunch. On the dev split the raw `noul` probabilities of 49
-cases said the 0.5 threshold bought 0.590 precision for 0.767 recall, and 0.70 bought 0.754
-precision at the same recall. `docs/prompts/sentiment-jev/v2.yaml` changes that number and nothing
-else. On the held-out test split the gain shrank to `tag_f1 0.587 -> 0.626`: a dev-tuned threshold
-transfers, but not fully, and the gap between 0.760 on dev and 0.626 on test is what overfitting
-looks like before it is obvious.
+Правка тегов пришла из измерений, а не из догадки. На dev-разбиении сырые вероятности `noul` по 49
+кейсам говорили, что порог 0.5 даёт 0.590 точности при 0.767 полноты, а 0.70 даёт 0.754 точности при
+той же полноте. `docs/prompts/sentiment-jev/v2.yaml` меняет это число и ничего больше. На отложенном
+test-разбиении выигрыш сжался до `tag_f1 0.587 -> 0.626`: порог, подогнанный на dev, переносится, но
+не полностью, и разрыв между 0.760 на dev и 0.626 на test — это и есть переобучение до того, как оно
+стало очевидным.
 
-The run also caught a contract defect that mocked tests could not: the live API rejects
-`criteria` as a list with `400 invalid_type, expected record`. The schema and rubric v1 said list;
-the payload said record. Fixed in `4e8901f` — the criteria record is now the option-to-meaning map,
-which is also where the per-option wording belongs. Nothing had been measured against the wrong
-shape, so v1 was corrected in place rather than superseded.
+Прогон поймал и дефект контракта, которого тесты на моках поймать не могли: живой API отвергает
+`criteria` списком с `400 invalid_type, expected record`. Схема и рубрика v1 говорили «список»;
+payload говорил «запись». Исправлено в `4e8901f` — запись criteria теперь карта соответствия варианта и смысла, где
+и место формулировке на вариант. Ничего не успели измерить против неверной формы, поэтому v1
+поправили на месте, а не заменили новой версией.
 
-## Consequences
+## Последствия
 
-- A new classifier model is one YAML file plus a rubric and an eval run. No branch in
-  `container.py`, no constant in an adapter.
-- A rubric wording change is `v2.yaml` plus `SENTIMENT_RUBRIC=sentiment-jev@2`; the code path does
-  not change, and the audit event names the version that ran.
-- A Jev outage now costs at most one `timeout_s` per answer instead of `timeout_s × (retries + 1)`,
-  and a dead endpoint opens the shared breaker.
-- One fallback policy, one set of limits (`MAX_TAGS`, `MAX_ANSWER_CHARS`) shared with the prompt
-  classifier. The sentiment contract's `maxItems` and the code constant are pinned by a test.
-- The eval runner reports `cost_rub_per_1k_calls` from the classifier's own usage, which is one of
-  the two questions ADR 0011 said adoption depends on. It stays `0` until a price is committed to
-  the profile.
-- Breaking change for an existing deployment: `SENTIMENT_PROVIDER=jev` now needs
-  `CLASSIFY_PROFILE` (or an explicit `SENTIMENT_RUBRIC`), because the rubric selector is data and
-  the adapter no longer carries a version. `JEV_TIMEOUT_S` and `JEV_MAX_RETRIES` become overrides
-  of the profile rather than the only source, and `JEV_MODEL` is new. `.env.example` states it.
-- `SENTIMENT_PROVIDER` still defaults to `prompt`, and the measurement supports keeping it: no
-  interval separates the providers on quality, so flipping the default would be taste dressed as
-  evidence. The case for Jev is operational — tail latency, a fallback rate of zero against 0.17,
-  and a measurable price — and that is a separate change with its own rollout.
-- To actually separate the two, the set needs a bigger crisis stratum, not a new metric: at 34
-  crisis cases and four discordant ones, the escalation interval is still ±0.12 wide.
-- The classifier profile now names rubric v2. `jev-1.13.0` keeps v1: the tag threshold was tuned
-  against 1.14 probabilities, and a threshold does not transfer between model versions without the
-  same measurement.
+- Новая модель классификатора — это один YAML-файл плюс рубрика и прогон оценки. Ни ветки в
+  `container.py`, ни константы в адаптере.
+- Правка формулировки рубрики — это `v2.yaml` плюс `SENTIMENT_RUBRIC=sentiment-jev@2`; путь кода не
+  меняется, а событие аудита называет версию, которая отработала.
+- Отказ Jev теперь стоит не больше одного `timeout_s` на ответ вместо `timeout_s × (retries + 1)`, а
+  мёртвый эндпоинт открывает общий предохранитель.
+- Одна политика фолбэка, один набор лимитов (`MAX_TAGS`, `MAX_ANSWER_CHARS`), общий с классификатором
+  prompt. `maxItems` контракта тональности и константа в коде скреплены тестом.
+- Раннер оценок отчитывается `cost_rub_per_1k_calls` по расходу самого классификатора — один из двух
+  вопросов, от которых ADR 0011 ставил в зависимость принятие. Он остаётся `0`, пока цена не
+  зафиксирована в профиле.
+- Ломающее изменение для существующего развёртывания: `SENTIMENT_PROVIDER=jev` теперь требует
+  `CLASSIFY_PROFILE` (или явный `SENTIMENT_RUBRIC`), потому что селектор рубрики — это конфигурация, а
+  адаптер больше не носит версию. `JEV_TIMEOUT_S` и `JEV_MAX_RETRIES` становятся переопределениями
+  профиля, а не единственным источником, и `JEV_MODEL` новый. `.env.example` это фиксирует.
+- `SENTIMENT_PROVIDER` по умолчанию остаётся `prompt`, и измерение это поддерживает: ни один интервал
+  не разделяет провайдеров по качеству, так что смена умолчания была бы вкусом, одетым как
+  доказательство. Довод за Jev операционный — задержка на хвосте, доля фолбэка 0 против 0.17 и
+  измеримая цена, — и это отдельное изменение со своим выкатом.
+- Чтобы разделить два провайдера, набору нужна страта кризиса побольше, а не новая
+  метрика: на 34 кризисных кейсах и четырёх несогласованных интервал эскалации всё ещё шириной ±0.12.
+- Профиль классификатора теперь называет рубрику v2. `jev-1.13.0` держит v1: порог тегов подогнан под
+  вероятности 1.14, а порог не переносится между версиями модели без такого же измерения.
 
-### The cascade this measurement rejects
+### Каскад, который это измерение отвергает
 
-A third arrangement is possible without new code: Jev answers, and when its `confidence` is low the
-prompt model answers instead. Estimated offline from the two 114-case artifacts, no new calls:
+Третья схема возможна без нового кода: отвечает Jev, а когда его `confidence` низка, отвечает модель
+prompt. Оценка офлайн по двум артефактам на 114 кейсах, без новых вызовов:
 
-| gate | calls sent on | accuracy | vs Jev alone | 95% CI | `p(delta <= 0)` |
+| гейт | вызовов уходит на | точность | против одного Jev | 95 % ДИ | `p(delta <= 0)` |
 |---|---|---|---|---|---|
-| `confidence < 0.5` | 11% | 0.901 | +0.018 | [+0.000, +0.041] | 0.048 |
-| `confidence < 0.6` | 18% | 0.906 | +0.023 | [−0.009, +0.061] | 0.092 |
-| `confidence < 0.7` | 26% | 0.924 | +0.041 | [−0.003, +0.091] | 0.038 |
+| `confidence < 0.5` | 11 % | 0.901 | +0.018 | [+0.000, +0.041] | 0.048 |
+| `confidence < 0.6` | 18 % | 0.906 | +0.023 | [−0.009, +0.061] | 0.092 |
+| `confidence < 0.7` | 26 % | 0.924 | +0.041 | [−0.003, +0.091] | 0.038 |
 
-The best cell is not a finding. It was chosen after looking at four thresholds plus the crisis
-subset, its interval touches zero exactly, and the three cases it fixes are three discordant pairs
-(`p = 0.25` on its own). Worse, it is tuned on the test split, which `docs/evals/sentiment-guide.md`
-forbids, so the number is not even admissible as evidence.
+Лучшая ячейка — не находка. Её выбрали, посмотрев четыре порога и подмножество кризиса, её интервал
+касается нуля ровно, а три кейса, которые она чинит, — это три несогласованные пары (`p = 0.25` сама
+по себе). Хуже: она подогнана на test-разбиении, что `docs/evals/sentiment-guide.md` запрещает,
+поэтому число не годится даже как доказательство.
 
-The cost is real, though: sending 11% of calls to a chat model puts the p95 back near 3000 ms — the
-operational advantage Jev has — and pays twice for the same answer. A tie-breaking 1.8 points does
-not buy that. Rejected until a dev-split run picks the threshold and a confirmatory test run
-reproduces the gain.
+Цена при этом настоящая: отправить 11 % вызовов в чат-модель возвращает p95 к 3000 мс — то самое
+операционное преимущество Jev — и платит дважды за один ответ. Разрешение ничьей в 1.8 пункта этого не
+стоит. Отклонено, пока порог не выберет прогон на dev и подтверждающий прогон на test не повторит
+выигрыш.
 
-## Alternatives
+## Альтернативы
 
-- Keep the adapter's own envelope and only add a breaker — rejected: two retry policies, two
-  deadlines, two places to fix the next outage.
-- Put Jev inside `GatewayLLM` as a second family — rejected: Jev answers typed probabilities, not
-  `choices[0].message.content`; a gateway branch on response shape is the special case this ADR
-  removes.
-- Let the rubric carry the model — rejected: the model is a deployment fact with a price, and it
-  belongs where every other model lives.
-- Version the rubric in code (`RUBRIC_VERSION = 2`) — rejected: that is a code change for a
-  wording change, and it makes a measurement ambiguous about which file ran.
-- Run both models per answer and vote, or cascade one into the other — rejected for now: measured
-  above, the gain is inside the noise of the set that produced it, and the cost is the tail latency
-  that is Jev's only measured advantage.
+- Оставить адаптеру его конверт и только добавить предохранитель — отклонено: две политики повторов,
+  два дедлайна, два места, где чинить следующий отказ.
+- Положить Jev внутрь `GatewayLLM` вторым семейством — отклонено: Jev отвечает типизированными
+  вероятностями, а не `choices[0].message.content`; ветка шлюза по форме ответа — ровно та особая
+  ветка, которую этот ADR убирает.
+- Пусть рубрика несёт модель — отклонено: модель это факт развёртывания с ценой, и её место там, где
+  живут все остальные модели.
+- Версионировать рубрику в коде (`RUBRIC_VERSION = 2`) — отклонено: это правка кода ради правки
+  формулировки, и она делает измерение двусмысленным насчёт того, какой файл отработал.
+- Гонять обе модели на каждый ответ и голосовать или каскадировать одну в другую — отклонено пока:
+  измерено выше, выигрыш внутри шума набора, который его породил, а цена — задержка на хвосте,
+  единственное измеренное преимущество Jev.

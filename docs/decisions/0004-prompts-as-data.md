@@ -1,27 +1,29 @@
-# 0004: Prompts are versioned files
+---
+title: Промпты — версионированные файлы
+summary: Почему промпт лежит файлом с версией и метаданными, а не строкой в коде.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0004 — Промпты как версионированные файлы
 
-## Context
+## Контекст
 
-Tone and refusal rules are product behaviour. A prompt edited inside a Python string is invisible
-in review, impossible to diff, and cannot be rolled back independently of a deploy. Quality
-regressions are then blamed on the model.
+Тон и правила отказа — продуктовое поведение. Промпт, отредактированный внутри строки Python, невидим на ревью, не диффится и не откатывается отдельно от деплоя. Тогда регрессии качества списывают на модель.
 
-## Decision
+## Решение
 
-Prompts live in `docs/prompts/<name>/<version>.md` with a `<version>.meta.yaml` that records the
-model, temperature, eval result, and the version it supersedes. Code loads by explicit version.
-Every trace records the prompt version.
+Промпты лежат в `docs/prompts/<name>/<version>.md` рядом с `<version>.meta.yaml`, где записаны модель, temperature, результат оценки и версия, которую он заменяет. Код загружает по явной версии. Каждый трейс записывает версию промпта.
 
-## Consequences
+## Последствия
 
-- A prompt change is a reviewable diff plus an eval run.
-- Rolling back is a one-line version change.
-- A version is immutable; improvements are a new file.
-- The meta file must not claim a score that is not in `docs/measurements/`.
+- Изменение промпта — дифф для ревью плюс прогон оценки.
+- Откат — смена версии в одной строке.
+- Версия неизменяема; улучшение — новый файл.
+- Мета-файл не должен заявлять оценку, которой нет в `docs/measurements/`.
 
-## Alternatives
+## Альтернативы
 
-Prompt in code — rejected. Prompt in a database edited by HR — rejected for now: no review, no
-diff, no eval gate. It becomes viable after the eval harness is trusted, with the same rules.
+Промпт в коде — отклонено. Промпт в базе, который правит HR, — отклонено пока: нет ревью, нет диффа, нет гейта оценки. Вариант станет рабочим, когда стенду оценки начнут доверять, — с теми же правилами.

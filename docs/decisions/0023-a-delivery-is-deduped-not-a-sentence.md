@@ -1,64 +1,71 @@
-# 0023: A delivery is deduped, a sentence is not
+---
+title: Дедупликация доставки, а не предложения
+summary: Почему повтор текста из другого мессенджера остаётся ответом, а не отбрасывается.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- Status: accepted
-- Date: 2026-10-24
-- Builds on: `0019-a-channel-is-an-address.md`
+# 0023 — Доставка дедуплицируется, предложение — нет
 
-## Context
+Опирается на `0019-a-channel-is-an-address.md`.
 
-`0019` made the run follow the person: an answer from any linked messenger is answered there, the
-run's address moves, and the move is audited as `channel_changed`. Two messengers now deliver into
-one run, which raises a question one messenger never asked: what is a duplicate?
+## Контекст
 
-The dedupe key today is `channel:delivery_id` (`telegram:12345`, `vk:message_new:...`, a MAX event
-id), and `events.key` is unique, so a messenger that redelivers an update adds nothing. That covers
-the retries the APIs actually perform: Telegram retries until it gets `2xx`, VK retries
-`message_new`, MAX retries on a non-`200`.
+`0019` заставил прогон следовать за человеком: ответ из любого связанного мессенджера получает
+ответ там, адрес прогона переезжает, а переезд попадает в аудит как `channel_changed`. Теперь в один
+прогон доставляют два мессенджера, и возникает вопрос, которого один мессенджер не задавал: что
+такое дубликат?
 
-It does not cover a person who writes the same sentence twice in two apps. Both updates are new by
-their own messenger's accounting, both are correctly linked to one employee, and both advance the
-run. Two answers consume two steps. Live proof of the mechanism, both directions, is
+Ключ дедупликации сегодня — `channel:delivery_id` (`telegram:12345`, `vk:message_new:...`, id
+события MAX), а `events.key` уникален, так что мессенджер, который передоставил апдейт, ничего не
+добавляет. Это покрывает повторы, которые API делают: Telegram повторяет, пока не
+получит `2xx`, VK повторяет `message_new`, MAX повторяет при не-`200`.
+
+Не покрывает это человека, который написал одно и то же предложение в двух приложениях. Оба апдейта
+новые по учёту своего мессенджера, оба верно связаны с одним сотрудником, и оба двигают прогон. Два
+ответа съедают два шага. Живое доказательство механизма, в обе стороны, —
 `docs/measurements/2026-10-24-cross-channel-move.md`.
 
-The obvious guard is content dedupe: drop an update whose text matches the previous update for the
-same run from a different channel inside a window of N seconds. The step a survey answer lands on
-looks like a way to tell them apart, but it is not: by the time the second update is processed the
-run has already moved to the next step, so the guard compares an answer against the *next*
-question, which is what a person legitimately does when they answer twice in a row.
+Очевидная защита — дедупликация по содержимому: отбросить апдейт, текст которого совпадает с
+предыдущим апдейтом того же прогона из другого канала в окне N секунд. Шаг, на котором оказался ответ
+опроса, выглядит способом их различить, и способом не работает: к моменту обработки второго апдейта прогон
+уже ушёл на следующий шаг, поэтому защита сравнивает ответ со *следующим* вопросом — а это ровно то,
+что человек делает законно, когда отвечает дважды подряд.
 
-## Decision
+## Решение
 
-**Dedupe stays keyed on the messenger's delivery id. There is no content dedupe, on one channel or
-across channels.**
+**Дедупликация остаётся по id доставки мессенджера. Дедупликации по содержимому нет — ни внутри
+канала, ни между каналами.**
 
-A repeated sentence is an answer, not a duplicate. The run advances, the address moves to the
-messenger that just answered, and both facts are audited.
+Повторённое предложение — это ответ, а не дубликат. Прогон двигается, адрес переезжает в мессенджер,
+который только что ответил, и оба факта попадают в аудит.
 
-## Consequences
+## Последствия
 
-- A retry by the messenger is free and exact: `events.key` is unique, so the second delivery is
-  claimed once and never reaches the run.
-- A person answering twice gets two steps, deliberately. On a survey that is two recorded answers,
-  which is what the person did.
-- A short answer that repeats legitimately (`ок` at two consecutive steps) is never swallowed. A
-  window rule would silently drop it, and a dropped survey answer is data loss that nobody notices;
-  an extra one is visible in `step_transition` and repairable through the cabinet.
-- The audit is the repair tool, not a heuristic: `step_transition` names the step and the event for
-  every advance, and `channel_changed` names both addresses for every move. A doubled answer shows
-  as two transitions seconds apart from two channels.
-- The smoke pins the accepted behaviour instead of leaving it to be rediscovered:
-  `test_answers_from_two_messengers_are_two_answers` in `apps/api/tests/test_service.py`.
+- Повтор мессенджера бесплатен и точен: `events.key` уникален, поэтому вторая доставка захватывается
+  один раз и до прогона не доходит.
+- Человек, ответивший дважды, получает два шага, и намеренно. На опросе это два записанных ответа — ровно то, что человек сделал.
+- Короткий ответ, который законно повторяется (`ок` на двух шагах подряд), не проглатывается. Правило
+  окна тихо его отбросило бы, а отброшенный ответ — тихая потеря, которой никто не заметит;
+  лишний виден в `step_transition` и чинится через кабинет.
+- Аудит — инструмент починки, а не эвристика: `step_transition` называет шаг и событие для каждого
+  перехода, `channel_changed` называет оба адреса для каждого переезда. Удвоенный ответ виден как два
+  перехода с разницей в секунды из двух каналов.
+- Смоук-тест закрепляет принятое поведение, а не оставляет его на повторное открытие:
+  `test_answers_from_two_messengers_are_two_answers` в `apps/api/tests/test_service.py`.
 
-## Alternatives rejected
+## Альтернативы
 
-- **Content dedupe inside a time window.** Cannot separate "the same sentence sent from two apps"
-  from "the same short answer to two consecutive questions". Rejected: it trades a visible,
-  repairable duplicate for a silent loss.
-- **Content dedupe keyed on `(step, text)`.** The second delivery is processed after the step has
-  moved, so the key never matches, and a guard that never fires is worse than none: it reads like
-  protection.
-- **Refusing a plain message from a channel that is not the run's current address** (moving the
-  address only on `/start`). Safe against the duplicate, but it breaks the promise of `0019`: a
-  person who picks up their other phone to answer would be told to start over. Rejected.
-- **Digesting the inbound text into `events.key`.** Two people, or one person at two steps, may
-  send identical text; the digest would collide across runs and employees.
+- **Дедупликация по содержимому в окне времени.** Не отделяет «одно предложение из двух приложений»
+  от «один короткий ответ на два вопроса подряд». Отклонено: меняет видимый и чинимый дубликат на
+  тихую потерю.
+- **Дедупликация по содержимому с ключом `(step, text)`.** Вторая доставка обрабатывается после того,
+  как шаг сдвинулся, поэтому ключ не совпадёт никогда. Защита, которая не срабатывает, хуже её
+  отсутствия: она выглядит как защита.
+- **Отказывать простому сообщению из канала, который не текущий адрес прогона** (двигать адрес
+  только на `/start`). От дубликата спасает, но ломает обещание `0019`: человеку, который взял второй
+  телефон, чтобы ответить, сказали бы начинать заново. Отклонено.
+- **Складывать входящий текст в `events.key` дайджестом.** Два человека или один человек на двух
+  шагах могут прислать одинаковый текст; дайджест столкнётся между прогонами и сотрудниками.

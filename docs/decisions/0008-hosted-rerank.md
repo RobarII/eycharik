@@ -1,47 +1,41 @@
-# 0008: Rerank through a hosted cross-encoder
+---
+title: Переранжирование через хостинговый кросс-энкодер
+summary: Почему третий шаг поиска вынесен в HTTP-вызов и как отказ переранжировщика не роняет ответ.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0008 — Переранжирование через хостинговый кросс-энкодер
 
-## Context
+## Контекст
 
-ADR 0003 fixed three retrieval stages: filter, hybrid recall, rerank. The third stage was missing:
-the answerer took the fused list and cut it to `RERANK_LIMIT`. On the golden set that looked
-harmless — recall@5 was already 1.0 — but the prompt still had to guess which of thirty candidates
-was on point, and the order of the context was the order of the fusion.
+ADR 0003 зафиксировал три стадии поиска: фильтр, гибридный отбор, переранжирование. Третьей стадии не было: генератор брал слитый список и обрезал его до `RERANK_LIMIT`. На золотом наборе это выглядело безобидно — recall@5 уже был 1.0, — но промпту всё равно приходилось угадывать, кто из тридцати кандидатов в тему, а порядок контекста был порядком слияния.
 
-Two constraints pushed the reranker out of the process:
+Два ограничения вытолкнули переранжировщик из процесса:
 
-- a local cross-encoder means a model file, a torch runtime, and a warm-up in every container;
-- the deployment target is a small VM for a hackathon pilot, not a GPU box.
+- локальный кросс-энкодер означает файл модели, рантайм torch и прогрев в каждом контейнере;
+- цель развёртывания — небольшая VM для пилота хакатона, а не GPU-сервер.
 
-## Decision
+## Решение
 
-Rerank through one HTTP call to a Cohere-shaped `/rerank` endpoint (Cohere, Jina, OpenRouter all
-speak it). The stage is optional at configuration level:
+Переранжирование — один HTTP-вызов к `/rerank` в форме Cohere (его понимают Cohere, Jina, OpenRouter). Стадия необязательна на уровне конфигурации:
 
-- `RERANK_BASE_URL` empty → no reranker, the hybrid order stands;
-- configured → `app/llm/rerank.py` sends the question and the fused candidates, keeps the returned
-  order, and truncates to `RERANK_LIMIT`;
-- any failure (timeout, 5xx, malformed body, duplicate or out-of-range index) raises
-  `RerankUnavailableError`, the answerer records `rerank_failed`, and generation proceeds with the
-  hybrid order. A reranker is an improvement, never a dependency.
+- `RERANK_BASE_URL` пуст: переранжирования нет, остаётся гибридный порядок;
+- задан: `app/llm/rerank.py` отправляет вопрос и слитых кандидатов, сохраняет возвращённый порядок и обрезает до `RERANK_LIMIT`;
+- любой отказ (таймаут, 5xx, битое тело, повторяющийся или выходящий за диапазон индекс) поднимает `RerankUnavailableError`, генератор записывает `rerank_failed`, генерация продолжается с гибридным порядком. Переранжирование — улучшение, а не зависимость.
 
-The provider is `cohere/rerank-v3.5` through OpenRouter: 0.001 $ per search, multilingual, and it
-returns a score that separates a relevant chunk from noise (0.63 vs 0.05 on a probe pair).
+Провайдер — `cohere/rerank-v3.5` через OpenRouter: 0.001 $ за поиск, мультиязычный, и он возвращает оценку, отделяющую релевантный фрагмент от шума (0.63 против 0.05 на пробной паре).
 
-## Consequences
+## Последствия
 
-- One more network hop: measured 0.7–1.6 s for 5–30 documents.
-- The reranker sees the question and the chunk text. It never sees more than the retrieval already
-  permitted by the audience filter, so ACL evaluation stays in SQL and stays first.
-- `recall@5` cannot regress from this stage; `mrr` can only improve, and on the golden set it went
-  from 0.900 to 1.000.
-- A reranker outage degrades quality, not availability.
-- Cost is 0.001 $ per answered question, recorded in the measurement alongside the model cost.
+- Ещё один сетевой переход: измерено 0.7–1.6 с на 5–30 документах.
+- Переранжировщик видит вопрос и текст фрагмента. Больше, чем уже разрешил фильтр по аудитории, он не видит, так что проверка ACL остаётся в SQL и остаётся первой.
+- `recall@5` от этой стадии не может упасть; `mrr` может только вырасти, и на золотом наборе вырос с 0.900 до 1.000.
+- Отказ переранжировщика снижает качество, а не доступность.
+- Стоимость — 0.001 $ за отвеченный вопрос, записывается в измерение рядом со стоимостью модели.
 
-## Alternatives
+## Альтернативы
 
-Local cross-encoder (bge-reranker, mmarco) — rejected for the pilot: a torch runtime and a model
-download in every container for a 1 s saving. LLM-based listwise rerank — rejected: a second model
-call with the same latency class as the answer itself. No reranker — rejected: the fused order put
-the right chunk in the top five but not first, and `mrr` measures exactly that.
+Локальный кросс-энкодер (bge-reranker, mmarco) — отклонено для пилота: рантайм torch и загрузка модели в каждом контейнере ради экономии 1 с. LLM-переранжирование списком — отклонено: второй вызов модели того же класса задержки, что и сам ответ. Без переранжирования — отклонено: слитый порядок ставил правильный фрагмент в пятёрку, но не первым, а `mrr` измеряет именно это.

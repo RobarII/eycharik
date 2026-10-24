@@ -1,48 +1,42 @@
-# 0009: An eight-second p95 budget for a hosted model
+---
+title: Бюджет p95 в восемь секунд для хостинговой модели
+summary: Откуда взялся гейт в 8000 мс, чем он измерен и в каком порядке резать конвейер.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23. Supersedes the 3-second target in `docs/architecture.md`.
+# 0009 — Бюджет p95 в восемь секунд для хостинговой модели
 
-## Context
+## Контекст
 
-The first eval gate said p95 ≤ 3000 ms. It was written while the only provider was the offline
-extractive demo, which reports zero latency by construction: the gate had never met a real model.
+Это решение заменяет цель в 3 секунды из `docs/architecture.md`. Первый гейт оценки говорил p95 ≤ 3000 мс. Его писали, когда единственным провайдером было офлайн-демо `extractive`, которое по построению сообщает нулевую задержку: гейт ни разу не встречался с настоящей моделью.
 
-Measured on 2026-10-23, commit `56d2d9c`, twelve golden cases, local stack, `baai/bge-m3`
-embeddings, `cohere/rerank-v3.5`:
+Измерено 2026-10-23, коммит `56d2d9c`, двенадцать кейсов золотого набора, локальный стек, эмбеддинги `baai/bge-m3`, `cohere/rerank-v3.5`:
 
-| Pipeline | p95 |
+| Конвейер | p95 |
 |---|---|
-| hybrid retrieval + `deepseek-v4.1-flash`, no rerank | 4615 ms |
-| + reranker, five chunks in the prompt | 6008 ms |
+| гибридный поиск + `deepseek-v4.1-flash`, без переранжирования | 4615 мс |
+| + переранжировщик, пять фрагментов в промпте | 6008 мс |
 
-The model call is 70–80 % of the time; the reranker is 0.7–1.6 s; retrieval is tens of
-milliseconds. A 3-second budget cannot be met by any hosted model in this class, so the gate was
-not measuring the product — it was measuring the demo.
+Вызов модели — 70–80 % времени; переранжирование — 0.7–1.6 с; поиск — десятки миллисекунд. Бюджет в 3 секунды не выдержит ни одна хостинговая модель этого класса, так что гейт измерял не продукт, а демо.
 
-## Decision
+## Решение
 
-The end-to-end answer budget is **p95 ≤ 8000 ms**, measured by `make eval` with a real provider.
+Сквозной бюджет ответа — **p95 ≤ 8000 мс**, его измеряет `make eval` с настоящим провайдером.
 
-- The webhook budget stays strict: under 200 ms, unchanged (ADR 0002).
-- The user sees a typing state while the answer is generated; eight seconds is inside what a
-  messenger conversation tolerates for a substantive answer.
-- The eval gate uses the same number as the runbook alert, so a regression fails a build before it
-  pages anyone.
-- If p95 crosses 8000 ms, the order of cuts is: `RERANK_LIMIT` 5 → 3, then `RECALL_LIMIT` 30 → 15,
-  then a faster model. Each cut is a measurement, not a guess.
+- Бюджет вебхука остаётся строгим: меньше 200 мс, без изменений (ADR 0002).
+- Пока ответ генерируется, пользователь видит состояние набора; восемь секунд укладываются в то, что разговор в мессенджере терпит ради содержательного ответа.
+- Гейт оценки использует то же число, что алерт в ранбуке, поэтому регрессия валит сборку раньше, чем кого-то будит.
+- Если p95 перевалит за 8000 мс, порядок сокращений: `RERANK_LIMIT` с 5 до 3, затем `RECALL_LIMIT` с 30 до 15, затем модель быстрее. Каждое сокращение — измерение, а не догадка.
 
-## Consequences
+## Последствия
 
-- The offline extractive eval still reports a latency of zero; it proves the contract, not the
-  budget. Real-provider runs are the evidence.
-- A provider incident can breach the budget without a code change. The circuit breaker (ADR 0007
-  path) and the `llm-outage` runbook handle that case; the gate is about the code we ship.
-- `docs/evals/README.md`, `docs/measurements/TEMPLATE.md`, and `evals/runner.py` carry the same
-  number, and a test pins it.
+- Офлайн-оценка на `extractive` по-прежнему сообщает нулевую задержку; она доказывает контракт, а не бюджет. Доказательство — прогоны с настоящим провайдером.
+- Инцидент провайдера может пробить бюджет без изменения кода. Этот случай закрывают предохранитель (путь ADR 0007) и ранбук `llm-outage`; гейт же про код, который мы поставляем.
+- `docs/evals/README.md`, `docs/measurements/TEMPLATE.md` и `evals/runner.py` несут то же число, и тест его закрепляет.
 
-## Alternatives
+## Альтернативы
 
-Keep 3000 ms and accept a red gate forever — rejected: a permanently failing gate teaches the team
-to ignore gates. Measure the model only and exclude the reranker — rejected: the user waits for the
-whole pipeline, not for a stage. Stream tokens to the user — deferred: MAX supports it, but the
-answer contract validates citations before anything is sent.
+Оставить 3000 мс и принять вечно красный гейт — отклонено: постоянно падающий гейт учит команду игнорировать гейты. Мерить только модель и исключить переранжирование — отклонено: пользователь ждёт весь конвейер, а не стадию. Стримить токены пользователю — отложено: MAX это поддерживает, но контракт ответа проверяет цитаты до отправки.

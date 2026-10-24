@@ -1,93 +1,99 @@
-# 0017 — The sentiment eval is a measuring instrument, not a demo
+---
+title: Прогон оценки тональности как прибор
+summary: Как меряется тональность, почему прогон отменяется при сбое провайдера и что показали числа.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Date: 2026-10-23
-Status: accepted
+# 0017 — Прогон оценки тональности: измерительный прибор, а не демо
 
-## Context
+## Контекст
 
-ADR 0011 shipped three sentiment providers behind one port, and measured two of them on a 16-case
-set: `keyword` at 0.375 tone accuracy and `prompt` at 0.875. Those numbers answered "does it work at
-all". They could not answer the questions a reviewer actually asks:
+ADR 0011 выпустил трёх поставщиков тональности за одним портом и измерил двух из них на наборе из
+16 кейсов: `keyword` дал 0.375 точности по тону, `prompt` — 0.875. Эти числа отвечали на вопрос
+«работает ли это вообще». На вопросы, которые задаёт ревьюер, они не отвечали:
 
-- is 0.875 different from 0.938, or is that one case out of sixteen?
-- does the classifier miss a crisis, and does the product escalate it?
-- does the answer survive a second call, or does the verdict move?
-- can a run be broken by a provider outage while still printing a confident table?
+- 0.875 отличается от 0.938, или это один кейс из шестнадцати?
+- пропускает ли классификатор кризис и эскалирует ли его продукт?
+- переживает ли ответ второй вызов, или вердикт смещается?
+- может ли прогон сломаться от сбоя провайдера и всё равно напечатать уверенную таблицу?
 
-A set that small with point estimates only is a demo. Worse, the first full run of the new set
-returned `fallback_rate = 1.000` — a tripped circuit breaker — and the runner still wrote a
-measurement file. An instrument that reports numbers during an outage is the failure mode this ADR
-closes.
+Набор такого размера с одними точечными оценками — демо. Хуже: первый полный прогон нового набора
+вернул `fallback_rate = 1.000` — сработавший предохранитель, — а раннер всё равно записал файл
+измерения. Прибор, который отчитывается числами во время сбоя, — та ошибка, которую этот ADR
+закрывает.
 
-## Decision
+## Решение
 
-`docs/evals/sentiment.yaml` is now version 2: 107 cases, `dev`/`test` split assigned before the
-first run, every tone and every tag present in both halves, and `expect_escalation` for the cases a
-recruiter must be alerted about. The label rules live in
-`docs/evals/sentiment-guide.md` and change before a label does.
+`docs/evals/sentiment.yaml` теперь версия 2: 107 кейсов, разбиение `dev`/`test` назначено до первого
+прогона, каждый тон и каждый тег есть в обеих половинах, а `expect_escalation` стоит на кейсах, о
+которых рекрутёра надо предупредить. Правила меток живут в `docs/evals/sentiment-guide.md` и
+меняются раньше меток.
 
-The runner (`apps/api/onboarding/evals/sentiment.py`) is held to five rules:
+Раннер (`apps/api/onboarding/evals/sentiment.py`) держится пяти правил:
 
-1. **Every share carries a Wilson 95% interval.** A share without an interval is not reportable.
-2. **Tone quality is reported as macro F1, per-tone recall, and a confusion matrix.** Accuracy alone
-   lets a dead class hide behind a common one.
-3. **Escalation is measured through `core/risk.py`**, the code that decides in production, and
-   missed escalations are listed by name. This is the metric that outranks the averages.
-4. **Repetition is part of the run.** `--repeat N` calls the provider N times per case, reports
-   pooled and per-case majority accuracy, and names the cases whose verdict moved. No gate may be
-   tighter than that instability.
-5. **A degraded provider aborts the run.** More than 10% infrastructure fallbacks (a timeout, a
-   breaker, a 5xx) exits non-zero and writes nothing. A malformed model answer is *not* an outage:
-   it stays in the table as a model result.
+1. **Каждая доля идёт с интервалом Уилсона 95 %.** Доля без интервала не отчётна.
+2. **Качество тона — макро F1, recall по каждому тону и матрица ошибок.** Одна точность даёт
+   мёртвому классу спрятаться за частым.
+3. **Эскалация измеряется через `core/risk.py`** — код, который решает в проде, — а пропущенные
+   эскалации перечисляются по именам. Эта метрика важнее средних.
+4. **Повтор входит в прогон.** `--repeat N` вызывает провайдера N раз на кейс, отчитывается пулом и
+   большинством по кейсу и называет кейсы, чей вердикт сместился. Ни один гейт не должен быть уже
+   этой нестабильности.
+5. **Деградировавший провайдер отменяет прогон.** Больше 10 % инфраструктурных отказов (таймаут,
+   предохранитель, 5xx) — выход с ненулевым кодом и без записи. Испорченный ответ модели не сбой:
+   он остаётся в таблице как результат модели.
 
-Every run writes the Markdown table and a JSONL artifact with one line per call. `--compare
-<artifact>` runs a paired bootstrap over the cases both runs scored and reports the delta, its 95%
-interval, and `p(delta <= 0)`. Two standalone accuracies are never compared again.
+Каждый прогон пишет markdown-таблицу и JSONL-артефакт, по строке на вызов. `--compare <artifact>`
+гоняет парный бутстрап по кейсам, которые оценили оба прогона, и отчитывается дельтой, её интервалом
+95 % и `p(delta <= 0)`. Две отдельные точности больше не сравнивают.
 
-## Measured
+## Измерено
 
-Same set, same machine, `--min-interval 0.5`, provider `deepseek-v4.1-flash` via the
-`opencode-deepseek-v4.1-flash` profile. Files are in `docs/measurements/`.
+Тот же набор, та же машина, `--min-interval 0.5`, провайдер `deepseek-v4.1-flash` через профиль
+`opencode-deepseek-v4.1-flash`. Файлы лежат в `docs/measurements/`.
 
-| run | cases | accuracy [95% CI] | macro F1 | escalation recall | fallback rate |
+| прогон | кейсов | точность [95 % ДИ] | макро F1 | recall эскалации | доля отказов |
 |---|---|---|---|---|---|
-| keyword, test | 58 | 0.345 [0.24, 0.47] | 0.297 | 0.600 | 0.000 |
-| prompt, test, 3 reps | 58 | 0.770 [0.70, 0.83] | 0.606 | 0.800 | 0.195 |
-| prompt, dev, 1 rep | 49 | 0.816 [0.69, 0.90] | 0.743 | 0.800 | 0.245 |
+| `keyword`, test | 58 | 0.345 [0.24, 0.47] | 0.297 | 0.600 | 0.000 |
+| `prompt`, test, 3 повтора | 58 | 0.770 [0.70, 0.83] | 0.606 | 0.800 | 0.195 |
+| `prompt`, dev, 1 повтор | 49 | 0.816 [0.69, 0.90] | 0.743 | 0.800 | 0.245 |
 
-Paired bootstrap, prompt vs keyword on the same 58 test cases: `case_accuracy` 0.776 vs 0.345,
-delta **+0.431**, 95% CI **[0.29, 0.57]**, `p(delta <= 0) = 0.000`. The model is better than
-keywords; that was never in doubt, and now it is stated with a number that has an interval.
+Парный бутстрап, prompt против keyword на тех же 58 кейсах test: `case_accuracy` 0.776 против 0.345,
+дельта **+0.431**, 95 % ДИ **[0.29, 0.57]**, `p(delta <= 0) = 0.000`. Модель лучше `keyword`; в
+этом никто не сомневался, и теперь это сказано числом, у которого есть интервал.
 
-Jev has no row: `JEV_API_KEY` is absent. The runner refuses to score it rather than guess.
+У Jev строки нет: `JEV_API_KEY` отсутствует. Раннер отказывается его оценивать, а не гадает.
 
-Three findings the old set could not produce:
+Три находки, которых старый набор дать не мог:
 
-1. **19.5% of prompt calls return unparseable JSON** and fall back to keywords. The same model
-   sometimes answers `{"messages": []}` or echoes a `{"role": "user", ...}` envelope. This is a
-   prompt/model defect with a price: one in five survey answers is labeled by keywords.
-2. **24 of 58 cases changed tone between three identical calls** at `temperature: 0.0`. Any gate on
-   this provider must be wider than that instability, or it will fail on noise.
-3. **`false_alarm_rate` is 0.403.** `core/risk.py` turns every negative answer into high +
-   recruiter, so four calm answers in ten would page a person. That is a product rule, not a
-   classifier defect, and it is now visible in a table instead of an argument.
+1. **19.5 % вызовов prompt возвращают неразбираемый JSON** и падают в `keyword`. Та же модель
+   иногда отвечает `{"messages": []}` или повторяет конверт `{"role": "user", ...}`. Это дефект
+   промпта и модели с ценой: каждый пятый ответ на опрос помечен `keyword`.
+2. **24 из 58 кейсов сменили тон между тремя одинаковыми вызовами** при `temperature: 0.0`. Любой
+   гейт на этом провайдере должен быть шире этой нестабильности, иначе он упадёт на шуме.
+3. **`false_alarm_rate` равна 0.403.** `core/risk.py` превращает любой негативный ответ в high и
+   рекрутёра, так что четыре спокойных ответа из десяти позовут человека. Это правило продукта, а
+   не дефект классификатора, и теперь оно видно в таблице, а не в споре.
 
-## Consequences
+## Последствия
 
-- A quality claim about the radar quotes `case_accuracy` with an interval, the split, the commit,
-  and the fallback rate. Without all four it is an anecdote.
-- The prompt provider's 19.5% format fallback is the first thing to fix; until then the prompt
-  classifier's measured quality is partly the keyword classifier's.
-- A gate is still absent. The next step is a threshold derived from this baseline minus the interval
-  width, on a provider whose instability is known.
-- Labels were written by one annotator. The set is a considered opinion, not an inter-annotator
-  truth; a kappa run on a sample is the next step, and every measurement note says so.
-- ADR 0011 stands. Its v1 numbers are not comparable with these and are not restated.
+- Утверждение о качестве радара цитирует `case_accuracy` с интервалом, разбиением, коммитом и долей
+  отказов. Без всех четырёх это анекдот.
+- 19.5 % форматных отказов провайдера prompt — первое, что надо чинить; до тех пор измеренное
+  качество классификатора prompt частично принадлежит классификатору `keyword`.
+- Гейта по-прежнему нет. Следующий шаг — порог, выведенный из этого базового прогона минус ширина
+  интервала, на провайдере с известной нестабильностью.
+- Метки писал один аннотатор. Набор — это взвешенное мнение, а не межаннотаторная истина; прогон
+  каппы на выборке и есть следующий шаг, и каждая заметка об измерении это говорит.
+- ADR 0011 в силе. Его числа v1 с этими не сравнимы и здесь не повторяются.
 
-## Alternatives
+## Альтернативы
 
-- Keep the 16-case set and add intervals — rejected: 16 cases buys ±16 points, so no interval
-  separates the providers anyone cares about.
-- Score with an LLM judge — rejected: another unmeasured model in the measuring path, and this
-  task has a small closed label space a human can own.
-- Tune the prompt until the test split passes — rejected: that is how a test set stops being one.
+- Оставить набор из 16 кейсов и добавить интервалы — отклонено: 16 кейсов дают ±16 пунктов, так что
+  никакой интервал не разделит провайдеров, которые важны.
+- Оценивать судьёй-LLM — отклонено: ещё одна неизмеренная модель в измерительном контуре, а у этой
+  задачи маленькое закрытое пространство меток, которым может владеть человек.
+- Крутить промпт, пока не пройдёт test — отклонено: так test перестаёт им быть.

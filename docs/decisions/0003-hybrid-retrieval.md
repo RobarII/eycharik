@@ -1,32 +1,33 @@
-# 0003: Hybrid retrieval, rerank, then generate
+---
+title: Гибридный поиск, переранжирование, затем генерация
+summary: Почему поиск идёт тремя стадиями и что каждая стадия даёт по отдельности.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0003 — Гибридный поиск, переранжирование, затем генерация
 
-## Context
+## Контекст
 
-Company questions are full of exact names: "ДМС", "ПОЛИПЛАСТИК", "1С:ЗУП", document numbers.
-Dense vectors are weak on rare tokens and acronyms; lexical search is weak on paraphrases
-("сколько дней отдыха" vs "отпуск"). Both failures are silent: the model answers from a plausible
-but wrong chunk.
+Вопросы о компании полны точных названий: «ДМС», «ПОЛИПЛАСТИК», «1С: ЗУП», номера документов. Плотные векторы слабы на редких токенах и аббревиатурах, лексический поиск — на перефразах («сколько дней отдыха» против «отпуск»). Оба отказа молчаливые: модель отвечает по правдоподобному, но неверному фрагменту.
 
-## Decision
+## Решение
 
-Three stages, each measurable on its own:
+Три стадии, каждую можно измерить отдельно:
 
-1. Filter by audience and validity in SQL.
-2. Retrieve `top 30` by cosine and `top 30` by `ts_rank` with the Russian dictionary, fuse with
-   reciprocal rank fusion.
-3. Rerank the fused list with a cross-encoder, keep `top 5`.
+1. Фильтр по аудитории и сроку действия в SQL.
+2. Найти `top 30` по косинусу и `top 30` по `ts_rank` с русским словарём, объединить слиянием рангов.
+3. Переранжировать слитый список кросс-энкодером, оставить `top 5`.
 
-## Consequences
+## Последствия
 
-- Two indexes per chunk: `vector(1024)` and `tsvector`.
-- Fusion and ranking selection live in `core/ranking.py` and are tested without a database.
-- More CPU per question; the reranker runs locally and costs no tokens.
-- Recall@5 becomes a number we can regress on, which pure vector search does not give us.
+- Два индекса на фрагмент: `vector(1024)` и `tsvector`.
+- Выбор слияния и ранжирования живёт в `core/ranking.py` и тестируется без базы.
+- Больше CPU на вопрос; переранжирование идёт локально и не тратит токены.
+- Recall@5 становится числом, по которому можно ловить регрессии; чистый векторный поиск такого не даёт.
 
-## Alternatives
+## Альтернативы
 
-Vector-only — rejected: fails on acronyms and identifiers. BM25-only — rejected: fails on
-paraphrase. LLM query rewriting — deferred: it adds latency and cost before we have measured the
-baseline.
+Только векторы — отклонено: провал на аббревиатурах и идентификаторах. Только BM25 — отклонено: провал на перефразах. Переписывание запроса моделью — отложено: добавляет задержку и стоимость до того, как измерен базовый прогон.

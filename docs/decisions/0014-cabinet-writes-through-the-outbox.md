@@ -1,58 +1,63 @@
-# 0014: The cabinet writes through the outbox
+---
+title: Кабинет пишет через outbox
+summary: Как ответ рекрутёра доходит до сотрудника и что стирает увольнение.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+superseded_by: [22]
+---
 
-- Status: accepted
-- Date: 2026-10-24
-- Supersedes: nothing
+# 0014 — Кабинет пишет через outbox
 
-## Context
+## Контекст
 
-The cabinet was read-only. A recruiter who answered a question in MAX had no way to close it, so
-the queue filled with items nobody could remove, and the answer lived only in a messenger. A
-leaver's transcript stayed in the database forever, and audit rows kept the raw question text.
+Кабинет был только читающим. Рекрутёр, ответивший на вопрос в MAX, не мог его закрыть: очередь
+наполнялась записями, которые никто не мог убрать; ответ жил только в мессенджере. Стенограмма
+уволившегося сотрудника оставалась в базе навсегда, а строки журнала хранили исходный текст
+вопроса.
 
-Two questions had to be settled together:
+Два вопроса пришлось решать вместе:
 
-1. How does a reply written in the cabinet reach the employee?
-2. What does "the employee left" and "the data is old" mean for rows that mention a person?
+1. Как ответ, написанный в кабинете, доходит до сотрудника?
+2. Что значат «сотрудник ушёл» и «информация устарела» для строк, где упомянут человек?
 
-## Decision
+## Решение
 
-**A reply is an outbox row, written in the same transaction that closes the question.** The
-`POST /admin/api/questions/{id}/resolve` handler validates the reply, sets `resolved_at`,
-`resolved_by`, and `resolution`, appends a `messages` row, and writes `question_resolved` to the
-audit log. The existing dispatcher delivers it with per-chat pacing and retries. The API never
-calls MAX.
+**Ответ — это строка `outbox`, записанная в той же транзакции, что закрывает вопрос.** Обработчик
+`POST /admin/api/questions/{id}/resolve` проверяет ответ, ставит `resolved_at`, `resolved_by` и
+`resolution`, добавляет строку в `messages` и пишет `question_resolved` в журнал. Дальше её отдаёт
+существующий диспетчер: темп по чатам и повторы. API в MAX не ходит.
 
-**Leaving is a soft delete plus an immediate purge.** `DELETE /admin/api/employees/{id}` (HR only)
-sets `status='left'` and `left_at`, closes the active run, deletes the employee's question rows, and
-redacts personal fields in the audit log. The employee row and the audit skeleton survive: the
-numbers and the sequence of events stay, the person's words do not.
+**Увольнение — мягкое удаление плюс немедленная зачистка.** `DELETE /admin/api/employees/{id}`
+(только hr-администратор) ставит `status='left'` и `left_at`, закрывает активный прогон, удаляет
+строки вопросов сотрудника и вычёркивает персональные поля в журнале. Строка сотрудника и скелет
+журнала остаются: числа и последовательность событий на месте, слов человека — нет.
 
-**Age is a scheduled purge.** The worker runs `RetentionPurger` hourly; the cron entrypoint runs it
-once per tick. Questions older than `DATA_RETENTION_DAYS` (default 365) are deleted. Audit rows
-older than the window keep their name, actor, and timestamps, but `evidence`, `quote`, `question`,
-and `text` are replaced by null and `redacted: true`. The pass writes `retention_purged` with the
-counts.
+**Срок хранения — плановая зачистка.** Воркер запускает `RetentionPurger` раз в час, cron-точка
+входа — раз за тик. Вопросы старше `DATA_RETENTION_DAYS` (по умолчанию 365) удаляются. Строки
+журнала старше окна сохраняют имя, актора и метки времени, но `evidence`, `quote`, `question` и
+`text` заменяются на null и `redacted: true`. Проход пишет `retention_purged` со счётчиками.
 
-## Consequences
+## Последствия
 
-- A reply survives a crash between the API and MAX: the question is closed and the message is
-  pending in one commit. Delivery is at-least-once.
-- Two recruiters resolving the same question: the second gets `409`, not a duplicate message.
-- The worker must be running for replies to leave the outbox. A down worker delays replies; it does
-  not lose them.
-- The resolved question text and the reply stay available to the cabinet until the retention window
-  closes. This is deliberate: the next recruiter needs the context.
-- Audit rows cannot be used to reconstruct a deleted employee transcript. This is a loss of
-  forensic detail, accepted in exchange for not keeping personal data forever.
-- `DATA_RETENTION_DAYS` is a policy knob, not a technical limit. Changing it does not rewrite
-  history; the next pass applies the new cutoff.
+- Ответ переживает сбой между API и MAX: вопрос закрыт и сообщение в очереди одним коммитом.
+  Доставка at-least-once.
+- Два рекрутёра закрывают один вопрос: второй получает `409`, а не дубль сообщения.
+- Чтобы ответы уходили из `outbox`, воркер должен работать. Упавший воркер задерживает ответы, но
+  не теряет их.
+- Текст закрытого вопроса и ответ остаются кабинету до конца окна хранения. Это намеренно:
+  следующему рекрутёру нужен контекст.
+- По строкам журнала нельзя восстановить стенограмму удалённого сотрудника. Так теряется
+  криминалистическая детализация: цена отказа хранить личное вечно.
+- `DATA_RETENTION_DAYS` — ручка политики, не техническое ограничение. Её смена не переписывает
+  историю; следующий проход применит новый порог.
 
-## Alternatives rejected
+## Альтернативы
 
-- **Call MAX directly from the API.** Two failure domains in one request, no pacing, no retry, and a
-  closed question whose reply was lost. The outbox already solves this.
-- **Hard-delete the employee row.** Destroys the audit skeleton and the aggregate numbers, and makes
-  a repeated `DELETE` indistinguishable from an unknown id.
-- **Delete audit rows on retention.** Loses the record that an action happened. Redaction keeps the
-  shape of the history without the personal content.
+- **Звать MAX прямо из API.** Две области отказа в одном запросе, ни темпа, ни повторов, и закрытый
+  вопрос, ответ на который потерян. `outbox` это уже решает.
+- **Жёстко удалить строку сотрудника.** Уничтожает скелет журнала и агрегаты, а повторный `DELETE`
+  делает неотличимым от неизвестного id.
+- **Удалять строки журнала при зачистке.** Теряется запись о том, что действие было. Вычёркивание
+  сохраняет форму истории без персонального содержания.

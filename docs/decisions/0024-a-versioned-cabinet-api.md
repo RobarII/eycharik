@@ -1,56 +1,60 @@
-# 0024: The cabinet API has a version in its path
+---
+title: Версия в пути админ-API кабинета
+summary: Почему кабинет ходит в /admin/api/v1 и как живёт некверсионный алиас.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- Status: accepted
-- Date: 2026-10-24
+# 0024 — У API кабинета есть версия в пути
 
-## Context
+## Контекст
 
-The cabinet and the API are separate processes in separate repositories-in-spirit: the cabinet is a
-static bundle in front of an nginx, the API is the only thing that knows what a run is. They ship
-on different schedules, and a stale bundle is not an incident the deploy can prevent — a browser
-tab can live for days.
+Кабинет и API — разные процессы, по духу и разные репозитории: кабинет это статический бандл перед
+nginx, API — единственное, что знает, что такое прогон. Выходят они по разным расписаниям, а
+устаревший бандл — не инцидент, который деплой может предотвратить: вкладка браузера живёт днями.
 
-The API grew under `/admin/api` with no version marker. Every one of the endpoints in
-`docs/contracts/admin-api.md` is load-bearing for that stale bundle: renaming a field, dropping a
-query parameter, or turning `total` into an estimate breaks a page in a tab nobody can reload.
+API рос под `/admin/api` без метки версии. Каждый эндпоинт в `docs/contracts/admin-api.md` держит
+этот устаревший бандл: переименование поля, потеря параметра запроса или превращение `total` в оценку
+ломает страницу во вкладке, которую никто не может перезагрузить.
 
-The usual mitigations are worse than the problem. Additive-only discipline is unenforceable across
-a year of changes, and a client capability probe (`GET /me` already carries one) tells the client
-what it may *do*, not what shape the answer has.
+Обычные меры хуже проблемы. Дисциплина «только добавлять» непроверяема на горизонте года, а проба
+возможностей клиента (`GET /me` уже несёт одну) говорит клиенту, что он может *делать*, а не какую
+форму имеет ответ.
 
-## Decision
+## Решение
 
-**Every cabinet route lives under `/admin/api/v1`. An incompatible change is a new prefix, not an
-edit of this one.**
+**Каждый маршрут кабинета живёт под `/admin/api/v1`. Несовместимое изменение — новый префикс, а не
+правка этого.**
 
-Both prefixes answer for one release. The unversioned `/admin/api` alias exists so a bundle that
-has not shipped yet keeps working, and it is deliberately `include_in_schema=False`: it is a
-compatibility window, not a second contract. It is removed in the release after the cabinet's
-`api.ts` has pointed at `/admin/api/v1` everywhere.
+Оба префикса отвечают один релиз. Некверсионный алиас `/admin/api` есть, чтобы бандл, который ещё не
+выкатился, продолжал работать, и он намеренно `include_in_schema=False`: это окно совместимости, а не
+второй контракт. Убирается он в релизе после того, как `api.ts` кабинета везде указывает на
+`/admin/api/v1`.
 
-The version covers the wire format of the cabinet API only. `/webhook/{channel}` is versioned by
-the messenger's own API, `/healthz` and `/readyz` are infrastructure, and neither is part of this
-promise.
+Версия покрывает формат провода только у API кабинета. `/webhook/{channel}` версионируется API самого
+мессенджера, `/healthz` и `/readyz` — инфраструктура, и ни то ни другое в это обещание не входит.
 
-## Consequences
+## Последствия
 
-- A field may be removed, renamed, or given a different type in `v2` while `v1` keeps its shape.
-- The OpenAPI document describes `v1` only, so a generated client never sees the alias.
-- The session cookie path stays `/admin/api`, which covers both prefixes. Authentication is not
-  versioned: a `v2` client trades the same token the same way.
-- A route that exists in both prefixes is logged by its template, so the metrics split
-  `/admin/api/v1/runs` from `/admin/api/runs` while the alias lives. That is intentional: it makes
-  the day the alias stops being used visible in Grafana, not just in a changelog.
-- The legacy alias is one line in `api/app.py`. Removing it is a deliberate commit, not a
-  side effect of a refactor.
+- Поле можно убрать, переименовать или сменить ему тип в `v2`, пока `v1` держит свою форму.
+- Документ OpenAPI описывает только `v1`, так что сгенерированный клиент алиаса не видит.
+- Путь сессионной куки остаётся `/admin/api` и покрывает оба префикса. Аутентификация не
+  версионируется: клиент `v2` меняет тот же токен тем же способом.
+- Маршрут, который есть в обоих префиксах, логируется по своему шаблону, поэтому метрики разделяют
+  `/admin/api/v1/runs` и `/admin/api/runs`, пока алиас жив. Это намеренно: день, когда алиас перестал
+  использоваться, видно в Grafana, а не только в changelog.
+- Легаси-алиас — одна строка в `api/app.py`. Убрать его — отдельный коммит, а не побочный эффект
+  рефакторинга.
 
-## Alternatives rejected
+## Альтернативы
 
-- **A version in a header (`Accept: application/vnd.onboarding.v2+json`).** Prettier, but a proxy a
-  client forgets to configure silently gets `v1`, and `curl` in a runbook shows nothing about which
-  contract the output obeys.
-- **A query parameter (`?v=2`).** Same silence, plus it invites per-endpoint versions.
-- **Never breaking the contract.** Costs a permanent compatibility layer in every response model,
-  for a client that the repository can see is stale.
-- **A separate host (`api-v2.example`).** Buys nothing the path does not, and costs a DNS record,
-  a certificate, and a deploy per version.
+- **Версия в заголовке (`Accept: application/vnd.onboarding.v2+json`).** Красивее, но прокси, который
+  клиент забыл настроить, молча получает `v1`, а `curl` в ранбуке ничего не говорит о том, какому
+  контракту подчиняется вывод.
+- **Параметр запроса (`?v=2`).** Та же тишина плюс приглашение версионировать по эндпоинту.
+- **Никогда не ломать контракт.** Стоит постоянного слоя совместимости в каждой модели ответа — ради
+  клиента, про который репозиторий видит, что он устарел.
+- **Отдельный хост (`api-v2.example`).** Не даёт ничего, чего не даёт путь, и стоит записи DNS,
+  сертификата и деплоя на версию.

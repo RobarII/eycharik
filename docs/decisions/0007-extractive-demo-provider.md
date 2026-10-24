@@ -1,40 +1,33 @@
-# 0007: An extractive provider for offline demos
+---
+title: Экстрактивный провайдер для офлайн-демо
+summary: Зачем нужен `LLM_PROVIDER=extractive` и почему он не может обслуживать продакшен.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0007 — Экстрактивный провайдер для офлайн-демо
 
-## Context
+## Контекст
 
-The demo must run without a model key: the venue network may block the provider, the key may not be
-issued yet, and a judge should be able to clone the repository and see a cited answer. At the same
-time the pipeline under test is not the model — it is retrieval, prompt rendering, citation
-validation, grounding, escalation, audit, and the cabinet.
+Демо должно работать без ключа модели: сеть на площадке может блокировать провайдера, ключ может быть ещё не выдан, а судья должен иметь возможность склонировать репозиторий и увидеть ответ с цитатой. При этом проверяется не модель, а конвейер — поиск, рендер промпта, проверка цитат, обоснованность, эскалация, аудит и кабинет.
 
-## Decision
+## Решение
 
-Add `LLM_PROVIDER=extractive`, a deterministic provider that reads the same rendered prompt the real
-model receives, picks the fragment with the largest term overlap with the question, quotes its best
-sentences, and returns the same JSON contract with a citation. It refuses personal questions with
-`restricted`, prompt injection with `out_of_scope`, and empty retrieval with `no_sources`.
+Добавить `LLM_PROVIDER=extractive` — детерминированный провайдер, который читает тот же отрендеренный промпт, что и настоящая модель, выбирает фрагмент с наибольшим пересечением терминов с вопросом, цитирует его лучшие предложения и возвращает тот же JSON-контракт с цитатой. На личные вопросы отвечает `restricted`, на prompt injection — `out_of_scope`, на пустой поиск — `no_sources`.
 
-`Settings` rejects `extractive` when `ENVIRONMENT=production`. It is not a language model: it cannot
-paraphrase, and its confidence is a heuristic. It exists to exercise the pipeline, never to serve a
-newcomer in production.
+`Settings` отвергает `extractive` при `ENVIRONMENT=production`. Это не языковая модель: перефразировать она не умеет, а её уверенность — эвристика. Она существует, чтобы прогонять конвейер, и никогда не должна обслуживать новичка в продакшене.
 
-The golden set runs against it, so the offline path is measured by the same gate as the online one.
-Its completion reports zero latency and zero cost by construction: the eval table then measures
-retrieval, grounding, and escalation, not model speed or spend.
+Золотой набор прогоняется по ней, так что офлайн-путь измеряется тем же гейтом, что и онлайн. Её completion по построению сообщает нулевые задержку и стоимость: тогда таблица оценки измеряет поиск, обоснованность и эскалацию, а не скорость модели и расход.
 
-## Consequences
+## Последствия
 
-- The demo needs no provider key and no network; `make eval` works on a laptop.
-- A regression in retrieval, citation validation, or escalation shows up offline.
-- The provider can over-answer when a document mentions the question's words; the golden set and
-  the personal-question markers are the guard.
-- Two LLM paths to maintain. The interface is one method, and the provider is under 150 lines.
+- Демо не требует ключа провайдера и сети; `make eval` работает на ноутбуке.
+- Регрессия в поиске, проверке цитат или эскалации видна офлайн.
+- Провайдер может переотвечать, когда документ упоминает слова вопроса; страховка — золотой набор и маркеры личных вопросов.
+- Два пути LLM нужно поддерживать. Интерфейс — один метод, провайдер занимает меньше 150 строк.
 
-## Alternatives
+## Альтернативы
 
-A recorded fixture of model answers — rejected: it does not exercise the prompt or retrieval for the
-judge's own question. A local open model — rejected: a multi-gigabyte dependency for a demo, and its
-quality would still be untested. Running only with a provider key — rejected: the demo must not
-depend on the venue's network.
+Записанная фикстура ответов модели — отклонено: она не прогоняет промпт и поиск для вопроса самого судьи. Локальная открытая модель — отклонено: многогигабайтная зависимость ради демо, и её качество всё равно не проверено. Запуск только с ключом провайдера — отклонено: демо не должно зависеть от сети площадки.

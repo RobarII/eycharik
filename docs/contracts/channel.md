@@ -1,25 +1,29 @@
-# Channel contract
+---
+title: Контракт канала
+summary: Где проходит граница между доменом и мессенджером и что обязан выполнять адаптер канала.
+kind: контракт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The boundary between the domain and a messenger. Everything here is normative; a messenger adapter
-that breaks it fails `tests/test_channel_contract.py`.
+# Контракт канала
 
-Decided in [ADR 0019](../decisions/0019-a-channel-is-an-address.md). Limits per messenger live in
-`apps/api/channel-profiles/<channel>.yaml`, validated by
-[channel-profile.schema.json](channel-profile.schema.json).
+Граница между доменом и мессенджером. Всё здесь нормативно: адаптер мессенджера, который это нарушает, валит `tests/test_channel_contract.py`.
 
-## Values
+Решено в [ADR 0019](../decisions/0019-a-channel-is-an-address.md). Лимиты по мессенджерам лежат в `apps/api/channel-profiles/<channel>.yaml` и проверяются схемой [channel-profile.schema.json](channel-profile.schema.json).
 
-| Value | Meaning |
+## Значения
+
+| Значение | Смысл |
 |---|---|
-| `Channel` | `max`, `telegram`, `vk`. A `StrEnum` in `onboarding.core.models`. |
-| `Address(channel, chat_id)` | Where a conversation is. Stored on the run, the outbox row, and the question row. |
-| `EmployeeId` | A person in the company directory. **Never** a messenger user id. |
+| `Channel` | `max`, `telegram`, `vk`. `StrEnum` в `onboarding.core.models`. |
+| `Address(channel, chat_id)` | Где находится беседа. Хранится на прогоне, строке `outbox` и строке вопроса. |
+| `EmployeeId` | Человек в справочнике компании. Никогда не id пользователя мессенджера. |
 
-A sender is mapped to an employee by `channel_identities(channel, external_id) -> employee_id`. The
-webhook resolves it once, on entry. An unlinked sender is refused with an audit row
-(`unlinked_channel_user`), never onboarded: the right to talk to the bot is a company fact.
+Отправитель отображается в сотрудника через `channel_identities(channel, external_id) -> employee_id`. Вебхук разрешает это один раз, на входе. Непривязанный отправитель отклоняется со строкой аудита (`unlinked_channel_user`) и никогда не проходит онбординг: право говорить с ботом — факт компании.
 
-## Inbound
+## Входящее
 
 ```python
 class Ingress(Protocol):
@@ -46,17 +50,14 @@ class InboundMessage:
     starts_run: bool         # a first contact button, not a reply
 ```
 
-Rules:
+Правила:
 
-1. `parse` is pure and never raises on an unknown field. A missing field degrades to `None`; an
-   unknown update type returns `None`. Messengers add fields without warning.
-2. `dedupe_key` is `f"{channel}:{external_event_id}"`. It is the `events` primary key, so a retried
-   delivery is dropped by the database, not by application code.
-3. `starts_run` is true only for a first-contact event: `bot_started` on MAX, `/start` on Telegram,
-   `message_new` with a `/start` text on VK. Everything else is a reply inside an existing run.
-4. `parse` does not touch the database, the clock, or the network.
+1. `parse` чист и никогда не падает на неизвестном поле. Отсутствующее поле деградирует в `None`; неизвестный тип update возвращает `None`. Мессенджеры добавляют поля без предупреждения.
+2. `dedupe_key` — `f"{channel}:{external_event_id}"`. Это первичный ключ `events`, поэтому повторную доставку отбрасывает база, а не код приложения.
+3. `starts_run` истинно только для события первого контакта: `bot_started` в MAX, `/start` в Telegram, `message_new` с текстом `/start` в VK. Всё остальное — ответ внутри существующего прогона.
+4. `parse` не трогает базу, часы и сеть.
 
-## Outbound
+## Исходящее
 
 ```python
 class Messaging(Protocol):
@@ -68,61 +69,47 @@ class Messaging(Protocol):
     ) -> None: ...
 ```
 
-`OutboundMessage` carries the domain message only: `address`, `text`, `keyboard`
-(`tuple[tuple[Button, ...], ...]`), `reply_to`. The adapter renders it; the outbox never stores a
-wire payload. `channel` is the only messenger fact a `Messaging` exposes: the dispatch routes on it
-and never inspects the adapter.
+`OutboundMessage` несёт только доменное сообщение: `address`, `text`, `keyboard` (`tuple[tuple[Button, ...], ...]`), `reply_to`. Адаптер его рендерит; `outbox` никогда не хранит payload для провода. `channel` — единственный факт о мессенджере, который раскрывает `Messaging`: диспетчеризация маршрутизирует по нему и никогда не заглядывает в адаптер.
 
-`Sender` is the narrower port the domain is given: `send` and `edit` with an explicit `Address`,
-no channel attribute. Actions and the cabinet write through a `Sender`, so a unit test hands them
-the outbox and never a messenger.
+`Sender` — более узкий порт, который получает домен: `send` и `edit` с явным `Address`, без атрибута канала. Действия и кабинет пишут через `Sender`, поэтому модульный тест даёт им `outbox`, а не мессенджер.
 
-Failures are two:
+Сбоев два:
 
-| Error | Meaning | Dispatcher |
+| Ошибка | Смысл | Диспетчер |
 |---|---|---|
-| `ChannelUnavailableError` | transport failure or a 5xx | row returns to `pending` with backoff |
-| `ChannelRejectedError` | a 4xx the messenger will repeat | row is parked as `failed` |
+| `ChannelUnavailableError` | сбой транспорта или 5xx | строка возвращается в `pending` с backoff |
+| `ChannelRejectedError` | 4xx, который мессенджер повторит | строка паркуется как `failed` |
 
-The dispatcher catches nothing else silently. An unexpected exception is a bug and is parked with
-its type in `last_error`.
+Больше диспетчер молча не ловит ничего. Неожиданное исключение — баг, и оно паркуется со своим типом в `last_error`.
 
-## Rendering
+## Рендеринг
 
-`core/channels.py` applies a profile without I/O:
+`core/channels.py` применяет профиль без ввода-вывода:
 
-- `fit_text(text, profile) -> tuple[str, ...]` splits at paragraph, then sentence boundaries, so no
-  part exceeds `max_text_chars`. Every part is a separate outbox row, in order.
-- `fit_keyboard(keyboard, profile) -> Keyboard` raises when the keyboard does not fit the channel
-  (rows, buttons per row, callback payload bytes). A scenario that cannot be rendered on an enabled
-  channel is a startup error, not a runtime surprise.
+- `fit_text(text, profile) -> tuple[str, ...]` режет по границам абзаца, затем предложения, так что ни одна часть не превышает `max_text_chars`. Каждая часть — отдельная строка `outbox`, по порядку.
+- `fit_keyboard(keyboard, profile) -> Keyboard` падает, когда клавиатура не влезает в канал (ряды, кнопки в ряду, байты payload колбэка). Сценарий, который нельзя отрендерить на включённом канале, — ошибка старта, а не сюрприз в рантайме.
 
-The adapter then:
+Затем адаптер:
 
-- escapes the text into `profile.markup` (`none` means no escaping and no formatting);
-- maps `Button.id` to the channel's callback field;
-- resolves a scenario image by name through its own asset directory and upload flow (MAX today;
-  Telegram and VK send text and keyboards until a message carries an image);
-- applies `profile.messages_per_second` and `profile.per_chat_per_second`.
+- экранирует текст в `profile.markup` (`none` значит без экранирования и без форматирования);
+- отображает `Button.id` в поле колбэка канала;
+- находит изображение сценария по имени через собственный каталог ресурсов и поток загрузки (сегодня MAX; Telegram и VK отправляют текст и клавиатуры, пока сообщение не понесёт изображение);
+- применяет `profile.messages_per_second` и `profile.per_chat_per_second`.
 
-## Delivery
+## Доставка
 
-At-least-once, per row: the outbox is written in the transaction that records the intent, a lease
-guards a worker that dies mid-send, and a parked row is visible with `last_error`.
+At-least-once, по строке: `outbox` пишется в транзакции, которая записывает намерение, аренда защищает воркера, умершего посреди отправки, а запаркованная строка видна с `last_error`.
 
-Pending rows are grouped by channel and delivered concurrently, so a 2 msg/s messenger cannot slow a
-30 msg/s one. Pacing is inside the adapter, one limiter per channel, not one per process.
+Ожидающие строки группируются по каналу и доставляются параллельно, так что мессенджер на 2 сообщения в секунду не тормозит тот, что даёт 30. Темп держится внутри адаптера: один ограничитель на канал, не один на процесс.
 
-## Adding a channel
+## Добавление канала
 
-1. `docs/contracts/<channel>-api.md` — the facts the adapter relies on, each with a source URL.
-2. `apps/api/channel-profiles/<channel>.yaml`, passing `channel-profile.schema.json`.
-3. `apps/api/onboarding/app/channels/<channel>/{client,ingress,render}.py`.
-4. A settings block and an entry in `CHANNELS`: token, secret, base URL. Every secret is a
-   `SecretStr` and appears in no log. `docs/runbooks/channels.md` is how an operator turns it on.
-5. Entries in the composition root: the `Ingress` in `ingress`, the `Messaging` in `senders`.
-6. Contract tests: `tests/test_channel_contract.py` covers the adapter by parameter; payload
-   fixtures live in `tests/fixtures/channels/<channel>/` and are captured, not invented.
-7. A row in `docs/README.md`, and the channel in the "Building blocks" of `docs/architecture.md`.
+1. `docs/contracts/<channel>-api.md` — факты, на которые опирается адаптер, каждый с URL источника.
+2. `apps/api/channel-profiles/<channel>.yaml`, проходящий `channel-profile.schema.json`.
+3. Файлы `apps/api/onboarding/app/channels/<channel>/{client,ingress,render}.py`.
+4. Блок настроек и запись в `CHANNELS`: токен, секрет, базовый URL. Каждый секрет — `SecretStr` и не попадает ни в один лог. `docs/runbooks/channels.md` — как оператор его включает.
+5. Записи в корне композиции: `Ingress` в `ingress`, `Messaging` в `senders`.
+6. Контрактные тесты: `tests/test_channel_contract.py` покрывает адаптер по параметру; фикстуры payload лежат в `tests/fixtures/channels/<channel>/` и сняты, а не придуманы.
+7. Строка в `docs/README.md` и канал в «Building blocks» файла `docs/architecture.md`.
 
-Nothing else changes. `core/`, prompts, retrieval, evals, and the cabinet are channel-neutral.
+Больше ничего не меняется. `core/`, промпты, поиск, оценки и кабинет нейтральны к каналу.

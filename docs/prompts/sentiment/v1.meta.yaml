@@ -4,7 +4,7 @@ model: deepseek-v4.1-flash
 temperature: 0.0
 max_tokens: 300
 supersedes: null
-eval: null        # filled only from docs/measurements/, never guessed
+eval: null        # заполняется только из docs/measurements/, никогда на глаз
 notes: >
-  First version of the survey sentiment classifier. The model only labels; the risk rules and the
-  escalation decision stay in core/risk.py, where a test can pin them.
+  Первая версия классификатора тональности опроса. Модель только ставит метки; правила риска и
+  решение об эскалации остаются в core/risk.py, где их можно закрепить тестом.

@@ -1,21 +1,21 @@
-# Labeled free-text answers from the survey steps. The label is what the risk radar must see:
-# tone plus the topic tags that decide which specialist gets the signal.
+# Размеченные свободные ответы с шагов опроса. Метка — то, что обязан увидеть риск-радар:
+# тон плюс теги тем, по которым решают, какому специалисту уйдёт сигнал.
 #
-# Schema (version 2):
-#   id                unique, names the failure, never reused after a rewrite
-#   text              a sentence a newcomer could plausibly write
-#   sentiment         positive | neutral | negative | unknown  (see sentiment-guide.md)
-#   tags              0..3 of access manager colleagues workload clarity hr it integration other
-#   split             dev (may be used to tune a prompt) | test (locked, never tune on it)
-#   expect_escalation the recruiter must be alerted; core/risk.py must return high + recruiter
-#   note              optional, why a borderline case is labeled the way it is
+# Схема (версия 2):
+#   id                уникальный, называет провал, не переиспользуется после правки
+#   text              фраза, которую новичок мог бы написать
+#   sentiment         positive | neutral | negative | unknown  (см. sentiment-guide.md)
+#   tags              0..3 из access manager colleagues workload clarity hr it integration other
+#   split             dev (можно настраивать промпт) | test (закрыт, на нём не настраиваются)
+#   expect_escalation рекрутёра нужно предупредить; core/risk.py должен вернуть high + recruiter
+#   note              необязательно, почему пограничный кейс размечен именно так
 #
-# Two rules keep the set honest:
-#   1. A case is added after a real failure, and never deleted to make a gate pass.
-#   2. Questions are phrased the way a newcomer talks, not with the words of a prompt.
+# Два правила держат набор честным:
+#   1. Кейс добавляют после реального провала и никогда не удаляют, чтобы гейт прошёл.
+#   2. Вопросы звучат как речь новичка, а не словами промпта.
 version: 2
 cases:
-  # --- access and IT -------------------------------------------------------
+  # --- доступ и ИТ ---------------------------------------------------------
   - id: access-missing-1c
     text: "Доступ к 1С так и не появился, третий день не могу работать. ИТ отвечает, что заявка в очереди."
     sentiment: negative
@@ -693,12 +693,11 @@ cases:
     expect_escalation: true
     note: "Кризис, замаскированный словом «терплю»."
 
-  # --- added 2026-10-24: statistical power ---------------------------------
-  # The first Jev run measured escalation on ten crisis cases, and ten cases cannot separate two
-  # providers: three discordant pairs give p = 0.25 whatever the direction. These cases widen the
-  # crisis and unknown strata so the paired bootstrap has something to work with. They were written
-  # from the guide, before either provider was re-run, and none of them was added to make a number
-  # move.
+  # --- добавлено 2026-10-24: статистическая мощность -----------------------
+  # Первый прогон Jev мерил эскалацию на десяти кризисных кейсах, а десять кейсов не различают двух
+  # провайдеров: три расходящиеся пары дают p = 0.25 при любом направлении. Эти кейсы расширяют
+  # кризисный слой и слой unknown, чтобы парному бутстрапу было с чем работать. Их написали по
+  # гайду, до повторных прогонов обоих провайдеров, и ни один не добавляли ради сдвига цифры.
   - id: crisis-quit-direct
     text: "Я ухожу. Заявление подписал сегодня утром."
     sentiment: negative
@@ -868,7 +867,7 @@ cases:
     split: test
     expect_escalation: true
 
-  # --- unknown stratum: the model must not read a signal into nothing ------
+  # --- слой unknown: модель не должна вычитывать сигнал из ничего ----------
   - id: unknown-single-ok
     text: "ОК."
     sentiment: unknown
@@ -942,7 +941,7 @@ cases:
     tags: []
     split: test
 
-  # --- mundane facts: the strata the accuracy metric rests on --------------
+  # --- бытовые факты: слои, на которых держится метрика точности -----------
   - id: neutral-badge-facts
     text: "Пропуск выдали во вторник, рабочее место на четвёртом этаже."
     sentiment: neutral

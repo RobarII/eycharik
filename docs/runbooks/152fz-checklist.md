@@ -1,109 +1,120 @@
-# Runbook: 152-ФЗ evidence pack
+---
+title: Пакет доказательств по 152-ФЗ
+summary: Чек-лист инженерных доказательств обработки персональных данных для DPO оператора.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-An engineering checklist for handling personal data in this product, written so that the operator's
-DPO can attach evidence to their own register. It is **not legal advice** and it does not decide the
-lawful basis: the operating company is the data operator, its DPO signs, its counsel approves.
+# Прогон: пакет доказательств по 152-ФЗ
 
-The product stores employee conversations in MAX, onboarding progress, and free-text survey answers.
-That is personal data under 152-ФЗ even when no name is stored, because the chat identifies a person.
+Инженерный чек-лист обработки персональных данных в этом продукте. Написан так, чтобы DPO
+оператора мог приложить доказательства к своему реестру. Это **не юридическая консультация**, и
+он не решает вопрос о правовом основании: оператор данных — компания-эксплуатант, её DPO
+подписывает, её юрист утверждает.
 
-Review status: written by engineers, **not reviewed by counsel**. Every unchecked box below is a
-gate on the pilot, and the two that legal owns — the errand of processing and the attestation scope —
-cannot be closed by this repository alone.
+Продукт хранит переписку сотрудников в MAX, прогресс онбординга и свободные ответы на опрос. Это
+персональные данные по 152-ФЗ, даже когда имя не сохраняется: чат идентифицирует человека.
 
-## 1. Data map
+Статус проверки: написан инженерами, **юристом не проверен**. Каждый непроставленный пункт ниже
+блокирует пилот, а два пункта, которыми владеет юрист (поручение обработки и объём аттестации),
+этим репозиторием не закрыть.
 
-| Data | Table | Retention control | Contains personal data |
+## 1. Карта данных
+
+| Данные | Таблица | Управление хранением | Персональные данные |
 |---|---|---|---|
-| Employee ↔ chat identity | `chats`, `employees` | delete on offboarding | yes |
-| Outbound message text | `messages` | `DATA_RETENTION_DAYS` after `sent_at` | yes |
-| Audit evidence, quotes, questions | `audit_log.fields` | nulled after `DATA_RETENTION_DAYS`, row stays | yes |
-| Runs, risk signals, jobs, events | `runs`, `risk_*`, `jobs`, `events` | not purged, ids only | no free text |
-| Knowledge corpus | `kb_*` | versioned by `valid_from` / `valid_to` | not personal data |
-| Prompts, answers sent to a vendor | provider side | provider contract | yes, in transit |
+| Сотрудник и идентичность в чате | `chats`, `employees` | удаление при офбординге | да |
+| Текст исходящего сообщения | `messages` | `DATA_RETENTION_DAYS` после `sent_at` | да |
+| Доказательства аудита, цитаты, вопросы | `audit_log.fields` | обнуляются после `DATA_RETENTION_DAYS`, строка остаётся | да |
+| Прогоны, сигналы риска, задачи, события | `runs`, `risk_*`, `jobs`, `events` | не чистятся, только id | свободного текста нет |
+| Корпус базы знаний | `kb_*` | версионируется по `valid_from` / `valid_to` | не персональные данные |
+| Промпты и ответы, отправленные вендору | на стороне провайдера | договор с провайдером | да, в пути |
 
-Retention mechanics are in [retention.md](retention.md). The numeric window is a policy value the
-client owns; `DATA_RETENTION_DAYS` ships as 365 and is not a legal statement.
+Механика хранения — в [retention.md](retention.md). Числовое окно — значение политики, которым
+владеет клиент; `DATA_RETENTION_DAYS` поставляется как 365, и это не юридическое заявление.
 
-## 2. Localisation (art. 18 part 5)
+## 2. Локализация (ч. 5 ст. 18)
 
-- [ ] Postgres, object storage, and backups physically in Russia.
-- [ ] Model vendor processes the data inside Russia. For managed APIs that means an internal-only
-      model: Cloud.ru Foundation Models marks each model internal or external, and external models
-      call out of the country. Source: [vendor comparison](../product/vendor-comparison.md).
-- [ ] OCR runs in-process (PP-OCRv5 over ONNX Runtime), so scans never leave the host.
-- [ ] Embeddings are computed by a model inside the same contour as the text.
-- [ ] No fallback that silently routes a request abroad when the primary vendor fails. Today a
-      vendor failure escalates to a human instead, which is the correct default.
+- [ ] Postgres, объектное хранилище и бэкапы физически в России.
+- [ ] Модельный провайдер обрабатывает данные внутри России. Для managed API это модель
+      только для внутреннего использования: Cloud.ru Foundation Models помечает каждую модель
+      как internal или external, а external-модели ходят за пределы страны. Источник:
+      [сравнение провайдеров](../product/vendor-comparison.md).
+- [ ] Распознавание идёт в процессе (PP-OCRv5 на ONNX Runtime), поэтому сканы не покидают хост.
+- [ ] Эмбеддинги считает модель внутри того же контура, что и текст.
+- [ ] Нет фолбэка, который молча уводит запрос за границу при отказе основного провайдера. Сейчас
+      отказ провайдера уводит вопрос в эскалацию к человеку — верное поведение по умолчанию.
 
-## 3. Errand of processing (art. 6 part 3)
+## 3. Поручение обработки (ч. 3 ст. 6)
 
-For every vendor that touches personal data, the operator needs a written errand with: the list of
-data, the purpose, the duration, the security measures, and the ban on using the data for anything
-else.
+По каждому вендору, который касается персональных данных, оператору нужно письменное поручение:
+перечень данных, цель, срок, меры защиты и запрет использовать данные для чего-то ещё.
 
-- [ ] Errand of processing signed with the model vendor.
-- [ ] Written confirmation that training on the client's data is **off** by default.
-- [ ] Written confirmation of where the data is stored and for how long on the vendor side.
-- [ ] Sub-processors listed. A gateway that forwards to a third country is a sub-processor.
-- [ ] The vendor's attestation covers the **service**, not only the cloud. An UZ-1 attestation for a
-      cloud platform says nothing about a model endpoint running on it; ask for the service-level
-      document, or accept the risk in writing.
+- [ ] Поручение обработки подписано с модельным вендором.
+- [ ] Письменное подтверждение, что обучение на данных клиента **выключено** по умолчанию.
+- [ ] Письменное подтверждение, где и как долго данные хранятся на стороне вендора.
+- [ ] Субпроцессоры перечислены. Шлюз, который пересылает данные в третью страну, — субпроцессор.
+- [ ] Аттестация вендора покрывает **сервис**, а не только облако. Аттестация UZ-1 на облачную
+      платформу ничего не говорит о модельном эндпоинте на ней; просите документ уровня сервиса
+      или примите риск письменно.
 
-## 4. Security measures (постановление 1119, приказ ФСТЭК 21)
+## 4. Меры защиты (постановление 1119, приказ ФСТЭК 21)
 
-- [ ] Attestation level declared by the operator: UZ-1 is the usual target for an HR system.
-- [ ] Attestation document names the segment (availability zone) actually used.
-- [ ] Access control: admin tokens are per-role, `ADMIN_TOKENS` is not shared between people,
-      `METRICS_TOKEN` is separate.
-- [ ] Transport: TLS only, `MAX_CA_BUNDLE` points at the Russian Trusted CA bundle for MAX.
-- [ ] Secrets: bot token, provider keys, webhook secret live in the deployment environment, never in
-      git, never echoed in an error message ([`.env.production.example`](../../.env.production.example)).
-- [ ] Encryption at rest on the database volume and on backups.
-- [ ] Backups restorable: [backup.md](backup.md) and [restore.sh](../../scripts/restore.sh) prove it.
-- [ ] Audit log of admin actions in the cabinet (`audit_log`), retained per policy.
-- [ ] Log hygiene: application logs carry ids, not message text.
+- [ ] Уровень аттестации объявлен оператором: UZ-1 — обычная цель для HR-системы.
+- [ ] Документ об аттестации называет сегмент (зону доступности), который реально используется.
+- [ ] Управление доступом: admin-токены по ролям, `ADMIN_TOKENS` не переиспользуется между людьми,
+      `METRICS_TOKEN` отдельный.
+- [ ] Транспорт: только TLS, `MAX_CA_BUNDLE` указывает на бандл Russian Trusted CA для MAX.
+- [ ] Секреты: токен бота, ключи провайдеров, секрет вебхука живут в окружении деплоя, никогда в
+      git, никогда не попадают в текст ошибки ([`.env.production.example`](../../.env.production.example)).
+- [ ] Шифрование на диске: на томе базы и на бэкапах.
+- [ ] Бэкапы восстанавливаются: [backup.md](backup.md) и [restore.sh](../../scripts/restore.sh) это
+      доказывают.
+- [ ] Аудит действий администраторов в кабинете (`audit_log`), хранится по политике.
+- [ ] Гигиена логов: в логах приложения id, не текст сообщений.
 
-## 5. Rights of the data subject
+## 5. Права субъекта данных
 
-- [ ] Offboarding deletes every row for the employee's chats immediately, including audit fields.
-- [ ] A subject request can be answered from the database: what is stored, where, for how long.
-- [ ] Survey free text is purged on the same window as messages, not kept "for analytics".
+- [ ] Офбординг сразу удаляет все строки по чатам сотрудника, включая поля аудита.
+- [ ] Запрос субъекта закрывается из базы: что хранится, где и как долго.
+- [ ] Свободный текст опроса чистится в том же окне, что и сообщения, а не хранится «для аналитики».
 
-## 6. Incident
+## 6. Инцидент
 
-- [ ] The operator's DPO is the notification owner; the engineering side provides the timeline.
-- [ ] Notification deadline and channel are written in the operator's internal regulation, not in
-      this repository.
-- [ ] The incident template lives in [incidents/](../incidents/) and states: what leaked, which
-      subjects, when discovered, what was fixed, how the fix was proven.
+- [ ] Владелец оповещения — DPO оператора; инженерная сторона даёт таймлайн.
+- [ ] Срок и канал оповещения прописаны во внутреннем регламенте оператора, не в этом репозитории.
+- [ ] Шаблон инцидента лежит в [incidents/](../incidents/) и фиксирует: что утекло, какие субъекты,
+      когда обнаружено, что исправлено, чем доказано исправление.
 
-## 7. Evidence pack for the DPO
+## 7. Пакет доказательств для DPO
 
-1. Data map above, signed by the engineer who owns the schema.
-2. Retention runbook and the `DATA_RETENTION_DAYS` value in production.
-3. Vendor contracts: errand of processing, training-off clause, sub-processor list.
-4. Attestation documents for the segment used.
-5. Backup and restore drill record.
-6. Access matrix: who holds which token.
-7. This checklist, with dates and owners.
+1. Карта данных выше, подписанная инженером, который владеет схемой.
+2. Ранбук хранения и значение `DATA_RETENTION_DAYS` в продакшене.
+3. Договоры с вендорами: поручение обработки, пункт об отключённом обучении, список субпроцессоров.
+4. Документы об аттестации для используемого сегмента.
+5. Запись учений по бэкапу и восстановлению.
+6. Матрица доступов: у кого какой токен.
+7. Этот чек-лист, с датами и владельцами.
 
-## Gates that block the first real employee
+## Блокеры первого реального сотрудника
 
-| Gate | Owner | Evidence that closes it |
+| Блокер | Владелец | Доказательство, которое его закрывает |
 |---|---|---|
-| Errand of processing signed for the model **service**, not only the cloud | client DPO + vendor | signed document with the service name |
-| Attestation names the segment actually used | vendor + operator | attestation copy with the availability zone |
-| Retention period fixed by policy | client DPO | `DATA_RETENTION_DAYS` value in the production env |
-| Pilot host inside Russia | DevOps | [deploy.md](deploy.md) checklist, host region |
-| Training on client data off | vendor | written clause, not a marketing page |
-| Sub-processor list, including gateways and proxies | vendor | list with countries |
-| Incident notification owner and deadline | client DPO | internal regulation reference |
+| Поручение обработки подписано на модельный **сервис**, не только на облако | DPO клиента + вендор | подписанный документ с названием сервиса |
+| Аттестация называет реально используемый сегмент | вендор + оператор | копия аттестации с зоной доступности |
+| Срок хранения закреплён политикой | DPO клиента | значение `DATA_RETENTION_DAYS` в продовом окружении |
+| Хост пилота в России | DevOps | чек-лист [deploy.md](deploy.md), регион хоста |
+| Обучение на данных клиента выключено | вендор | письменный пункт, а не маркетинговая страница |
+| Список субпроцессоров, включая шлюзы и прокси | вендор | список со странами |
+| Владелец и срок оповещения об инциденте | DPO клиента | ссылка на внутренний регламент |
 
-## What is still open in this repository
+## Что в этом репозитории ещё открыто
 
-- No legal review: the checklist is engineering evidence, and counsel signs the lawful basis.
-- `DATA_RETENTION_DAYS` is a placeholder until the client's policy fixes it.
-- The demo host is outside Russia and holds no personal data; the pilot host must be chosen before
-  the first real employee is onboarded ([deploy.md](deploy.md)).
-- No vendor quote is attached yet; the comparison lists what to request.
+- Юридической проверки нет: чек-лист — инженерные доказательства, правовое основание подписывает
+  юрист.
+- `DATA_RETENTION_DAYS` — заглушка, пока политика клиента не зафиксирует значение.
+- Демо-хост вне России и персональных данных не держит; хост пилота нужно выбрать до онбординга
+  первого реального сотрудника ([deploy.md](deploy.md)).
+- Коммерческого предложения от вендора пока нет; в сравнении перечислено, что запрашивать.

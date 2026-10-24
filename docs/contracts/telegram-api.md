@@ -1,69 +1,63 @@
-# Telegram Bot API contract
+---
+title: Контракт Telegram Bot API
+summary: Какие факты Telegram Bot API использует интеграция и откуда каждый из них взят.
+kind: контракт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Everything the integration relies on, with the source of each fact. If Telegram changes a field,
-this file changes in the same commit as the adapter.
+# Контракт Telegram Bot API
 
-Source: <https://core.telegram.org/bots/api> and <https://core.telegram.org/bots/faq> (read
-2026-10-26).
+Всё, на что опирается интеграция, с источником каждого факта. Если Telegram меняет поле, этот файл меняется тем же коммитом, что и адаптер.
 
-## Connection
+Источник: <https://core.telegram.org/bots/api> и <https://core.telegram.org/bots/faq> (прочитано 2026-10-26).
 
-| Fact | Value |
+## Подключение
+
+| Факт | Значение |
 |---|---|
-| Base URL | `https://api.telegram.org/bot<token>/<method>` |
-| Auth | the token is part of the URL; no `Authorization` header |
-| Content type | `application/json` for every method below |
-| Webhook registration | `setWebhook` with `url` and `secret_token` |
-| Inbound auth | header `X-Telegram-Bot-Api-Secret-Token` on every delivery |
+| Базовый URL | `https://api.telegram.org/bot<token>/<method>` |
+| Аутентификация | токен — часть URL; заголовка `Authorization` нет |
+| Тип содержимого | `application/json` для каждого метода ниже |
+| Регистрация вебхука | `setWebhook` с `url` и `secret_token` |
+| Аутентификация входящих | заголовок `X-Telegram-Bot-Api-Secret-Token` на каждой доставке |
 
-## Endpoints the adapter implements
+## Эндпоинты, которые реализует адаптер
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| `POST` | `sendMessage` | send a message, optional `reply_markup` |
-| `POST` | `editMessageText` | rewrite a sent message |
-| `POST` | `setWebhook` | registration, `onboarding.cli webhook --channel telegram` |
+| `POST` | `sendMessage` | отправить сообщение, необязательный `reply_markup` |
+| `POST` | `editMessageText` | переписать отправленное сообщение |
+| `POST` | `setWebhook` | регистрация, `onboarding.cli webhook --channel telegram` |
 
-`sendMessage`: `chat_id`, `text` 1–4096 characters after entity parsing, `parse_mode`
-(`MarkdownV2` or `HTML`), `reply_markup` with `inline_keyboard`, `reply_to_message_id`.
+`sendMessage`: `chat_id`, `text` 1–4096 символов после разбора сущностей, `parse_mode` (`MarkdownV2` или `HTML`), `reply_markup` с `inline_keyboard`, `reply_to_message_id`.
 
-`sendPhoto` (`photo` as a `file_id` or a multipart upload, `caption` up to 1024 characters) is
-documented but not implemented: an `OutboundMessage` carries no image yet, so the adapter sends the
-text and the keyboard. Adding it is a change to the message value first, not to this adapter.
+`sendPhoto` (`photo` как `file_id` или multipart-загрузка, `caption` до 1024 символов) описан, но не реализован: `OutboundMessage` пока не несёт изображение, поэтому адаптер отправляет текст и клавиатуру. Его добавление — сначала правка значения сообщения, а не этого адаптера.
 
-`InlineKeyboardButton.callback_data`: a `String` of 1–64 **bytes**. Longer is an error, not a
-truncation.
+`InlineKeyboardButton.callback_data`: `String` от 1 до 64 байт. Длиннее — ошибка, не обрезка.
 
-## Updates
+## Обновления
 
-| `update` field | Our event |
+| Поле `update` | Наше событие |
 |---|---|
-| `message.text` starting with `/start` | `EMPLOYEE_CREATED` |
+| `message.text`, начинающийся с `/start` | `EMPLOYEE_CREATED` |
 | `message.text` | `MESSAGE_RECEIVED` |
 | `callback_query.data` | `BUTTON_PRESSED` |
-| `message.document` | `FILE_RECEIVED` (not implemented, as on MAX) |
+| `message.document` | `FILE_RECEIVED` (не реализовано, как и в MAX) |
 
-`update_id` is the dedupe key. `message.chat.id` is the chat; `from.id` is the sender, and the two
-differ in groups.
+`update_id` — ключ дедупликации. `message.chat.id` — чат; `from.id` — отправитель, и в группах они различаются.
 
-## Rate limits
+## Лимиты частоты
 
-Telegram documents "no more than about 30 messages per second" overall and "not more than one
-message per second in a single chat". The profile sets `messages_per_second: 30` and
-`per_chat_per_second: 1`, and the adapter paces on both. A `429` is `ChannelUnavailableError`: the
-dispatcher backs off, and the row returns to `pending`. The `retry_after` field is not honoured — the
-backoff is ours, so one code path covers every messenger.
+Telegram документирует «no more than about 30 messages per second» суммарно и «not more than one message per second in a single chat». Профиль задаёт `messages_per_second: 30` и `per_chat_per_second: 1`, и адаптер держит темп по обоим. `429` — это `ChannelUnavailableError`: диспетчер отступает, и строка возвращается в `pending`. Поле `retry_after` не учитывается — backoff наш, так что один путь кода покрывает каждый мессенджер.
 
-## Differences from MAX that matter
+## Отличия от MAX, которые важны
 
-- A bot cannot start a conversation: messaging a user who never pressed `/start` fails with
-  `403: bot can't initiate conversation with a user`. This aligns with the linked-identity gate:
-  the run starts from `/start`, never from us.
-- `parse_mode` is a dialect. `MarkdownV2` requires escaping `_*[]()~`>#+-=|{}.!`; the renderer
-  escapes, the copy stays plain.
-- Edits replace `text` and `reply_markup` together; an edit that omits the markup removes it.
+- Бот не может начать беседу: сообщение пользователю, который никогда не нажимал `/start`, падает с `403: bot can't initiate conversation with a user`. Это совпадает с гейтом привязанной идентичности: прогон стартует с `/start`, никогда не с нашей стороны.
+- `parse_mode` — диалект. `MarkdownV2` требует экранирования ``_*[]()~`>#+-=|{}.!``; рендерер экранирует, текст остаётся простым.
+- Правки заменяют `text` и `reply_markup` вместе; правка без разметки её удаляет.
 
-## Not yet captured
+## Ещё не снято
 
-Payload fixtures are synthetic until a real update is captured in
-`apps/api/tests/fixtures/channels/telegram/`. The same rule as `max-api.md`.
+Фикстуры payload синтетические, настоящий update не снят. Правило то же, что в `max-api.md`.

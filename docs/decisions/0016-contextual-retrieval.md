@@ -1,88 +1,99 @@
-# 0016 — Contextual retrieval at ingest, proposed
+---
+title: Контекстный поиск при индексации
+summary: Почему префикс к фрагменту написан, измерен и оставлен выключенным.
+kind: решение
+owner: p4ulbr4dl3y
+status: предложено
+last_verified: 2026-10-24
+---
 
-Status: **proposed**. Nothing in a deployed configuration turns it on.
+# 0016 — Контекстный поиск при индексации, предложено
 
-## The problem it is meant to solve
+## Контекст
 
-A chunk is a document with its edges cut off. `hr/unpaid-leave` splits into a second chunk that
-opens with «Заявление подаётся не позднее чем за три рабочих дня» — a sentence that is true, useful,
-and unreachable, because it names neither the leave type nor the document. An embedding of that
-sentence is close to every other deadline in the corpus.
+Ни одна развёрнутая конфигурация его не включает.
 
-The document title is not lost — it is a column on the parent row — but the embedder never sees it,
-and neither does `ts_rank_cd`.
+Фрагмент — это документ с обрезанными краями. `hr/unpaid-leave` распадается на второй фрагмент,
+который начинается с «Заявление подаётся не позднее чем за три рабочих дня» — предложение верное,
+полезное и недостижимое, потому что не называет ни вид отпуска, ни документ. Эмбеддинг такого
+предложения близок к любому другому сроку в корпусе.
 
-## What the recipe does
+Название документа не потеряно — это колонка в родительской строке, — но эмбеддер его не видит, и
+`ts_rank_cd` тоже.
 
-Anthropic's contextual retrieval prepends a short, model-written sentence to each chunk before it is
-embedded: which document this is, which section, what conditions apply. The chunk then competes with
-the sections that did name the topic.
+## Решение
 
-Three details matter more than the recipe itself:
+Контекстный поиск от Anthropic дописывает к каждому фрагменту короткое предложение, написанное
+моделью, до того как фрагмент уйдёт в эмбеддинг: что это за документ, какой раздел, какие условия
+действуют. Дальше фрагмент конкурирует с разделами, которые тему назвали.
 
-1. **The context is generated once, at ingest.** It is a corpus property, not a request property.
-   The request path gains no latency and no failure mode.
-2. **The context is prepended for indexing only.** `kb_chunks.text` keeps the quotable source;
-   `kb_chunks.context` holds the generated prefix, and `Chunk.embedding_text` joins them. A citation
-   must never quote a model, so the two stay in separate columns and the prompt layer reads `text`.
-3. **A failure aborts the batch.** A corpus half indexed with context and half without is worse
-   than one indexed without: relevance becomes silently document-dependent, and no eval can tell
-   which half it measured.
+Три детали важнее самого рецепта:
 
-## Why it is not accepted yet
+1. **Контекст создаётся один раз, при индексации.** Это свойство корпуса, а не запроса. Путь
+   запроса не получает ни задержки, ни новой точки отказа.
+2. **Контекст дописывается только для индексации.** `kb_chunks.text` хранит цитируемый источник,
+   `kb_chunks.context` держит сгенерированный префикс, а `Chunk.embedding_text` склеивает их.
+   Цитата не должна цитировать модель, поэтому колонки разные, а слой промпта читает `text`.
+3. **Сбой отменяет пакет.** Корпус, наполовину проиндексированный с контекстом, наполовину без,
+   хуже корпуса без контекста: релевантность тихо зависит от документа, и ни один прогон оценки не
+   скажет, какую половину он мерил.
 
-The same reason as [0012](0012-no-bm25-in-request-path.md): no measured failure to fix. On the
-132-case golden set the current hybrid retrieval reaches `recall@5 = 0.985` and `mrr = 0.913`, and the
-corpus is 78 chunks. At that size a chunk rarely loses its document, because almost every document
-is one chunk.
+## Почему пока не принято
 
-The cost side is real: one completion per chunk at ingest, a new prompt version and its eval, a
-column, and a reindex. The benefit side is currently zero measured.
+Причина та же, что в [0012](0012-no-bm25-in-request-path.md): нет измеренного отказа, который надо
+чинить. На золотом наборе из 132 кейсов текущий гибридный поиск даёт `recall@5 = 0.985` и
+`mrr = 0.913`, а корпус — 78 фрагментов. При таком размере фрагмент редко теряет свой документ:
+почти каждый документ это один фрагмент.
 
-## What would make it accepted
+Сторона затрат реальна: один вызов модели на фрагмент при индексации, новая версия промпта и её
+прогон, колонка и переиндексация. Выгода измерена нулём.
 
-- a corpus where `recall@5` sits below 0.90 for reasons that survive a `ts_rank_cd` weight change and
-  a reranker, or
-- golden cases whose answer is in a second chunk of a long document and which fail today (the golden
-  set already names such cases; they pass, which is the evidence against).
+## Критерии выхода
 
-Acceptance requires a measurement in `docs/measurements/`: same golden set, same embedder, same
-reranker, `CONTEXTUAL_RETRIEVAL=true` versus false, with the command, the environment, and the commit.
+- корпус, где `recall@5` держится ниже 0.90 по причинам, которые переживут смену веса `ts_rank_cd`
+  и переранжирование.
+- кейсы золотого набора, ответ в которых лежит во втором фрагменте длинного документа и которые
+  падают сегодня (такие кейсы в наборе уже названы; они проходят, и это аргумент против).
 
-## How to run the experiment when the time comes
+Приёмка требует измерения в `docs/measurements/`: тот же золотой набор, тот же эмбеддер, та же
+модель переранжирования, `CONTEXTUAL_RETRIEVAL=true` против false, с командой, окружением и
+коммитом.
+
+## Как провести эксперимент
 
 ```bash
 CONTEXTUAL_RETRIEVAL=true make ingest        # one completion per chunk, prompt docs/prompts/context/v1.md
 make eval-retrieval                          # recall@5, mrr, leak_rate on the same golden set
 ```
 
-The comparison is only honest if both runs use the same embedder and the same golden set. Changing
-the embedder and the context in one step measures nothing: the delta cannot be attributed.
+Сравнение честно, только если оба прогона берут один эмбеддер и один золотой набор. Сменить
+эмбеддер и контекст одним шагом — не измерить ничего: дельту не к чему отнести.
 
-## Measured 2026-10-24
+## Измерено
 
-The experiment was finally run at commit `65fc273` on the 137-case set, one ingest each way, same
-embedder (`qwen/qwen3-embedding-8b`, dim 1024), same reranker (`nvidia/nemotron-3.5-rerank-8b:free`),
-same provider conditions within the same hour:
+Эксперимент прогнали 2026-10-24 на коммите `65fc273` на наборе из 137 кейсов, по одной индексации в
+каждую сторону, тот же эмбеддер (`qwen/qwen3-embedding-8b`, размерность 1024), та же модель
+переранжирования (`nvidia/nemotron-3.5-rerank-8b:free`), одинаковые условия провайдера в пределах
+одного часа:
 
-| arm | `recall_at_5` | `mrr` | artifact |
+| вариант | `recall_at_5` | `mrr` | артефакт |
 |---|---|---|---|
-| plain index | 0.984 | 0.944 | `docs/measurements/2026-10-24-eval-retrieval-arm-plain.md` |
-| `contextual:v1` | 1.000 | 0.919 | `docs/measurements/2026-10-24-eval-retrieval-arm-contextual-on.md` |
+| обычный индекс | 0.984 | 0.944 | `docs/measurements/2026-10-24-eval-retrieval-arm-plain.md` |
+| `contextual:v1` | 1.000 | 0.919 | `docs/measurements/2026-10-24-eval-retrieval-arm-contextual-on.md` |
 
-Paired against the contextual arm, the plain index loses `recall` −0.015 with an interval of
-[−0.036, +0.000] and gains `rr` +0.023 with [−0.005, +0.052], `p(delta <= 0) = 0.059`.
+Против контекстного варианта обычный индекс теряет `recall` −0.015 с интервалом [−0.036, +0.000] и
+выигрывает `rr` +0.023 с [−0.005, +0.052], `p(delta <= 0) = 0.059`.
 
-That is a real trade and not a win: the prefix puts two more documents into the top five and pushes
-the first correct document down on average. The recall interval touches zero, the ranking interval
-touches zero, and two cases decide the first number. The status stays **proposed**: shipping it
-would trade a measurable ranking loss for a recall gain the corpus cannot yet prove.
+Это реальный обмен, а не выигрыш: префикс заводит в первую пятёрку ещё два документа и в среднем
+опускает первый правильный. Интервал recall касается нуля, интервал ранжирования тоже, а первое
+число решают два кейса. Статус остаётся **предложено**: выпустить это — обменять измеримую потерю
+ранжирования на прирост recall, который корпус пока не доказал.
 
-## Consequences
+## Последствия
 
-- `kb_chunks.context` exists in every deployment and defaults to `''`; an index built without the
-  pass keeps working and reads its embedding from `text`.
-- The ingest path grows one sequential model call per chunk, bounded by the corpus size and paid
-  once per reindex.
-- The prompt is a versioned file (`docs/prompts/context/v1.md`); a wording change is a new version
-  plus a re-measurement, like every other prompt in this repository.
+- `kb_chunks.context` есть в каждом развёртывании и по умолчанию `''`; индекс, собранный без
+  прохода, работает и читает эмбеддинг из `text`.
+- Путь индексации получает один последовательный вызов модели на фрагмент, ограниченный размером
+  корпуса и оплаченный один раз за переиндексацию.
+- Промпт — версионированный файл (`docs/prompts/context/v1.md`); правка формулировки — новая версия
+  плюс новое измерение, как и у любого другого промпта в этом репозитории.

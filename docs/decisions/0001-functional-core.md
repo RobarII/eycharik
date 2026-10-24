@@ -1,29 +1,29 @@
-# 0001: Functional core, imperative shell
+---
+title: Функциональное ядро, императивная оболочка
+summary: Почему переходы сценария, ранжирование и проверка обоснованности живут в чистом core без I/O.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0001 — Функциональное ядро, императивная оболочка
 
-## Context
+## Контекст
 
-Scenario transitions, chunk ranking, and grounding checks are the parts that fail silently: a wrong
-transition looks like a working bot, an ungrounded answer looks like a confident one. They also
-change most often. Anything that needs a database or a model to test is expensive to verify and
-slow to iterate on.
+Переходы сценария, ранжирование фрагментов и проверка обоснованности — те части, что отказывают молча: неверный переход выглядит как работающий бот, ответ без опоры на источник — как уверенный. И меняются они чаще всего. Всё, что требует базы или модели для проверки, дорого тестировать и медленно дорабатывать.
 
-## Decision
+## Решение
 
-`apps/api/onboarding/core/` is pure. It imports only the standard library and sibling core
-modules. Time, identifiers, model output, and retrieved chunks arrive as arguments. Every effect
-lives in `app/` behind a port declared in `ports.py`.
+Код в `apps/api/onboarding/core/` чистый. Он импортирует только стандартную библиотеку и соседние модули core. Время, идентификаторы, вывод модели и найденные фрагменты приходят аргументами. Любой побочный эффект живёт в `app/` за портом, объявленным в `ports.py`.
 
-## Consequences
+## Последствия
 
-- `core/` is tested with plain unit tests: no database, no network, no patching.
-- The same transition code runs in tests, in the worker, and in the eval harness.
-- An effect added to `core/` fails code review, `ruff` import rules, and `mypy` strictness.
-- More plumbing: the worker must load and persist around every pure call. Accepted.
+- `core/` тестируется обычными юнит-тестами: без базы, без сети, без патчей.
+- Тот же код переходов работает в тестах, в воркере и в стенде оценки.
+- Побочный эффект в `core/` не пройдёт код-ревью, правила импортов `ruff` и строгость `mypy`.
+- Больше обвязки: воркер должен загрузить и сохранить вокруг каждого чистого вызова. Принято.
 
-## Alternatives
+## Альтернативы
 
-Hexagonal architecture with a framework (dependency-injector, punq) — rejected: one extra concept
-for no testability gain. Testing through the web layer — rejected: slow and it hides which rule
-failed.
+Гексагональная архитектура с фреймворком (dependency-injector, punq) — отклонено: лишнее понятие без выигрыша в тестируемости. Тестирование через веб-слой — отклонено: медленно и скрывает, какое правило упало.

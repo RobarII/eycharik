@@ -1,14 +1,23 @@
-# Architecture
+---
+title: Архитектура
+summary: Из чего состоит система и как сообщение проходит через неё.
+kind: правило
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-## Context
+# Архитектура
 
-Newcomers ask questions during their first weeks; recruiters track progress and intervene when
-someone stalls. The assistant answers from the company knowledge base in the company tone and
-escalates anything it cannot ground. A conversation happens in a messenger, and a messenger is an address plus a capability
-profile, not a client (ADR 0019). MAX is the one enabled by default. The recruiter cabinet is a
-separate web app that reads the admin API.
+## Контекст
 
-## Building blocks
+Новички задают вопросы в первые недели; рекрутёры следят за прогрессом и вмешиваются, когда
+кто-то застрял. Ассистент отвечает по базе знаний компании в тоне компании, а всё, что не
+удаётся обосновать, отдаёт человеку. Разговор идёт в мессенджере, а мессенджер — адрес плюс
+профиль возможностей, не клиент (ADR 0019). По умолчанию включён MAX. Кабинет рекрутёра —
+отдельное веб-приложение, которое читает admin API.
+
+## Строительные блоки
 
 ```
 messenger ──webhook/{channel}──► api ──► Postgres: events + jobs (+ channel_identities)
@@ -27,192 +36,203 @@ recruiter cabinet ──► admin API ──► Postgres: runs, questions, audit
                               worker: read ──► decide ──► index ──► kb_extractions
 ```
 
-Two processes from one image:
+Два процесса из одного образа:
 
-| Process | Responsibility |
+| Процесс | Ответственность |
 |---|---|
-| `api` | one channel-neutral webhook, admin API, health. Never calls the model. |
-| `worker` | claim jobs, apply scenario transitions, answer questions, dispatch the outbox, tick due reminders. |
+| `api` | один вебхук, нейтральный к каналу, admin API, health. Модель не вызывает никогда. |
+| `worker` | берёт задачи, применяет переходы сценария, отвечает на вопросы, отправляет `outbox`, тикает просроченные напоминания. |
 
-They share code and the database, not memory. The reminder tick runs inside the worker loop every
-25 iterations; it is not a third process.
+Оба делят код и базу, но не память. Тик напоминаний идёт внутри цикла воркера каждые 25
+итераций; это не третий процесс.
 
-## A message, end to end
+## Одно сообщение целиком
 
-1. `api` receives `POST /webhook/{channel}`, looks the `Ingress` up by name, checks that channel's
-   secret in constant time, answers the handshake if it has one, and parses the update into a
-   channel-neutral event. The sender's account is resolved through `channel_identities`; an
-   unlinked account is acknowledged, audited and dropped. A known sender's `events` row plus a
-   `jobs` row are inserted in one transaction and the route answers `200` immediately. A duplicate
-   delivery fails the `events` primary key and exits without a job.
-2. `worker` claims the job with `FOR UPDATE SKIP LOCKED`, loads the run, and applies the scenario
-   transition: a pure function `(scenario, step_state, event) -> transition`.
-3. The transition's new state and reminder are stored first. Only then are messages written to the
-   `messages` outbox, one transaction per message. A crash between the two repeats a message at
-   worst; it never loses a step.
-4. For a question, retrieval runs: ACL and validity predicates in SQL, vector and lexical search,
-   reciprocal rank fusion, an optional hosted rerank (ADR 0008), then one model call with a
-   versioned prompt and a JSON answer contract.
-5. The answer is validated: every citation in the JSON list and every inline `[doc#N]` token
-   must be a chunk that retrieval returned, and confidence must clear `ANSWER_MIN_CONFIDENCE`.
-   Otherwise the decision degrades to escalation with the matching copy.
-6. A dispatcher leases outbox rows per channel and hands each to that channel's adapter, which
-   paces itself from its profile (MAX: 2 messages per second per chat) and retries with exponential
-   backoff, up to 5 attempts. A rejection parks the row immediately; an outage keeps it pending and
-   never blocks the other channels. Delivery is at-least-once.
-7. The answerer writes an audit row: prompt version, retrieved count, citation count, tokens,
-   cost, latency. The action executor writes the question row that feeds the cabinet.
-8. The cabinet closes a question: `resolved_at`, `resolved_by`, `resolution`, the reply as a
-   `messages` row, and `question_resolved` in one transaction. The dispatcher delivers the reply
-   with the same pacing and retries as any scenario message.
+1. `api` принимает `POST /webhook/{channel}`, находит `Ingress` по имени, за постоянное время
+   сверяет секрет канала, отвечает на рукопожатие, если оно есть, и разбирает апдейт в
+   нейтральное к каналу событие. Аккаунт отправителя находится через `channel_identities`;
+   несвязанный аккаунт получает подтверждение, попадает в аудит и отбрасывается. Для известного
+   отправителя строка `events` и строка `jobs` вставляются одной транзакцией, и роут сразу
+   отвечает `200`. Повторная доставка падает на первичном ключе `events` и выходит без задачи.
+2. `worker` забирает задачу через `FOR UPDATE SKIP LOCKED`, загружает прогон и применяет переход
+   сценария: чистая функция `(scenario, step_state, event) -> transition`.
+3. Сначала сохраняются новое состояние перехода и напоминание. Только потом сообщения пишутся в
+   `outbox` таблицы `messages`, по транзакции на сообщение. Падение между ними повторит
+   сообщение в худшем случае; шаг не потеряется.
+4. Для вопроса запускается поиск: предикаты ACL и срока в SQL, векторный и лексический поиск,
+   слияние рангов, необязательное внешнее переранжирование (ADR 0008), затем один вызов модели с
+   версионированным промптом и JSON-контрактом ответа.
+5. Ответ проверяется: каждая цитата в списке JSON и каждый инлайн-токен `[doc#N]` должны быть
+   фрагментом, который вернул поиск, а уверенность — пройти порог `ANSWER_MIN_CONFIDENCE`. Иначе
+   решение спускается в эскалацию с подходящим текстом.
+6. Диспетчер арендует строки `outbox` по каналам и отдаёт каждую адаптеру канала; тот держит
+   темп по своему профилю (MAX: 2 сообщения в секунду на чат) и повторяет с экспоненциальной
+   паузой, до 5 попыток. Отказ канала сразу паркует строку; сбой оставляет её в ожидании и не
+   блокирует другие каналы. Доставка — at-least-once.
+7. Модуль ответов пишет строку аудита: версия промпта, число найденных фрагментов, число цитат,
+   токены, стоимость, задержка. Исполнитель действий пишет строку вопроса, из которой живёт
+   кабинет.
+8. Кабинет закрывает вопрос: `resolved_at`, `resolved_by`, `resolution`, ответ как строка
+   `messages` и `question_resolved` — одной транзакцией. Диспетчер доставляет ответ с тем же
+   темпом и повторами, что и любое сообщение сценария.
 
-## An uploaded markdown, end to end
+## Загруженный markdown целиком
 
-1. `POST /admin/api/knowledge` (HR only) validates the frontmatter against `doc.schema.json` and
-   rejects a non-active document before it reaches storage.
-2. One transaction stores the bytes in `kb_files` by SHA-256, inserts a `queued` row in
-   `kb_extractions`, and enqueues `index_document`. A repeated upload with the same bytes and profile
-   returns `queued=false` and adds no job.
-3. The route answers `202` with `content_hash`; the cabinet polls
+1. `POST /admin/api/knowledge` (только HR) проверяет frontmatter документа базы знаний по
+   `doc.schema.json` и отвергает неактивный документ до записи в хранилище.
+2. Одна транзакция кладёт байты в `kb_files` по SHA-256, вставляет строку `queued` в
+   `kb_extractions` и ставит в очередь `index_document`. Повторная загрузка тех же байтов с тем
+   же профилем возвращает `queued=false` и не добавляет задачу.
+3. Роут отвечает `202` с `content_hash`; кабинет опрашивает
    `GET /admin/api/knowledge/files/{content_hash}`.
-4. The worker validates the stored text again, runs the same `ingest_document` choke point the
-   corpus directory uses, and saves `indexed` or `rejected` in `kb_extractions`.
+4. Воркер ещё раз проверяет сохранённый текст, прогоняет его через ту же точку входа
+   `ingest_document`, что и каталог корпуса, и сохраняет `indexed` или `rejected` в
+   `kb_extractions`.
 
-## An uploaded file, end to end
+## Загруженный файл целиком
 
-The corpus is markdown, but recruiters bring PDFs and scans. Extraction is the bridge, and it is an
-adapter, not a step in a request (ADR 0015).
+Корпус — markdown, но рекрутёры приносят PDF и сканы. Извлечение — мост между ними, и это
+адаптер, а не шаг запроса (ADR 0015).
 
-1. `POST /admin/api/knowledge/files` (HR only) reads the file and the frontmatter as `multipart`.
-   Metadata is validated against `doc.schema.json` — the same contract a committed document obeys —
-   before anything is stored. A wrong format answers `415`, an oversized file `413`.
-2. The bytes go to `kb_files`, keyed by their SHA-256. Re-uploading the same bytes returns the same
-   id and queues no second job.
-3. The endpoint enqueues `extract_document` and answers `202`. It never waits for recognition.
-4. The worker reads the blob and looks up `kb_extractions` by `(content_hash, profile_hash)`. A hit
-   finishes the job without touching the file.
-5. `RoutingExtraction` reads the file with the cheapest reader that owns the format: pdfium text
-   layer, or `python-pptx` shapes. Pure code decides the route: enough text means no recognition.
-   Otherwise the pages are rasterized, gated on the pre-recognition checks the profile enables, and
-   recognized. There is no glare score: white paper would read as "100% glare". Overexposure is
-   caught after recognition, by the engine's own per-line confidence.
-6. `accept` decides: one page under the confidence floor, or coverage under the policy, refuses the
-   whole document. A refusal is a value with a reason, recorded and shown in the cabinet.
-7. Only an accepted document is rendered to markdown (`compose.render_document`) and indexed through
-   the same `ingest_document` choke point the corpus directory uses. `knowledge/` is never written.
-8. The outcome — `indexed` or `rejected`, with engine, route, pages, and confidence — is cached and
-   audited (`document_extracted`, `document_rejected`, `document_extraction_cached`).
+1. `POST /admin/api/knowledge/files` (только HR) читает файл и frontmatter как `multipart`.
+   Метаданные сверяются с `doc.schema.json` — тем же контрактом, которому подчиняется
+   закоммиченный документ, — до любой записи. Неверный формат получает `415`, слишком большой
+   файл — `413`.
+2. Байты уходят в `kb_files` с ключом SHA-256. Повторная загрузка тех же байтов возвращает тот
+   же id и не ставит вторую задачу.
+3. Эндпоинт ставит в очередь `extract_document` и отвечает `202`. Распознавания он не ждёт
+   никогда.
+4. Воркер читает блоб и ищет `kb_extractions` по `(content_hash, profile_hash)`. Попадание
+   закрывает задачу, не трогая файл.
+5. `RoutingExtraction` читает файл самым дешёвым читателем, который владеет форматом: текстовый
+   слой pdfium или фигуры `python-pptx`. Маршрут решает чистый код: хватает текста —
+   распознавание не нужно. Иначе страницы растрируются, проходят включённые в профиле проверки
+   перед распознаванием и распознаются. Оценки бликов нет: белая бумага прочиталась бы как
+   «100% блика». Пересвет ловится после распознавания, по собственной построчной уверенности
+   движка.
+6. `accept` решает: одна страница ниже порога уверенности или покрытие ниже политики — и весь
+   документ отвергается. Отказ — это значение с причиной, оно записывается и показывается в
+   кабинете.
+7. В markdown рендерится только принятый документ (`compose.render_document`), и индексируется
+   он через ту же точку входа `ingest_document`, что и каталог корпуса. В `knowledge/` записи
+   нет никогда.
+8. Итог — `indexed` или `rejected`, с движком, маршрутом, страницами и уверенностью —
+   кешируется и пишется в аудит (`document_extracted`, `document_rejected`,
+   `document_extraction_cached`).
 
-Small fixtures beside the tests (`apps/api/tests/files.py`) generate the PDFs and decks, so a test
-that reads a document says how that document was made.
+Маленькие фикстуры рядом с тестами (`apps/api/tests/files.py`) собирают PDF и презентации,
+поэтому тест, который читает документ, говорит, как этот документ сделан.
 
-## Invariants
+## Инварианты
 
-1. `api` never calls the model and never waits for a messenger's delivery. Its container has no
-   `LLM`, `Embedder`, `Answerer`, or `DocumentExtractor`, so the rule is structural.
-2. `core/` is pure: no I/O, no clock, no randomness. `tests/test_core_purity.py` enforces it.
-3. A live run never changes scenario version; the catalog can hold several versions at once.
-4. An answer without a citation from the retrieved set is not sent.
-5. State is persisted before the message that announces it.
-6. Knowledge documents never leave their audience. ACL and validity are SQL predicates applied
-   before ranking, not filters on the result.
-7. Secrets live in `SecretStr` and are never written to logs or audit fields.
-8. A model's behaviour lives in a profile file, not in a Python branch: no model name in `app/`.
-9. The cabinet never calls a messenger. Every outbound message, including a recruiter's reply, is
-   an outbox row written in the transaction that records the intent.
-10. A channel is an address plus a profile file: a new messenger is a YAML profile, an adapter, and
-    contract tests. No `if channel ==` in `core/`, and `core/` holds only the `Channel` value.
-11. The outbox stores the domain message — channel, chat, text, `Button(id, text)` — never a wire
-    payload. Rendering happens in the adapter, so a renderer fix applies to already-queued rows.
-12. An inbound delivery becomes an `Event` only through an `Ingress`. A protocol handler parses and
-    verifies; it never decides what a reply says.
-13. A stranger's message never reaches the scenario: the channel identity link is the access gate,
-    and its absence is an audit row, not a run.
+1. `api` не вызывает модель и не ждёт доставки в мессенджер. В его контейнере нет `LLM`,
+   `Embedder`, `Answerer` и `DocumentExtractor`, поэтому правило структурное.
+2. `core/` чист: без I/O, без часов, без случайности. Это проверяет
+   `tests/test_core_purity.py`.
+3. Живой прогон не меняет версию сценария; каталог может держать несколько версий сразу.
+4. Ответ без цитаты из найденного набора не отправляется.
+5. Состояние сохраняется до сообщения, которое о нём объявляет.
+6. Документы базы знаний не выходят за свою аудиторию. ACL и срок — предикаты SQL до
+   ранжирования, а не фильтры по результату.
+7. Секреты живут в `SecretStr` и не попадают ни в логи, ни в поля аудита.
+8. Поведение модели живёт в файле профиля, а не в ветке Python: имени модели в `app/` нет.
+9. Кабинет не вызывает мессенджер никогда. Каждое исходящее сообщение, включая ответ
+   рекрутёра, — строка `outbox`, записанная в транзакции, которая фиксирует намерение.
+10. Канал — адрес плюс файл профиля: новый мессенджер это YAML-профиль, адаптер и контрактные
+    тесты. Никаких `if channel ==` в `core/`, а в `core/` лежит только значение `Channel`.
+11. `outbox` хранит доменное сообщение — канал, чат, текст, `Button(id, text)` — а не payload
+    протокола. Рендеринг идёт в адаптере, поэтому правка рендерера действует и на уже
+    поставленные в очередь строки.
+12. Входящая доставка становится `Event` только через `Ingress`. Обработчик протокола разбирает
+    и проверяет; что говорит ответ, решает не он.
+13. Сообщение постороннего не доходит до сценария: связь идентичности канала — это гейт
+    доступа, а её отсутствие даёт строку аудита, не прогон.
 
-## Failure modes
+## Режимы отказа
 
-| Failure | Behaviour |
+| Сбой | Поведение |
 |---|---|
-| a messenger retries a delivery | `events` primary key rejects it; no second job |
-| a channel API answers 5xx, 429, or times out | message row stays pending, retried with backoff, parked after 5 attempts |
-| a channel rejects the message itself | the row is parked at once; a retry cannot fix a wrong chat or a blocked bot |
-| one channel is down | its rows wait; the dispatcher leases and delivers every other channel meanwhile |
-| an unlinked account writes | `200`, an `unlinked_channel_user` audit row, no run, no reply |
-| Model provider 5xx, timeout, or open breaker | one retry, then an escalation with `unavailable` copy |
-| Model returns ungrounded or malformed JSON | answer rejected, escalation, `answer_rejected` audit row |
-| Embedder or database fails during retrieval | escalation with `unavailable` copy |
-| Reranker fails or answers nonsense | hybrid order stands, `rerank_failed` in the audit; the stage has a `deadline_s` budget, so retries cannot spend more of the user's wait than a fallback is worth |
-| Knowledge is stale | `valid_to` excludes the document; the question escalates |
-| Worker backlog | jobs wait; the webhook keeps accepting; state is not lost |
-| Postgres unavailable | webhook answers 503; the messenger retries |
-| A scenario file is invalid | the process refuses to start |
-| A job payload is invalid | job fails, is retried, then parked with `last_error` |
-| A recruiter resolves a question twice | first commits the reply; second gets `409`, no duplicate |
-| An employee leaves mid-run | soft delete closes the run and purges questions; later inbound events are ignored |
-| The retention pass fails | logged, retried next tick; committed batches stay committed |
+| мессенджер повторяет доставку | первичный ключ `events` отвергает её; второй задачи нет |
+| API канала отвечает 5xx, 429 или не успевает по таймауту | строка сообщения остаётся в ожидании, повтор с паузой, парковка после 5 попыток |
+| канал отвергает само сообщение | строка паркуется сразу; повтор не исправит неверный чат или заблокированного бота |
+| один канал недоступен | его строки ждут; диспетчер тем временем арендует и доставляет все остальные каналы |
+| пишет несвязанный аккаунт | `200`, строка аудита `unlinked_channel_user`, без прогона и без ответа |
+| провайдер модели: 5xx, таймаут или открытый breaker | один повтор, затем эскалация с текстом `unavailable` |
+| модель вернула необоснованный или битый JSON | ответ отвергнут, эскалация, строка аудита `answer_rejected` |
+| эмбеддер или база падают во время поиска | эскалация с текстом `unavailable` |
+| переранжировщик падает или отвечает бессмыслицу | остаётся гибридный порядок, `rerank_failed` в аудите; у этапа есть бюджет `deadline_s`, поэтому повторы не отнимут у пользователя больше ожидания, чем стоит запасной вариант |
+| база знаний устарела | `valid_to` исключает документ; вопрос уходит в эскалацию |
+| очередь воркера растёт | задачи ждут; вебхук продолжает принимать; состояние не теряется |
+| Postgres недоступен | вебхук отвечает 503; мессенджер повторяет |
+| файл сценария невалиден | процесс отказывается стартовать |
+| payload задачи невалиден | задача падает, повторяется, затем паркуется с `last_error` |
+| рекрутёр закрывает вопрос дважды | первый закрывает и коммитит ответ; второй получает `409`, дубля нет |
+| сотрудник уходит посреди прогона | soft delete закрывает прогон и чистит вопросы; входящие события после этого игнорируются |
+| проход по срокам хранения падает | пишется в лог, повтор на следующем тике; закоммиченные пачки остаются закоммиченными |
 
-## Model profiles
+## Профили модели
 
-A model is data, not a code path (ADR 0013). Each model is a YAML file under
-`apps/api/model-profiles/<role>/`, validated against
-[`contracts/model-profile.schema.json`](contracts/model-profile.schema.json) before use. The file
-states the wire dialect, the capabilities the model actually has, the generation envelope, and the
-prices. `LLM_PROFILE`, `EMBED_PROFILE`, and `RERANK_PROFILE` choose one; the gateway, the embedder,
-and the reranker read it and never branch on a model name.
+Модель — данные, а не ветка кода (ADR 0013). Каждая модель — YAML-файл в
+`apps/api/model-profiles/<role>/`, проверенный по
+[`contracts/model-profile.schema.json`](contracts/model-profile.schema.json) до использования.
+Файл задаёт диалект протокола, возможности, которые у модели есть, конверт
+генерации и цены. `LLM_PROFILE`, `EMBED_PROFILE` и `RERANK_PROFILE` выбирают файл; шлюз,
+эмбеддер и переранжировщик читают его и никогда не ветвятся по имени модели.
 
-| Role | What the profile decides | What the environment keeps |
+| Роль | Что решает профиль | Что остаётся в окружении |
 |---|---|---|
-| `answer` | dialect, json mode, token field, reasoning effort, temperature, token cap, timeout, retries, prices | base URL, key, breaker, static headers |
-| `embed` | dialect, model id, vector width, timeout | base URL, key |
-| `rerank` | model id, timeout, deadline | base URL, key, whether the stage runs at all |
+| `answer` | диалект, json mode, поле токенов, reasoning effort, temperature, лимит токенов, таймаут, повторы, цены | base URL, ключ, breaker, статические заголовки |
+| `embed` | диалект, id модели, ширина вектора, таймаут | base URL, ключ |
+| `rerank` | id модели, таймаут, дедлайн | base URL, ключ, работает ли этап вообще |
 
-Resolution order for every value: an explicit environment value, then the profile, then the
-default. An invalid or missing profile stops the process at startup, like an invalid scenario.
-`EMBED_DIM` and the profile's `dim` must agree; a different width is a migration, not a setting.
+Порядок разрешения любого значения: явное значение в окружении, затем профиль, затем
+умолчание. Невалидный или отсутствующий профиль останавливает процесс на старте, как
+невалидный сценарий. `EMBED_DIM` и `dim` в профиле должны совпадать; другая ширина — миграция, а
+не настройка.
 
-## Provider compatibility
+## Совместимость провайдеров
 
-The gateway speaks the OpenAI chat-completions dialect; `family` in the profile selects the
-adapter. GigaChat and OpenAI need only a base URL and a key. Some OpenAI-compatible gateways also
-require static routing headers, supplied as a JSON object in `LLM_EXTRA_HEADERS`; authentication
-and content headers cannot be overridden there. A gateway may wrap the completion in
-`{"success": true, "data": {...}}`; the gateway unwraps it, rejects `success: false`, and keeps
-token usage from either level. A model that rejects `response_format` or wants
-`max_completion_tokens` is a capability flag in its profile, not a branch in the gateway.
+Шлюз говорит на диалекте chat-completions от OpenAI; `family` в профиле выбирает адаптер.
+GigaChat и OpenAI нужно только base URL и ключ. Некоторые OpenAI-совместимые шлюзы ещё требуют
+статических заголовков маршрутизации — их передают JSON-объектом в `LLM_EXTRA_HEADERS`; заголовки
+аутентификации и контента там переопределить нельзя. Шлюз может обернуть completion в
+`{"success": true, "data": {...}}`; наш шлюз разворачивает обёртку, отвергает `success: false` и
+сохраняет расход токенов с любого уровня. Модель, которая отвергает `response_format` или хочет
+`max_completion_tokens`, — это флаг возможности в её профиле, а не ветка в шлюзе.
 
-## Deliberately absent
+## Чего нет намеренно
 
-No message broker, no separate vector database, no orchestrator, no microservices. One Postgres
-holds state, vectors, queue, outbox, questions, and audit; the workload does not justify more. See
-[decision 0005](decisions/0005-single-postgres.md).
+Ни брокера сообщений, ни отдельной векторной базы, ни оркестратора, ни микросервисов. Один
+Postgres держит состояние, векторы, очередь, `outbox`, вопросы и аудит; нагрузка не оправдывает
+большего. См. [решение 0005](decisions/0005-single-postgres.md).
 
-## Module map
+## Карта модулей
 
-| Path | Responsibility |
+| Путь | Ответственность |
 |---|---|
-| `apps/api/onboarding/core/` | pure domain: models, scenario parser, transitions, chunking, ranking, grounding, prompt rendering, breaker, ACL |
-| `apps/api/onboarding/ports.py` | protocols for clock, model, embedder, knowledge, messaging, ingress, directory, repositories, audit; model profile values |
-| `apps/api/onboarding/app/channels/` | one folder per messenger: client, ingress, render; profile loader and shared pacing |
-| `apps/api/channel-profiles/` | one YAML file per messenger, validated by `docs/contracts/channel-profile.schema.json` |
-| `apps/api/onboarding/api/` | FastAPI app, webhook, admin routes, bearer auth, response schemas; transport only |
-| `apps/api/onboarding/app/api_container.py` | the API graph: no model, no embedder, no extractor |
-| `apps/api/onboarding/app/composition.py` | shared graph for every process: database, clock, channels, ingress, profiles |
-| `apps/api/onboarding/app/use_cases/` | inbound acceptance and knowledge submission; one transaction per call |
-| `apps/api/onboarding/app/admin/` | cabinet read models and commands (`service.py` is the route-facing boundary) |
-| `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base; inbound/submission/health adapters |
-| `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop, markdown indexer |
-| `apps/api/onboarding/app/llm/` | provider adapters, model profile loader, gateway with retry/breaker/cost, offline extractive provider, embeddings |
-| `apps/api/model-profiles/` | one YAML file per model (`answer/`, `embed/`, `rerank/`) and per reader configuration (`extract/`), validated at startup |
-| `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |
-| `apps/api/onboarding/app/knowledge/extract/` | readers (pdfium, python-pptx), quality gate, recognizer, routing composite, profile loader, markdown assembly |
-| `apps/api/onboarding/scenarios/` | versioned scenario YAML |
-| `apps/api/onboarding/cli.py` | `ingest`, `extract`, `seed`, `demo`, `subscribe`, `check` commands |
-| `apps/admin/` | recruiter cabinet (React + TypeScript) |
-| `knowledge/` | the corpus, one Markdown file per document |
+| `apps/api/onboarding/core/` | чистый домен: модели, разбор сценария, переходы, нарезка, ранжирование, обоснование, рендеринг промпта, breaker, ACL |
+| `apps/api/onboarding/ports.py` | протоколы часов, модели, эмбеддера, базы знаний, сообщений, ingress, справочника, репозиториев, аудита; значения профиля модели |
+| `apps/api/onboarding/app/channels/` | папка на мессенджер: клиент, ingress, рендер; загрузчик профиля и общий темп |
+| `apps/api/channel-profiles/` | один YAML-файл на мессенджер, проверяется по `docs/contracts/channel-profile.schema.json` |
+| `apps/api/onboarding/api/` | приложение FastAPI, вебхук, админ-роуты, bearer-аутентификация, схемы ответов; только транспорт |
+| `apps/api/onboarding/app/api_container.py` | граф api: без модели, без эмбеддера, без извлекателя |
+| `apps/api/onboarding/app/composition.py` | общий граф для любого процесса: база, часы, каналы, ingress, профили |
+| `apps/api/onboarding/app/use_cases/` | приём входящих и приём знаний; одна транзакция на вызов |
+| `apps/api/onboarding/app/admin/` | read-модели и команды кабинета (`service.py` — граница для роутов) |
+| `apps/api/onboarding/app/db/` | модели SQLAlchemy, репозитории, очередь, `outbox`, планировщик, база знаний pgvector; адаптеры входящих, приёма знаний и health |
+| `apps/api/onboarding/app/worker/` | конвейер ответа, исполнитель действий, сервис прогонов, раннер задач, цикл воркера, индексатор markdown |
+| `apps/api/onboarding/app/llm/` | адаптеры провайдеров, загрузчик профиля модели, шлюз с повтором, breaker и стоимостью, офлайн-провайдер `extractive`, эмбеддинги |
+| `apps/api/model-profiles/` | один YAML-файл на модель (`answer/`, `embed/`, `rerank/`) и на конфигурацию читателя (`extract/`), проверяется на старте |
+| `apps/api/onboarding/app/knowledge/` | загрузка корпуса, конвейер нарезки, локальный in-memory бэкенд |
+| `apps/api/onboarding/app/knowledge/extract/` | читатели (pdfium, python-pptx), гейт качества, распознаватель, композит маршрутизации, загрузчик профиля, сборка markdown |
+| `apps/api/onboarding/scenarios/` | версионированный YAML сценариев |
+| `apps/api/onboarding/cli.py` | команды `ingest`, `extract`, `seed`, `demo`, `subscribe`, `check` |
+| `apps/admin/` | кабинет рекрутёра (React + TypeScript) |
+| `knowledge/` | корпус, один Markdown-файл на документ |
 
-## Performance targets
+## Цели по производительности
 
-One question is one retrieval, one optional rerank, one model call, one validation, one send.
-Target p95 end-to-end delivery is 8 seconds with a hosted model (ADR 0009); the offline extractive
-provider reports zero latency by construction. The webhook itself stays under 200 ms: it does two
-inserts and returns.
+Один вопрос — это один поиск, необязательное переранжирование, один вызов модели, одна проверка,
+одна отправка. Цель p95 доставки от начала до конца — 8 секунд с внешней моделью (ADR 0009);
+офлайн-провайдер `extractive` по построению сообщает нулевую задержку. Сам вебхук укладывается в
+200 мс: он делает две вставки и отвечает.

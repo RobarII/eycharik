@@ -1,80 +1,57 @@
-# 0013 — A model is a profile, not a code path
+---
+title: Модель — профиль, а не путь кода
+summary: Почему диалект, конверт и цены модели уехали в YAML-профиль со схемой и как это проверяется.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+supersedes: [10]
+superseded_by: [21]
+---
 
-Date: 2026-10-27
-Status: accepted
-Supersedes: 0010 (partially: model selection, envelope, and prices leave the environment)
+# 0013 — Модель — это профиль, а не путь кода
 
-## Context
+Роль модели задаёт каталог профиля: `answer`, `embed`, `rerank`, `classify`, `extract`.
 
-The gateway was provider-agnostic but model-agnostic only in name. Single-model knobs lived in
-three places at once:
+## Контекст
 
-- `GatewayLLM.__init__` stored `temperature` and prices, yet `_payload` read `request.temperature`
-  and `CompletionRequest.max_tokens` defaults. `LLM_TEMPERATURE` was dead configuration: setting it
-  changed nothing.
-- `_payload` hard-coded the OpenAI dialect: `response_format`, `reasoning_effort`, `max_tokens`.
-  A model that wants `max_completion_tokens`, or that rejects `response_format`, needed a code
-  change in the gateway.
-- `EMBED_DIM` was duplicated between settings and the `kb_chunks.embedding` column, and the reranker
-  read its model from a separate environment variable with no record of which reranker a
-  measurement used.
+Шлюз был провайдеро-независимым, а модельно-независимым только на словах. Ручки одной модели жили в трёх местах сразу:
 
-Every one of those is a *fact about the model*, not about the deployment. Facts that live in code
-rot the first time the model changes.
+- `GatewayLLM.__init__` хранил `temperature` и цены, но `_payload` читал `request.temperature` и значения по умолчанию `CompletionRequest.max_tokens`. `LLM_TEMPERATURE` был мёртвой конфигурацией: его установка ничего не меняла.
+- `_payload` жёстко задавал диалект OpenAI: `response_format`, `reasoning_effort`, `max_tokens`. Модели, которой нужен `max_completion_tokens` или которая отвергает `response_format`, требовалась правка кода в шлюзе.
+- `EMBED_DIM` дублировался между настройками и колонкой `kb_chunks.embedding`, а переранжировщик читал свою модель из отдельной переменной окружения без записи о том, какой переранжировщик использовало измерение.
 
-## Decision
+Каждый из этих пунктов — факт о модели, а не о развёртывании. Факты в коде гниют при первой смене модели.
 
-A model is described by a YAML profile, validated against
-[`contracts/model-profile.schema.json`](../contracts/model-profile.schema.json):
+## Решение
 
-- `apps/api/model-profiles/answer/<name>.yaml` — dialect, capabilities (`json_mode`,
-  `max_tokens_field`, `reasoning_effort`), envelope (`temperature`, `max_tokens`, `timeout_s`,
-  `max_retries`, `retry_empty_completion`), prices;
-- `apps/api/model-profiles/embed/<name>.yaml` — dialect, model, `dim`, timeout;
-- `apps/api/model-profiles/rerank/<name>.yaml` — model, timeout.
+Модель описывает YAML-профиль, проверенный по [`contracts/model-profile.schema.json`](../contracts/model-profile.schema.json):
 
-`LLM_PROFILE`, `EMBED_PROFILE`, and `RERANK_PROFILE` select a profile by file name. With them
-unset, the previous environment knobs still build an equivalent in-memory profile named `env`, so
-the migration is opt-in per deployment. Resolution order for every value: explicit environment
-value, then the profile, then the dataclass default.
+- `apps/api/model-profiles/answer/<name>.yaml` — диалект, возможности (`json_mode`, `max_tokens_field`, `reasoning_effort`), конверт (`temperature`, `max_tokens`, `timeout_s`, `max_retries`, `retry_empty_completion`), цены;
+- `apps/api/model-profiles/embed/<name>.yaml` — диалект, модель, `dim`, таймаут;
+- `apps/api/model-profiles/rerank/<name>.yaml` — модель, таймаут.
 
-The schema is the gate. `ProfileLibrary` validates every file before use and refuses an unknown
-key; a field that does not apply to the role (`dim` on an answer model, `temperature` on a
-reranker) is an error, not silence. A missing or invalid profile stops the process at startup,
-where a typo is a failed deploy rather than a mystery in production.
+`LLM_PROFILE`, `EMBED_PROFILE` и `RERANK_PROFILE` выбирают профиль по имени файла. Пока они не заданы, прежние ручки окружения собирают эквивалентный профиль в памяти с именем `env`, так что миграция добровольна для каждого развёртывания. Порядок разрешения любого значения: явное значение в окружении, затем профиль, затем значение по умолчанию датакласса.
 
-`EMBED_DIM` and the profile's `dim` must agree. A wider vector is a migration plus a reindex, not a
-setting, and the loader says so by name.
+Схема — гейт. `ProfileLibrary` проверяет каждый файл до использования и отвергает неизвестный ключ; поле, которое не относится к роли (`dim` у модели ответа, `temperature` у переранжировщика), — ошибка, а не тишина. Отсутствующий или невалидный профиль останавливает процесс на старте, где опечатка — упавший деплой, а не загадка в продакшене.
 
-Prices move into the profile and default to `0`. Cost accounting then reports `0`, never a guess;
-a measured price is a commit to a profile file, reviewable like any other fact.
+`EMBED_DIM` и `dim` в профиле должны совпадать. Более широкий вектор — миграция плюс переиндексация, а не настройка, и загрузчик говорит об этом по имени.
 
-Prompts stay where ADR 0004 put them. A prompt is pinned to the answer contract, not to a model,
-and the profile never carries prompt text.
+Цены переезжают в профиль и по умолчанию равны `0`. Учёт стоимости тогда сообщает `0`, а не догадку; измеренная цена — коммит в файл профиля, ревьюабельный, как любой другой факт.
 
-## Consequences
+Промпты остаются там, куда их положил ADR 0004. Промпт привязан к контракту ответа, а не к модели, и профиль никогда не несёт текст промпта.
 
-- A new answer model is one YAML file plus `make eval`; no Python changes, no review of the
-  gateway, no redeploy of code that differs only by a string.
-- Removing a model is deleting a file. The diff shows what ran and what stopped running.
-- A measurement names the profile (`model: openrouter-gpt-4.1-mini`), so "which model produced
-  0.070 ₽ per answer" is answerable from the repository, not from chat history.
-- Capability flags are still a fixed vocabulary. A provider that needs a genuinely different
-  request shape gets a new `family` and a small adapter in `providers.py`; profiles do not grow a
-  scripting language.
-- The offline extractive provider remains a provider switch (`LLM_PROVIDER=extractive`), not a
-  profile: it is a test double, not a model with an envelope.
-- `LLM_PRICE_*`, `LLM_MAX_TOKENS`, `LLM_TIMEOUT_S`, and `LLM_MAX_RETRIES` become documented
-  overrides instead of the only source. `LLM_TEMPERATURE` is deleted rather than fixed: the prompt
-  owns the answer temperature (ADR 0004) and the profile owns the default for calls that do not pin
-  one. The ADR 0010 cost statement still holds; the number it recorded came from a measurement, and
-  the profile now states the model it belongs to.
+## Последствия
 
-## Alternatives
+- Новая модель ответа — один YAML-файл плюс `make eval`; без правок Python, без ревью шлюза, без деплоя кода, отличающегося одной строкой.
+- Удаление модели — удаление файла. Дифф показывает, что работало и что перестало.
+- Измерение называет профиль (`model: openrouter-gpt-4.1-mini`), поэтому на вопрос «какая модель дала 0.070 ₽ за ответ» отвечает репозиторий, а не история чата.
+- Флаги возможностей — по-прежнему фиксированный словарь. Провайдеру с другой формой запроса нужен новый `family` и небольшой адаптер в `providers.py`; профили не обзаводятся скриптовым языком.
+- Офлайн-провайдер `extractive` остаётся переключателем провайдера (`LLM_PROVIDER=extractive`), а не профилем: это тестовый дубль, а не модель с конвертом.
+- `LLM_PRICE_*`, `LLM_MAX_TOKENS`, `LLM_TIMEOUT_S` и `LLM_MAX_RETRIES` становятся задокументированными переопределениями, а не единственным источником. `LLM_TEMPERATURE` удалён, а не починен: температура ответа принадлежит промпту (ADR 0004), а профиль владеет значением по умолчанию для вызовов, которые её не фиксируют. Утверждение о стоимости из ADR 0010 в силе; число, которое он записал, пришло из измерения, и профиль теперь указывает модель, к которой оно относится.
 
-- Keep model knobs in `Settings` only — rejected: every new capability becomes a boolean flag in
-  the gateway, and two models in the same deployment cannot coexist.
-- One profile per deployment (profile file generated from environment) — rejected: the file would
-  be a build artifact and could not be reviewed or versioned with the code.
-- Prompt-per-model forks — rejected: two prompts diverge within a month, and the answer contract
-  stops meaning one thing. Model differences belong in capabilities, not in wording.
+## Альтернативы
+
+- Держать ручки модели только в `Settings` — отклонено: каждая новая возможность становится булевым флагом в шлюзе, а две модели в одном развёртывании не уживаются.
+- Один профиль на развёртывание (файл профиля генерируется из окружения) — отклонено: файл стал бы артефактом сборки, его нельзя было бы ревьюить и версионировать вместе с кодом.
+- Форки промпта под каждую модель — отклонено: два промпта разойдутся за месяц, и контракт ответа перестанет значить одно. Различия моделей живут в возможностях, а не в формулировках.

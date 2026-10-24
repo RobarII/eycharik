@@ -1,71 +1,65 @@
-# VK Callback API contract
+---
+title: Контракт VK Callback API
+summary: Какие факты VK Callback API использует интеграция и откуда каждый из них взят.
+kind: контракт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Everything the integration relies on, with the source of each fact. If VK changes a field, this
-file changes in the same commit as the adapter.
+# Контракт VK Callback API
 
-Source: <https://dev.vk.com/ru/api/callback/getting-started> and
-<https://dev.vk.com/ru/method/messages.send> (read 2026-10-26).
+Всё, на что опирается интеграция, с источником каждого факта. Если VK меняет поле, этот файл меняется тем же коммитом, что и адаптер.
 
-## Connection
+Источник: <https://dev.vk.com/ru/api/callback/getting-started> и <https://dev.vk.com/ru/method/messages.send> (прочитано 2026-10-26).
 
-| Fact | Value |
+## Подключение
+
+| Факт | Значение |
 |---|---|
-| Inbound | VK posts JSON to the callback URL configured for the community |
-| Confirmation | a payload with `"type": "confirmation"` must be answered with the confirmation code, plain text |
-| Inbound auth | the `secret` field of every payload, when a secret is configured; otherwise absent |
-| Outbound | `https://api.vk.com/method/messages.send` with `access_token` and `v` |
+| Входящие | VK постит JSON на callback URL, настроенный для сообщества |
+| Подтверждение | на payload с `"type": "confirmation"` нужно ответить кодом подтверждения, простым текстом |
+| Аутентификация входящих | поле `secret` каждого payload, когда секрет настроен; иначе его нет |
+| Исходящие | `https://api.vk.com/method/messages.send` с `access_token` и `v` |
 
-Every event carries `type`, `group_id`, and `event_id`. `event_id` is the dedupe key.
+Каждое событие несёт `type`, `group_id` и `event_id`. `event_id` — ключ дедупликации.
 
-## Endpoints the adapter implements
+## Эндпоинты, которые реализует адаптер
 
-| Method | Purpose |
+| Метод | Назначение |
 |---|---|
-| `messages.send` | send a message with an optional `keyboard` and `attachment` |
-| `messages.edit` | rewrite a message sent by the community |
+| `messages.send` | отправить сообщение с необязательными `keyboard` и `attachment` |
+| `messages.edit` | переписать сообщение, отправленное сообществом |
 
-`messages.getLongPollServer`, `photos.getMessagesUploadServer` and similar are documented but unused:
-an `OutboundMessage` carries no image yet.
+`messages.getLongPollServer`, `photos.getMessagesUploadServer` и подобные описаны, но не используются: `OutboundMessage` пока не несёт изображение.
 
-`messages.send`: `peer_id`, `message` up to 4096 characters, `random_id` (required: VK drops a
-repeat with the same value), `keyboard` (JSON, see below), `attachment` (for images).
+`messages.send`: `peer_id`, `message` до 4096 символов, `random_id` (обязателен: VK отбрасывает повтор с тем же значением), `keyboard` (JSON, см. ниже), `attachment` (для изображений).
 
-## Events
+## События
 
-| Payload | Our event |
+| Payload | Наше событие |
 |---|---|
-| `message_new`, `object.message.text` starting with `/start` | `EMPLOYEE_CREATED` |
+| `message_new`, `object.message.text`, начинающийся с `/start` | `EMPLOYEE_CREATED` |
 | `message_new` | `MESSAGE_RECEIVED` |
-| `message_event` (callback button) | `BUTTON_PRESSED` |
+| `message_event` (кнопка-колбэк) | `BUTTON_PRESSED` |
 
-`object.message.peer_id` is the chat; `from_id` is the sender. In `message_event`, `peer_id` and
-`user_id` are separate fields, and `payload` carries the button id.
+`object.message.peer_id` — чат; `from_id` — отправитель. В `message_event` `peer_id` и `user_id` — отдельные поля, а `payload` несёт id кнопки.
 
-VK retries a delivery that is not acknowledged with `ok` within its timeout. `event_id` plus the
-`events` primary key makes the repeat harmless.
+VK повторяет доставку, не подтверждённую `ok` в свой таймаут. `event_id` вместе с первичным ключом `events` делает повтор безвредным.
 
-## Keyboard
+## Клавиатура
 
-`keyboard` is a JSON object: `one_time`, `inline`, and `buttons` — up to 10 rows of up to 5 buttons.
-A button is `{"action": {"type": "callback", "label": "...", "payload": "..."}}`; `payload` is at
-most 255 characters.
+`keyboard` — JSON-объект: `one_time`, `inline` и `buttons` — до 10 рядов по 5 кнопок. Кнопка — `{"action": {"type": "callback", "label": "...", "payload": "..."}}`; `payload` — не больше 255 символов.
 
-Two consequences the profile encodes:
+Два следствия, которые кодирует профиль:
 
-- `keyboard_scope: dialog` — the keyboard belongs to the conversation, not to one message. Sending a
-  new message without `keyboard` leaves the old one in place; removing it needs an explicit empty
-  keyboard.
-- `inline: true` is accepted only for messages from a community, and a callback button only fires
-  when the community has callback support enabled.
+- `keyboard_scope: dialog` — клавиатура принадлежит беседе, а не одному сообщению. Новое сообщение без `keyboard` оставляет старую на месте; чтобы её убрать, нужна явная пустая клавиатура.
+- `inline: true` принимается только для сообщений от сообщества, а кнопка-колбэк срабатывает, только когда у сообщества включена поддержка колбэков.
 
-## Rate limits
+## Лимиты частоты
 
-VK documents a per-method limit of about 20 requests per second for a community token. The profile
-sets `messages_per_second: 20` and leaves `per_chat_per_second: null`: there is no documented
-per-chat rule. A `429` or error code 6 (`Too many requests per second`) is `ChannelUnavailable`.
+VK документирует лимит около 20 запросов в секунду на метод для токена сообщества. Профиль задаёт `messages_per_second: 20` и оставляет `per_chat_per_second: null`: документированного правила по чату нет. `429` или код ошибки 6 (`Too many requests per second`) — это `ChannelUnavailable`.
 
-## Not yet captured
+## Ещё не снято
 
-Payload fixtures are synthetic until a real callback is captured in
-`apps/api/tests/fixtures/channels/vk/`. Confirm the rate limit and the `inline` restriction against
-the community settings before enabling the channel in production.
+Фикстуры payload синтетические, настоящий колбэк не снят. Проверьте лимит частоты и ограничение `inline` против настроек сообщества, прежде чем включать канал в продакшене.

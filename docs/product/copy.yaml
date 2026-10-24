@@ -1,4 +1,4 @@
-# Product copy, reviewed together with answer-policy.md. Code loads this file; it is never inlined.
+# Тексты продукта, ревьюятся вместе с answer-policy.md. Код загружает этот файл; в промпт он не встраивается.
 escalation:
   no_sources: >-
     Не нашёл ответа в базе знаний. Передал вопрос HR — ответят в течение рабочего дня.

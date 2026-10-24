@@ -1,126 +1,140 @@
-# 0026 — Russian-hosted model options for a 152-ФЗ pilot
+---
+title: Модели на российской площадке для пилота по 152-ФЗ
+summary: Что прочитано у российских провайдеров, что рекомендовано и чего не хватает для решения.
+kind: решение
+owner: p4ulbr4dl3y
+status: предложено
+last_verified: 2026-10-24
+---
 
-Date: 2026-10-25
-Status: proposed
-Supersedes: the vendor choice in 0010 for a Russian-hosted deployment, not the port design.
+# 0026 — Модели на российской площадке для пилота по 152-ФЗ
 
-## Context
+Дополняет выбор вендора в [0010](0010-one-model-vendor.md) для развёртывания на российской площадке,
+но не устройство порта.
 
-The demo host sits in the Netherlands and the keys point at OpenCode Go and OpenRouter
-([0025](0025-demo-models-on-opencode-and-openrouter.md)). That demo carries synthetic or public
-data only. Real employee data needs the corpus and the prompts to stay inside Russia, an errand of
-processing under 152-ФЗ art. 6 part 3, and a database localised per art. 18 part 5.
+## Контекст
 
-The ports are vendor-agnostic: `LLMProvider` speaks the OpenAI chat-completions shape, embeddings and
-rerank are HTTP calls with a base URL. A vendor change is therefore a profile plus a key, and an
-embedding width change is a migration plus a reindex.
+Демо-хост стоит в Нидерландах, а ключи указывают на OpenCode Go и OpenRouter
+([0025](0025-demo-models-on-opencode-and-openrouter.md)). Такое демо несёт только синтетические или
+публичные материалы. Настоящие записи о сотрудниках требуют, чтобы корпус и промпты остались в России,
+поручения обработки по ч. 3 ст. 6 152-ФЗ и локализованной базы по ч. 5 ст. 18.
 
-Facts below were read from vendor documentation and model cards on 2026-10-25. None of them is our
-measurement; a chosen vendor still needs an eval run and a measurement file.
+Порты не зависят от вендора: `LLMProvider` говорит на форме chat-completions от OpenAI, эмбеддинги и
+переранжирование — HTTP-вызовы с базовым адресом. Смена вендора поэтому — профиль плюс ключ, а смена
+ширины эмбеддинга — миграция плюс переиндексация.
 
-## Options read on 2026-10-25
+Факты ниже прочитаны в документации вендоров и карточках моделей 2026-10-25. Ни один из них не наше
+измерение; выбранному вендору всё равно нужны прогон оценки и файл измерения.
 
-| Vendor | Chat | Embeddings | Rerank | Hosting / 152-ФЗ |
+## Варианты, прочитанные 2026-10-25
+
+| Вендор | Чат | Эмбеддинги | Переранжирование | Площадка и 152-ФЗ |
 |---|---|---|---|---|
-| Cloud.ru Foundation Models | GigaChat3-10B/3.5-432B, DeepSeek-V4-Pro, Qwen3.5, gpt-oss-120b | `BAAI/bge-m3`, Giga embeddings | `BAAI/bge-reranker-v2-m3` | OpenAI-compatible `/v1`; models split into internal (no data leaves, no logging) and external; Evolution AZ-1..3 holds an UZ-1 ISPDn attestation |
-| Yandex Cloud / AI Studio | YandexGPT Pro/Lite | `text-search-doc` / `text-search-query` | none standalone | 152-ФЗ page claims 1119 + FSTEK 21 measures at UZ-1; an on-premises AI Studio delivery exists as a separate contract |
-| Sber GigaChat API | GigaChat 2 Pro / Max | Embeddings (1024) | none public | `api.giga.chat`, Russian data centres; Enterprise with DPA/NDA and training on client data off by default |
-| Selectel Token Factory | GLM, DeepSeek-V4-Flash, Qwen, Kimi | not listed | not listed | Russian data centres, no cross-border transfer, OpenAI-compatible; public preview; the ToS explicitly excludes personal-data processing from Selectel's responsibility |
-| MTS AI Cotype / MWS | Cotype Pro | RAG module | — | on-prem only, OpenAI-compatible `/v1`, software registry entry 23756, MWS cloud has an attested 152-ФЗ segment |
-| Just AI Caila | 300+ models | ? | ? | Russian legal entity, registry entry; catalogue mixes foreign models, so the route decides the law |
-| VK Cloud | no managed LLM API | — | — | GPU infrastructure only |
+| Cloud.ru Foundation Models | GigaChat3-10B/3.5-432B, DeepSeek-V4-Pro, Qwen3.5, gpt-oss-120b | `BAAI/bge-m3`, Giga embeddings | `BAAI/bge-reranker-v2-m3` | OpenAI-совместимый `/v1`; модели делятся на внутренние (наружу ничего не уходит, логи не пишутся) и внешние; Evolution AZ-1..3 имеет аттестат УЗ-1 ИСПДн |
+| Yandex Cloud / AI Studio | YandexGPT Pro/Lite | `text-search-doc` / `text-search-query` | отдельного нет | страница про 152-ФЗ заявляет 1119 и меры ФСТЭК 21 на УЗ-1; поставка AI Studio на площадке заказчика — отдельный договор |
+| Sber GigaChat API | GigaChat 2 Pro / Max | Embeddings (1024) | публичного нет | `api.giga.chat`, российские ЦОДы; Enterprise с DPA/NDA и дообучением на записях клиента, выключенным по умолчанию |
+| Selectel Token Factory | GLM, DeepSeek-V4-Flash, Qwen, Kimi | не указаны | не указано | российские ЦОДы, без трансграничной передачи, OpenAI-совместимый; публичное превью; ToS прямо исключает обработку персональных данных из ответственности Selectel |
+| MTS AI Cotype / MWS | Cotype Pro | модуль RAG | нет | только on-prem, OpenAI-совместимый `/v1`, запись в реестре ПО 23756, у облака MWS есть аттестованный сегмент по 152-ФЗ |
+| Just AI Caila | 300+ моделей | не указаны | не указаны | российское юрлицо, запись в реестре; каталог смешивает зарубежные модели, поэтому закон определяет маршрут |
+| VK Cloud | управляемого LLM API нет | нет | нет | только GPU-инфраструктура |
 
-Self-hosting on Russian GPU (Selectel, Cloud.ru ML Inference, VK Cloud, MWS) is the option with no
-cross-border question at all: the model files and the prompts never leave the operator's contour.
+Свой хостинг на российском GPU (Selectel, Cloud.ru ML Inference, VK Cloud, MWS) — вариант, у
+которого вопроса о трансграничной передаче нет вовсе: файлы моделей и промпты не покидают контур
+оператора.
 
-## Decision (proposed)
+## Решение
 
-Prices are in [vendor-comparison.md](../product/vendor-comparison.md); the money argument and the
-scenarios are in [business-case.md](../product/business-case.md). One answer is 2 208 input tokens and
-a 700-character completion measured at 175 tokens in the GigaChat tokenizer
-([measurement](../measurements/2026-10-25-token-budget.md)); other tokenizers cost 14–23% more for the
-same prompt. Quoted from that file: the recommended managed stack is **0.0306 ₽/answer**, the
-smallest useful GPU box is **71 456 ₽/month**. The magnitude is the argument; the numbers have one
-home and it is the comparison.
+Статус — `предложено`. Ниже рекомендация, а не принятый выбор.
 
-Note one vendor fact: since 2026-09-01 new clients buy GigaChat models through cloud.ru rather than
-through the Sber package list, so "GigaChat" and "Cloud.ru" are close to the same purchase.
+Цены — в [vendor-comparison.md](../product/vendor-comparison.md); денежный аргумент и сценарии — в
+[business-case.md](../product/business-case.md). Один ответ — это 2 208 входных токенов и завершение
+в 700 символов, измеренное как 175 токенов в токенизаторе GigaChat
+([измерение](../measurements/2026-10-25-token-budget.md)); другие токенизаторы стоят на 14–23 %
+дороже за тот же промпт. Цитата оттуда: рекомендованный облачный стек — **0.0306 ₽/answer**,
+минимальный полезный GPU-бокс — **71 456 ₽/месяц**. Аргумент — порядок величины; у чисел один дом, и
+это сравнение.
 
-For a Russian pilot, in preference order:
+Один факт о вендоре: с 2026-09-01 новые клиенты покупают модели GigaChat через cloud.ru, а не через
+прайс Сбера, так что «GigaChat» и «Cloud.ru» — почти одна покупка.
 
-1. **Managed, least code:** Cloud.ru Foundation Models as one vendor for answer, embeddings and
-   rerank — OpenAI-compatible `/v1`, internal models only, `BAAI/bge-m3` (1024) keeps the vector
-   column, `bge-reranker-v2-m3` keeps the Cohere-shaped rerank call.
-2. **Managed, GigaChat single vendor:** GigaChat 2 Pro plus GigaChat embeddings (1024), reranker
-   disabled (`RERANK_BASE_URL=""`), hybrid order stands per [0008](0008-hosted-rerank.md).
-3. **Own contour:** vLLM on Russian GPU with the shortlist in
-   [model shortlist](#gpu-shortlist-read-2026-10-25) below.
+Для российского пилота, в порядке предпочтения:
 
-The embedding width stays 1024 unless a migration and a reindex are part of the same change.
+1. **Облако, меньше всего кода:** Cloud.ru Foundation Models одним вендором на ответ, эмбеддинги и
+   переранжирование — OpenAI-совместимый `/v1`, только внутренние модели, `BAAI/bge-m3` (1024)
+   сохраняет колонку вектора, `bge-reranker-v2-m3` сохраняет вызов переранжирования формы Cohere.
+2. **Облако, один GigaChat:** GigaChat 2 Pro плюс эмбеддинги GigaChat (1024), переранжировщик
+   выключен (`RERANK_BASE_URL=""`), гибридный порядок остаётся по [0008](0008-hosted-rerank.md).
+3. **Свой контур:** vLLM на российском GPU с [шорт-листом](#шорт-лист-gpu-прочитанный-2026-10-25)
+   ниже.
 
-## GPU shortlist read 2026-10-25
+Ширина эмбеддинга остаётся 1024, если миграция и переиндексация не входят в то же изменение.
 
-Vendor-published numbers, not ours.
+## Шорт-лист GPU, прочитанный 2026-10-25
 
-Embeddings (RU semantics first, column `MTEB (rus)` as published in the model card):
+Числа опубликованы вендорами, не нами.
 
-| Model | Dim | Params | License | MTEB (rus) |
+Эмбеддинги (сначала русская семантика, колонка `MTEB (rus)` как в карточке модели):
+
+| Модель | Размерность | Параметры | Лицензия | MTEB (rus) |
 |---|---|---|---|---|
-| `ai-sage/Giga-Embeddings-instruct-480M-0826` | 1024 | 0.48B | MIT | 70.98 |
-| `ai-sage/Giga-Embeddings-instruct-3B-0826` | 2048 | 3.15B | MIT | 74.57 |
-| `ai-sage/Giga-Embeddings-instruct-10B-A1.8B-0826` | 1536 | 10.5B (1.8B active) | MIT | 74.99 |
-| `ai-forever/FRIDA` | 1536 | 0.82B | — | 70.95 |
-| `Qwen/Qwen3-Embedding-0.6B` | 1024 | 0.6B | Apache-2.0 | 63.64 |
+| `ai-sage/Giga-Embeddings-instruct-480M-0826` | 1024 | 0.48B | MIT | 70.98 |
+| `ai-sage/Giga-Embeddings-instruct-3B-0826` | 2048 | 3.15B | MIT | 74.57 |
+| `ai-sage/Giga-Embeddings-instruct-10B-A1.8B-0826` | 1536 | 10.5B (1.8B активных) | MIT | 74.99 |
+| `ai-forever/FRIDA` | 1536 | 0.82B | — | 70.95 |
+| `Qwen/Qwen3-Embedding-0.6B` | 1024 | 0.6B | Apache-2.0 | 63.64 |
 
-The Giga embedders are instruction-style: `Instruct: {task}\nQuery: {text}` on the query only,
-documents raw, mean pooling plus L2 normalisation. A local embedder therefore needs the query prefix
-in configuration, not in the corpus.
+Эмбеддеры Giga — инструктивного стиля: `Instruct: {task}\nQuery: {text}` только на запросе,
+документы как есть, mean pooling плюс L2-нормализация. Поэтому локальному эмбеддеру нужен префикс
+запроса в конфигурации, а не в корпусе.
 
-Rerank: `BAAI/bge-reranker-v2-m3` (0.57B, Apache-2.0, 8192) is the default; `jinaai/jina-reranker-v3`
-and `Qwen/Qwen3-Reranker-0.6B` / `-4B` are the alternatives. No RU-only reranker has comparable
-adoption.
+Переранжирование: `BAAI/bge-reranker-v2-m3` (0.57B, Apache-2.0, 8192) по умолчанию;
+`jinaai/jina-reranker-v3` и `Qwen/Qwen3-Reranker-0.6B` / `-4B` — альтернативы. Сопоставимого по
+распространённости переранжировщика только на русском нет.
 
-Answers, by GPU budget:
+Ответы, по бюджету GPU:
 
-| Budget | Model | Params | License | Context |
+| Бюджет | Модель | Параметры | Лицензия | Контекст |
 |---|---|---|---|---|
-| 1 × 24 GB | `ai-sage/GigaChat3.1-10B-A1.8B` (FP8) | 11.5B / 1.8B active | MIT | 262k |
-| 1 × 24 GB | `t-tech/T-lite-it-2.1` | 8.2B | Apache-2.0 | 40k |
-| 1 × 48 GB | `Qwen/Qwen3.5-9B` | 9.7B | Apache-2.0 | — |
-| 2 × 80 GB | `Qwen/Qwen3.5-122B-A10B` (FP8) | 125B / 10B active | Apache-2.0 | — |
-| 8 × 80 GB | `ai-sage/GigaChat3.5-432B-A28B` (FP8) | 434B / 28B active | MIT | — |
+| 1 × 24 GB | `ai-sage/GigaChat3.1-10B-A1.8B` (FP8) | 11.5B / 1.8B активных | MIT | 262k |
+| 1 × 24 GB | `t-tech/T-lite-it-2.1` | 8.2B | Apache-2.0 | 40k |
+| 1 × 48 GB | `Qwen/Qwen3.5-9B` | 9.7B | Apache-2.0 | — |
+| 2 × 80 GB | `Qwen/Qwen3.5-122B-A10B` (FP8) | 125B / 10B активных | Apache-2.0 | — |
+| 8 × 80 GB | `ai-sage/GigaChat3.5-432B-A28B` (FP8) | 434B / 28B активных | MIT | — |
 
-OCR already runs in-process: `doc-scan` uses PP-OCRv5 Cyrillic over ONNX Runtime and needs no GPU.
+OCR уже работает в процессе: `doc-scan` использует PP-OCRv5 Cyrillic поверх ONNX Runtime и GPU не
+нужен.
 
-## Consequences
+## Последствия
 
-- One 24 GB GPU carries the whole pipeline: Lightning FP8 for answers, the 480M embedder, the
-  0.57B reranker. The 3B and 10B embedders buy ~3.6–4 MTEB points for a migration to 1536/2048
-  dimensions plus a reindex.
-- Cloud.ru removes two vendors and two keys; it adds a ToS question — the attestation covers the
-  cloud, not the model service, so the errand of processing must be signed for the service itself.
-- Selectel Token Factory is not a candidate for personal data on its own ToS: its text disclaims
-  personal-data processing. Dedicated Inference or a self-hosted vLLM on the same GPU fleet is.
-- Every option needs its own measurement file before this ADR moves to `accepted`.
-- Managed wins on money until roughly 2.3 million answers/month (one L4 break-even); a GPU is bought
-  for a closed contour or a latency floor, not for cost.
-- The GPU side has no `₽/answer` yet: throughput on the card is unmeasured, so the break-even is a
-  division, not a recommendation.
-- GigaChat packages are 5–8× the cloud.ru per-token price for the same family; prepaid packages
-  expire monthly, so pay-as-you-go on cloud.ru is the cheaper path at pilot volume.
+- Один GPU на 24 GB несёт весь конвейер: Lightning FP8 на ответы, эмбеддер 480M, переранжировщик
+  0.57B. Эмбеддеры 3B и 10B дают около 3.6–4 пунктов MTEB за миграцию на размерности 1536/2048 плюс
+  переиндексацию.
+- Cloud.ru убирает двух вендоров и два ключа; добавляет вопрос по ToS — аттестат покрывает облако, а
+  не сервис моделей, поэтому поручение обработки надо подписать на сам сервис.
+- Selectel Token Factory не кандидат для персональных данных по своему ToS: текст снимает с Selectel
+  обработку персональных данных. Dedicated Inference или свой vLLM на том же парке GPU — кандидаты.
+- Каждому варианту нужен свой файл измерения, прежде чем ADR перейдёт в `accepted`.
+- Облако выигрывает по деньгам примерно до 2.3 млн ответов в месяц (одна точка окупаемости L4); GPU
+  покупают ради закрытого контура или потолка задержки, а не ради цены.
+- У GPU-стороны пока нет `₽/answer`: пропускная способность на карте не измерена, так что окупаемость
+- деление, а не рекомендация.
+- Пакеты GigaChat в 5–8 раз дороже цены cloud.ru за токен у того же семейства; предоплаченные пакеты
+  сгорают ежемесячно, поэтому оплата по факту на cloud.ru дешевле на объёме пилота.
 
-## Exit criteria to leave `proposed`
+## Критерии выхода
 
-This ADR stays `proposed` until all four exist. Each one is a file or a signature, not an opinion:
+ADR остаётся `предложено`, пока не существует всех четырёх пунктов. Каждый — файл или подпись, а не
+мнение:
 
-1. A written offer per candidate: currency, VAT, price validity term, price-change clause.
-2. `make eval` green on the chosen profile, with a measurement file under `docs/measurements/`
-   naming the commit and the model.
-3. A load test on one GPU, if the GPU option survives the money argument, giving a real
-   `₽/answer` and a `p95` beside the managed profile.
-4. An errand of processing signed for the service, not just for the cloud that hosts it.
+1. Коммерческое предложение по каждому кандидату: валюта, НДС, срок действия цены, условие её
+   изменения.
+2. `make eval` зелёный на выбранном профиле, с файлом измерения в `docs/measurements/`, где названы
+   коммит и модель.
+3. Нагрузочный тест на одном GPU, если GPU-вариант переживёт денежный аргумент: настоящий
+   `₽/answer` и `p95` рядом с облачным профилем.
+4. Поручение обработки, подписанное на сервис, а не только на облако, которое его размещает.
 
-## Alternatives
+## Альтернативы
 
-- Stay on OpenRouter — rejected for real data: the host and the vendors are outside Russia.
-- One vendor for everything including OCR — not needed: the OCR already runs locally on CPU.
+- Остаться на OpenRouter — отклонено для настоящих записей о сотрудниках: и хост, и вендоры вне России.
+- Один вендор на всё, включая OCR — не нужно: OCR уже работает локально на CPU.

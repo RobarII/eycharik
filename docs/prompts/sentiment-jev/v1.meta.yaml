@@ -6,7 +6,8 @@ max_tokens: 0
 supersedes: null
 eval: null
 notes: >
-  Rubric for the TypeSafe Jev classifier. The model and its envelope live in
-  apps/api/model-profiles/classify/, so this file is wording only. One choice question for the tone and nine yes/no questions
-  for the tags; the risk level and the escalation decision still come from core/risk.py. The
-  keyword classifier remains the fallback, so an outage lowers precision, never availability.
+  Рубрика для классификатора TypeSafe Jev. Модель и её обвязка живут в
+  apps/api/model-profiles/classify/, так что здесь только формулировки. Один вопрос с выбором для
+  тона и девять вопросов да/нет для тегов; уровень риска и решение об эскалации по-прежнему
+  приходят из core/risk.py. Классификатор по ключевым словам остаётся запасным, поэтому сбой
+  снижает точность, но не доступность.

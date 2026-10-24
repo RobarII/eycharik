@@ -1,99 +1,91 @@
-# MAX Bot API contract
+---
+title: Контракт MAX Bot API
+summary: Какие факты MAX Bot API использует интеграция и откуда каждый из них взят.
+kind: контракт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Everything the integration relies on, with the source of each fact. If MAX changes a field, this
-file changes in the same commit as the adapter.
+# Контракт MAX Bot API
 
-Source: <https://dev.max.ru/docs-api> (read 2026-10-23).
+Всё, на что опирается интеграция, с источником каждого факта. Если MAX меняет поле, этот файл меняется тем же коммитом, что и адаптер.
 
-## Connection
+Источник: <https://dev.max.ru/docs-api> (прочитано 2026-10-23).
 
-| Fact | Value |
+## Подключение
+
+| Факт | Значение |
 |---|---|
-| Base URL | `https://platform-api2.max.ru` (not `platform-api.max.ru`) |
-| Auth | header `Authorization: <access_token>`; query-parameter tokens are no longer supported |
-| Content type | `application/json` |
-| TLS | trusted public CAs and the Russian Ministry of Digital Development root CA; self-signed is rejected |
-| Token source | bot settings on the platform, or the "MAX для бизнеса" bot |
+| Базовый URL | `https://platform-api2.max.ru` (не `platform-api.max.ru`) |
+| Аутентификация | заголовок `Authorization: <access_token>`; токены в параметре запроса больше не поддерживаются |
+| Тип содержимого | `application/json` |
+| TLS | доверенные публичные УЦ и корневой УЦ Минцифры России; самоподписанный отклоняется |
+| Источник токена | настройки бота на платформе или бот «MAX для бизнеса» |
 
-The Russian root CA is not in the default Python trust store. `MAX_CA_BUNDLE` points the adapter at
-a PEM file; when it is unset the adapter uses the default `httpx` verification.
+Русского корневого УЦ нет в стандартном хранилище доверия Python. `MAX_CA_BUNDLE` указывает адаптеру на PEM-файл; когда переменная не задана, адаптер использует стандартную проверку `httpx`.
 
-## Endpoints the adapter implements
+## Эндпоинты, которые реализует адаптер
 
-| Method | Path | Purpose | Used by |
+| Метод | Путь | Назначение | Кто использует |
 |---|---|---|---|
-| `POST` | `/messages?chat_id={id}` | send a message | dispatcher |
-| `PUT` | `/messages/{messageId}` | edit a message | adapter only, unused today |
-| `POST` | `/uploads?type=image` | reserve a media upload URL | `MaxClient` before the first image |
-| `POST` | `{upload_url}` | upload image bytes as multipart | `MaxClient` before the first image |
-| `POST` | `/subscriptions` | register the webhook | `onboarding.cli subscribe` |
-| `GET` | `/me` | bot identity | adapter only, unused today |
+| `POST` | `/messages?chat_id={id}` | отправить сообщение | диспетчер |
+| `PUT` | `/messages/{messageId}` | править сообщение | только адаптер, сегодня не используется |
+| `POST` | `/uploads?type=image` | зарезервировать URL загрузки медиа | `MaxClient` перед первым изображением |
+| `POST` | `{upload_url}` | загрузить байты изображения как multipart | `MaxClient` перед первым изображением |
+| `POST` | `/subscriptions` | зарегистрировать вебхук | `onboarding.cli subscribe` |
+| `GET` | `/me` | идентичность бота | только адаптер, сегодня не используется |
 
-`POST /messages` body: `text` ≤ 4000 characters, `attachments` with `inline_keyboard` and/or
-`image`, optional `link` for a reply. `format` is omitted; the copy is plain text.
+Тело `POST /messages`: `text` ≤ 4000 символов, `attachments` с `inline_keyboard` и/или `image`, необязательный `link` для ответа. `format` не передаётся; текст простой.
 
-## Images
+## Изображения
 
-Source: <https://dev.max.ru/docs-api/use-cases/sending-messages/media> and
-<https://dev.max.ru/docs-api/methods/POST/uploads> (read 2026-10-23).
+Источник: <https://dev.max.ru/docs-api/use-cases/sending-messages/media> и <https://dev.max.ru/docs-api/methods/POST/uploads> (прочитано 2026-10-23).
 
-| Fact | Value |
+| Факт | Значение |
 |---|---|
-| Upload | `POST /uploads?type=image` returns `url` and optionally `token` |
-| Bytes | `POST` the returned `url` with `Content-Type: multipart/form-data`, one file in `data` |
-| Token | live answer (2026-10-24): `{"photos": {"0": {"token": "..."}}}`. Docs describe `photos.photoIds.token`; the adapter accepts that, `photos.photos[].token`, any other `photos` entry with a `token`, and a top-level `token` |
-| Message | `{"type": "image", "payload": {"token": "..."}}` in `attachments` |
-| Reuse | one token maps to one uploaded file and may be reused for later messages |
-| Processing | `400 attachment.not.ready` means the file is not processed yet; retry with backoff |
-| Limits | JPG, JPEG, PNG, GIF, TIFF, BMP, HEIC; at most 50 MB and 7680 × 7680 px; at most 12 images per message |
-| URL alternative | `{"type": "image", "payload": {"url": "https://..."}}` exists, but the adapter uses tokens because external hosting can disappear |
+| Загрузка | `POST /uploads?type=image` возвращает `url` и, возможно, `token` |
+| Байты | `POST` на полученный `url` с `Content-Type: multipart/form-data`, один файл в `data` |
+| Токен | живой ответ (2026-10-24): `{"photos": {"0": {"token": "..."}}}`. Документация описывает `photos.photoIds.token`; адаптер принимает это, `photos.photos[].token`, любую другую запись `photos` с `token` и `token` верхнего уровня |
+| Сообщение | `{"type": "image", "payload": {"token": "..."}}` в `attachments` |
+| Переиспользование | один токен соответствует одному загруженному файлу и годится для следующих сообщений |
+| Обработка | `400 attachment.not.ready` значит, что файл ещё не обработан; повторить с backoff |
+| Лимиты | JPG, JPEG, PNG, GIF, TIFF, BMP, HEIC; не больше 50 MB и 7680 × 7680 px; не больше 12 изображений в сообщении |
+| Альтернатива по URL | `{"type": "image", "payload": {"url": "https://..."}}` существует, но адаптер использует токены, потому что внешний хостинг может исчезнуть |
 
-The adapter uploads each bundled asset once per process and caches the token by asset name. A
-restart uploads again; the token itself is reusable, but persisting it would add a cache table for
-no product value at this scale.
+Адаптер загружает каждый упакованный ресурс один раз за процесс и кеширует токен по имени ресурса. Перезапуск загружает заново; сам токен переиспользуем, но его сохранение добавило бы таблицу кеша без продуктовой ценности на таком масштабе.
 
-## Webhook
+## Вебхук
 
-| Fact | Value |
+| Факт | Значение |
 |---|---|
-| Route | `POST /webhook/max` on our side |
-| Method | `HTTPS POST`, port 443 only, no port in the URL |
-| Secret header | `X-Max-Bot-Api-Secret`, compared in constant time |
-| Secret value | at least 5 characters; shorter is rejected with `400 proto.payload`, `Field 'secret' does not match required pattern` (measured 2026-10-24) |
-| Empty secret | `503`, so a misconfigured deployment fails loudly instead of accepting unsigned calls |
-| Acknowledgement | `200` within 30 seconds, anything else is a delivery failure |
-| Retries | up to 10, exponential: 60 s, 150 s, 375 s, … |
-| Give-up | after 8 hours without a success the bot unsubscribes |
-| Long polling | disabled while a webhook subscription is active |
-| Body limit | 1 MB; larger bodies answer `413` before parsing |
+| Роут | `POST /webhook/max` на нашей стороне |
+| Метод | `HTTPS POST`, только порт 443, порта в URL нет |
+| Заголовок секрета | `X-Max-Bot-Api-Secret`, сравнивается за постоянное время |
+| Значение секрета | не меньше 5 символов; короче отклоняется с `400 proto.payload`, `Field 'secret' does not match required pattern` (измерено 2026-10-24) |
+| Пустой секрет | `503`, чтобы неверно настроенный деплой падал громко, а не принимал неподписанные вызовы |
+| Подтверждение | `200` в течение 30 секунд, всё остальное — сбой доставки |
+| Повторы | до 10, экспоненциально: 60 с, 150 с, 375 с, … |
+| Отказ | после 8 часов без успеха бот отписывается |
+| Длинный опрос | отключён, пока активна подписка на вебхук |
+| Лимит тела | 1 MB; тела больше отвечают `413` до разбора |
 
-## Update object
+## Объект update
 
-Fields we depend on: `update_type`, `timestamp` (ms), `chat_id`, `user`, `message`.
+Поля, на которые мы опираемся: `update_type`, `timestamp` (ms), `chat_id`, `user`, `message`.
 
-`parse_update` returns `None` for an update without a chat or sender; the route acknowledges and
-ignores it. A `bot_started` update creates a run with the `EMPLOYEE_CREATED` event. `message_created`
-becomes `MessageReceived`; `message_callback` becomes `ButtonPressed`; a callback payload with an
-unknown shape keeps its raw button id instead of raising. Unrecognised update types are
-acknowledged and dropped, so an upstream addition cannot break delivery.
+`parse_update` возвращает `None` для update без чата или отправителя; роут подтверждает такой update и игнорирует. Update `bot_started` создаёт прогон с событием `EMPLOYEE_CREATED`. `message_created` становится `MessageReceived`; `message_callback` становится `ButtonPressed`; payload колбэка неизвестной формы сохраняет свой сырой id кнопки вместо исключения. Нераспознанные типы update подтверждаются и отбрасываются, так что добавление на стороне провайдера не может сломать доставку.
 
-The `subscribe` command defaults to `message_created,bot_started`. `update_types()` in the adapter
-also lists `message_callback` and `bot_stopped`; add them to the subscription when the scenario
-starts using callback buttons.
+Команда `subscribe` по умолчанию берёт `message_created,bot_started`. `update_types()` в адаптере перечисляет ещё `message_callback` и `bot_stopped`; добавьте их в подписку, когда сценарий начнёт использовать кнопки-колбэки.
 
-## Limits and pacing
+## Лимиты и темп
 
-- At most two messages per second to one dialog. `MaxClient` paces per `chat_id` with an in-process
-  monotonic clock. One dispatcher process owns sending; a second sender would double the rate, so
-  run one worker replica.
-- One message text is at most 4000 characters; longer answers are split at sentence boundaries.
-- Inline keyboards support up to 210 buttons in 30 rows; the product uses at most 3 rows of 3.
+- Не больше двух сообщений в секунду в один диалог. `MaxClient` держит темп по `chat_id` на монотонных часах процесса. Отправкой владеет один процесс диспетчера; второй отправитель удвоил бы частоту, поэтому запускайте одну реплику воркера.
+- Текст одного сообщения — не больше 4000 символов; длинные ответы режутся по границам предложений.
+- Инлайн-клавиатуры держат до 210 кнопок в 30 рядах; продукт использует не больше 3 рядов по 3.
 
-## Known gaps
+## Известные пробелы
 
-- The exact `message_callback` body is not pinned by an example in the docs we read. The parser is
-  defensive until a real payload is captured in `apps/api/tests/`.
-- Outbound images use the documented two-step upload. Incoming files are still not accepted: the
-  documents scenario explains where to send them; it does not accept them in the chat.
-- `bot_stopped` is parsed as a no-op. Unsubscribing a newcomer is a product decision that has not
-  been made.
+- Точное тело `message_callback` не закреплено примером в прочитанной документации. Парсер защитный, пока в `apps/api/tests/` не снят настоящий payload.
+- Исходящие изображения идут документированной двухшаговой загрузкой. Входящие файлы по-прежнему не принимаются: сценарий документов объясняет, куда их отправить, но в чате он их не принимает.
+- `bot_stopped` разбирается как no-op. Отписка новичка — продуктовое решение, которое не принято.

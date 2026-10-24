@@ -1,30 +1,39 @@
-# <YYYY-MM-DD> — <one-line title>
+---
+title: Шаблон инцидента
+summary: Какие поля обязательны в записи об инциденте и в каком порядке их заполнять.
+kind: инцидент
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- **Severity**: `<SEV1 | SEV2 | SEV3>`
-- **Duration**: `<start> – <end> UTC`
-- **Impact**: `<who was affected and how>`
-- **Detection**: `<metric or alert>`
+# <ГГГГ-ММ-ДД> — <заголовок в одну строку>
 
-## Timeline
+- **Уровень**: `<SEV1 | SEV2 | SEV3>`
+- **Длительность**: `<начало> – <конец> UTC`
+- **Влияние**: `<кого затронуло и как>`
+- **Обнаружение**: `<метрика или алерт>`
 
-| Time (UTC) | Event |
+## Таймлайн
+
+| Время (UTC) | Событие |
 |---|---|
-| 00:00 |  |
+| 00:00 | |
 
-## Root cause
+## Причина
 
-One paragraph. The cause, not the symptom.
+Один абзац. Причина, а не симптом.
 
-## Fix
+## Исправление
 
-What changed, with the commit.
+Что изменилось, с коммитом.
 
-## Proof
+## Доказательство
 
-The test, metric, or runbook step that shows the failure cannot repeat.
+Тест, метрика или шаг ранбука, который показывает, что сбой не повторится.
 
-## Follow-ups
+## Дальнейшие шаги
 
-| Action | Owner | Due |
+| Действие | Владелец | Срок |
 |---|---|---|
-|  |  |  |
+| | | |

@@ -1,47 +1,55 @@
-# 2026-10-24 — A database from the feature branch could not be upgraded by `main`
+---
+title: 2026-10-24 — база из feature-ветки не поднималась
+summary: Инцидент с расходящимися линиями ревизий alembic — симптом, причина, исправление и доказательство.
+kind: инцидент
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- **Severity**: `SEV3` — local and staging only; no customer traffic, no data lost
-- **Duration**: `2026-10-24 12:05 – 12:35 UTC`
-- **Impact**: the worker on `main` started and immediately failed every outbound lease. The API
-  answered `200` to webhooks and the scenario advanced, so the visible symptom was silence in the
-  messengers plus `pending` rows, not an error.
-- **Detection**: the worker log, not a metric: `asyncpg.exceptions.UndefinedColumnError: column
+# 2026-10-24 — База из feature-ветки не поднималась в `main`
+
+- **Уровень**: `SEV3` — только локально и на стейджинге; трафика клиентов нет, данные не потеряны
+- **Длительность**: `2026-10-24 12:05 – 12:35 UTC`
+- **Влияние**: воркер на `main` стартовал и сразу валил каждую исходящую аренду. `api` отвечал
+  `200` на вебхуки, сценарий двигался, поэтому видимый симптом — тишина в мессенджерах и строки
+  `pending`, а не ошибка.
+- **Обнаружение**: лог воркера, не метрика: `asyncpg.exceptions.UndefinedColumnError: column
   messages.image does not exist`
 
-## Timeline
+## Таймлайн
 
-| Time (UTC) | Event |
+| Время (UTC) | Событие |
 |---|---|
-| 12:05 | `feat/multi-channel` merged into `main`; the worker restarted from `main` |
-| 12:08 | First outbound lease failed with `column messages.image does not exist` |
-| 12:15 | `alembic upgrade head` refused: `Can't locate revision identified by '0011_channel_address'` |
-| 12:25 | Migrations compared: same body, different ids (`0011_channel_address` on the branch, `0014_channel_address` on `main`) |
-| 12:35 | Stamp re-anchored to `0010_messages_retention`, `upgrade head` applied `0011`–`0014`, worker restarted and delivered |
+| 12:05 | `feat/multi-channel` влит в `main`; воркер перезапущен с `main` |
+| 12:08 | Первая исходящая аренда упала с `column messages.image does not exist` |
+| 12:15 | `alembic upgrade head` отказался: `Can't locate revision identified by '0011_channel_address'` |
+| 12:25 | Миграции сравнили: одно тело, разные id (`0011_channel_address` в ветке, `0014_channel_address` в `main`) |
+| 12:35 | Метка переставлена на `0010_messages_retention`, `upgrade head` применил ревизии с `0011` по `0014`, воркер перезапущен и доставил |
 
-## Root cause
+## Причина
 
-Two branches added a migration each and both numbered it from their own predecessor. The branch
-named its channel migration `0011`; `main` had meanwhile used `0011`–`0013` for an image column, an
-index state table and a question owner, and named the same channel migration `0014`. A database
-stamped by the branch therefore points at a revision that does not exist in `main`'s history, and
-alembic refuses to move at all — so none of `main`'s three missing migrations were applied either.
+Две ветки добавили по миграции и обе пронумеровали её от своего предшественника. Ветка назвала
+свою миграцию канала `0011`; в `main` тем временем ревизии с `0011` по `0013` ушли на колонку изображения,
+таблицу состояния индекса и владельца вопроса, а та же миграция канала получила имя `0014`. База,
+помеченная веткой, указывает на ревизию, которой нет в истории `main`, и alembic отказывается
+двигаться вовсе — поэтому не применились и три недостающие миграции `main`.
 
-## Fix
+## Исправление
 
-`docs/runbooks/migrate.md`, section «A database from a feature branch». The two migrations were
-compared before anything moved: identical bodies, and every step guards with an inspector, so the
-later one is a no-op on a schema that already has its columns. The stamp was re-anchored to the last
-common revision and `alembic upgrade head` applied the rest.
+`docs/runbooks/migrate.md`, раздел «База из feature-ветки». Миграции сравнили до того, как что-то
+двигать: тела идентичны, и каждый шаг защищён инспектором, поэтому поздняя на готовой схеме ничего
+не делает. Метку переставили на последнюю общую ревизию, остальное применил `alembic upgrade head`.
 
-## Proof
+## Доказательство
 
-`scripts/channel_smoke.py` completed 48/48 on the migrated database, both channel directions
-(`docs/measurements/2026-10-24-cross-channel-move.md`), and the verification query in the runbook
-returns both `image` and `channel`.
+`scripts/channel_smoke.py` прошёл 48/48 на мигрированной базе, в обе стороны канала
+(`docs/measurements/2026-10-24-cross-channel-move.md`), и проверочный запрос из ранбука возвращает и
+`image`, и `channel`.
 
-## Follow-ups
+## Дальнейшие шаги
 
-| Action | Owner | Due |
+| Действие | Владелец | Срок |
 |---|---|---|
-| Check `alembic heads` inside the pre-merge checklist, not after | whoever merges | next merge |
-| Make the worker log a failing lease at `warning`, not only the traceback | platform | next sprint |
+| Проверять `alembic heads` в чек-листе перед мержем, а не после | тот, кто мержит | следующий мерж |
+| Логировать упавшую аренду в воркере на `warning`, а не только трейсбеком | платформа | следующий спринт |

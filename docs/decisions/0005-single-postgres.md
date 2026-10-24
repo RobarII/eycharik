@@ -1,28 +1,29 @@
-# 0005: One Postgres for state, vectors, queue, and outbox
+---
+title: Один Postgres для состояния, векторов, очереди и outbox
+summary: Почему состояние прогонов, очередь, outbox и векторы живут в одной базе и где её потолок.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0005 — Один Postgres для состояния, векторов, очереди и outbox
 
-## Context
+## Контекст
 
-The workload is hundreds of employees, tens of questions per hour, and one team of two to five
-people. Every additional stateful service costs a day of setup, a failure mode, and a backup
-policy.
+Нагрузка — сотни сотрудников, десятки вопросов в час и команда из двух-пяти человек. Каждый дополнительный stateful-сервис стоит день настройки, режим отказа и политику бэкапов.
 
-## Decision
+## Решение
 
-Postgres with `pgvector` holds run state, the job queue, the outbox, knowledge chunks, audit
-rows, and vectors. Jobs use `SELECT … FOR UPDATE SKIP LOCKED`. Timers are outbox rows, not memory
-timers.
+Postgres с `pgvector` хранит состояние прогонов, очередь задач, `outbox`, фрагменты базы знаний, строки аудита и векторы. Задачи забираются через `SELECT … FOR UPDATE SKIP LOCKED`. Таймеры — строки `outbox`, не таймеры в памяти.
 
-## Consequences
+## Последствия
 
-- One backup, one migration path, one connection string.
-- Vector search and lexical search filter in the same transaction as the ACL check.
-- Throughput ceiling is a single primary; measured headroom is documented, not assumed.
-- If the queue outgrows Postgres, the port stays and the implementation changes. The boundary is
-  `ports.py`, so this is a later decision, not a rewrite.
+- Один бэкап, один путь миграций, одна строка подключения.
+- Векторный и лексический поиск фильтруют в той же транзакции, что проверка ACL.
+- Потолок пропускной способности — один primary; запас измерен и задокументирован, а не предположен.
+- Если очередь перерастёт Postgres, порт останется, реализация сменится. Граница — `ports.py`, так что это позднейшее решение, а не переписывание.
 
-## Alternatives
+## Альтернативы
 
-Redis for the queue — rejected: no durability for in-flight timers by default, plus a second
-store. Dedicated vector database — rejected: the corpus is a few thousand chunks.
+Redis для очереди — отклонено: по умолчанию нет долговечности таймеров в полёте, плюс второе хранилище. Отдельная векторная база — отклонено: корпус — несколько тысяч фрагментов.

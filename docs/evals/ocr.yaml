@@ -1,12 +1,12 @@
-# OCR cases for `make eval-ocr`.
+# OCR-кейсы для `make eval-ocr`.
 #
-# Each case is rendered into a page with a known font, so the reference text is exact and the
-# measurement needs no committed images. A clean render is a floor for the engine: it says whether
-# recognition and the gate work, not how a photograph of a printed regulation behaves.
+# Каждый кейс рендерится в страницу известным шрифтом, поэтому эталонный текст точный, а замеру не
+# нужны картинки в репозитории. Чистый рендер — нижняя планка для движка: он говорит, работают ли
+# распознавание и гейт, а не как ведёт себя фотография печатного регламента.
 #
-# kind:   clean (the only kind today; a case records how it is rendered)
-# expect: accepted | rejected (+ reason, one of core.models.RejectionReason)
-# lang:   the profile language; the case is skipped when the active profile reads another one.
+# kind:   clean (пока единственный вид; кейс фиксирует, как он отрендерен)
+# expect: accepted | rejected (+ reason, один из core.models.RejectionReason)
+# lang:   язык профиля; кейс пропускается, если активный профиль читает другой.
 
 - id: clean-regulation
   kind: clean
@@ -38,8 +38,8 @@
     Почта: hr@example.ru
     Кабинет: 314, третий этаж
 
-# A lone word: the detector finds no text region at all, so the page is refused as empty. Either
-# reason is a refusal, and the point of the case is that nothing reaches the corpus.
+# Одно слово: детектор не находит ни одной текстовой области, поэтому страница отклоняется как
+# пустая. Любая из причин — отказ, и суть кейса в том, что в корпус ничего не попадает.
 - id: single-word
   kind: clean
   lang: ru

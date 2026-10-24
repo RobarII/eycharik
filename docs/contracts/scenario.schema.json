@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moshackathon.local/contracts/scenario.schema.json",
-  "title": "Scenario",
+  "title": "Сценарий",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -43,7 +43,7 @@
         "type": "string",
         "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
       },
-      "description": "Production sites this scenario serves. A run pins the scenario chosen for the employee's site."
+      "description": "Площадки, которые обслуживает сценарий. Прогон закрепляет сценарий, выбранный для площадки сотрудника."
     }
   },
   "$defs": {
@@ -81,7 +81,7 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*\\.(jpg|jpeg|png)$",
           "maxLength": 80,
-          "description": "Bundled image asset sent with the step message, for example `welcome.jpg`."
+          "description": "Встроенный файл картинки, уходит вместе с сообщением шага, например `welcome.jpg`."
         },
         "informal_message": {
           "type": "string",

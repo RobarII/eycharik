@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moshackathon.local/contracts/model-profile.schema.json",
   "title": "ModelProfile",
-  "description": "One model, described as data. Files live in apps/api/model-profiles/<role>/<name>.yaml and are selected by LLM_PROFILE, EMBED_PROFILE, and RERANK_PROFILE. The role decides which fields exist: a field that does not apply to the role is rejected, not ignored.",
+  "description": "Одна модель, описанная данными. Файлы лежат в apps/api/model-profiles/<role>/<name>.yaml и выбираются через LLM_PROFILE, EMBED_PROFILE и RERANK_PROFILE. Роль решает, какие поля есть: поле, не подходящее роли, отклоняется, а не игнорируется.",
   "oneOf": [
     {
       "title": "AnswerProfile",
@@ -37,12 +37,12 @@
         },
         "json_mode": {
           "type": "boolean",
-          "description": "Honour response_format=json_object."
+          "description": "Учитывать response_format=json_object."
         },
         "max_tokens_field": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$",
-          "description": "Some providers want max_completion_tokens instead of max_tokens."
+          "description": "Некоторые провайдеры хотят max_completion_tokens вместо max_tokens."
         },
         "reasoning_effort": {
           "enum": [
@@ -74,7 +74,7 @@
         },
         "retry_empty_completion": {
           "type": "boolean",
-          "description": "Retry a 200 with empty content instead of escalating it."
+          "description": "Повторять 200 с пустым содержимым, а не эскалировать."
         },
         "price_input_rub_per_1k": {
           "type": "number",
@@ -87,7 +87,7 @@
         "price_cache_read_rub_per_1k": {
           "type": "number",
           "minimum": 0,
-          "description": "Cached prompt tokens, billed by some providers at a lower rate. Reported by usage.prompt_tokens_details.cached_tokens."
+          "description": "Кэшированные токены промпта, часть провайдеров считает их дешевле. Приходят в usage.prompt_tokens_details.cached_tokens."
         }
       }
     },
@@ -128,7 +128,7 @@
           "type": "integer",
           "minimum": 8,
           "maximum": 4096,
-          "description": "Vector width. It must equal kb_chunks.embedding; a change is a migration."
+          "description": "Ширина вектора. Должна совпадать с kb_chunks.embedding; смена — миграция."
         },
         "timeout_s": {
           "type": "number",
@@ -138,7 +138,7 @@
         "dimensions_param": {
           "type": "boolean",
           "default": false,
-          "description": "Send the requested width as a `dimensions` field: Matryoshka models answer shorter vectors, so a 4096-wide model can fill the frozen 1024-wide column without a migration."
+          "description": "Передавать запрошенную ширину полем `dimensions`: модели Matryoshka отвечают короткими векторами, поэтому модель на 4096 заполняет замороженную колонку на 1024 без миграции."
         }
       }
     },
@@ -178,7 +178,7 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 120,
-          "description": "The whole call, all retries included: a dead classifier costs one timeout, not one per attempt."
+          "description": "Весь вызов, все повторы включены: мёртвый классификатор стоит один таймаут, а не по одному на попытку."
         },
         "max_retries": {
           "type": "integer",
@@ -188,7 +188,7 @@
         "price_input_rub_per_1k": {
           "type": "number",
           "minimum": 0,
-          "description": "Jev bills input tokens only; a classify profile has no output price."
+          "description": "Jev берёт деньги только за входные токены; у профиля classify нет цены выхода."
         }
       }
     },
@@ -224,13 +224,13 @@
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 120,
-          "description": "One attempt. A reranker outage keeps the hybrid order, so an attempt is bounded and not fatal."
+          "description": "Одна попытка. Сбой переранжировщика оставляет гибридный порядок, поэтому попытка ограничена и не фатальна."
         },
         "deadline_s": {
           "type": "number",
           "exclusiveMinimum": 0,
           "maximum": 300,
-          "description": "The whole stage, retries and backoff included. A free endpoint answers 429 in bursts; retries must not spend more of the user's wait than the ranking is worth."
+          "description": "Весь этап, повторы и backoff включены. Бесплатный эндпоинт отвечает 429 пачками; повторы не должны тратить больше ожидания пользователя, чем стоит переранжирование."
         }
       }
     }
@@ -239,17 +239,17 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9._-]*$",
-      "description": "Matches the file stem, so a measurement can name exactly what ran."
+      "description": "Совпадает с именем файла без расширения, поэтому измерение называет ровно то, что работало."
     },
     "model": {
       "type": "string",
       "minLength": 1,
-      "description": "Identifier sent to the provider."
+      "description": "Идентификатор, который уходит провайдеру."
     },
     "rubric": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9._-]*@[1-9][0-9]*$",
-      "description": "The rubric this classifier reads, as <name>@<version>; validated by contracts/jev-rubric.schema.json."
+      "description": "Рубрика, которую читает классификатор, в виде <name>@<version>; проверяется по contracts/jev-rubric.schema.json."
     },
     "description": {
       "type": "string",

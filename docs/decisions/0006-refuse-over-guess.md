@@ -1,29 +1,31 @@
-# 0006: Refuse over guess
+---
+title: Лучше отказать, чем угадать
+summary: Почему ответ без цитаты на найденный фрагмент заменяется эскалацией, а не уходит сотруднику.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Status: accepted. Date: 2026-10-23.
+# 0006 — Лучше отказать, чем угадать
 
-## Context
+## Контекст
 
-A wrong answer about vacation days, benefits, or probation is worse than no answer: the employee
-acts on it, and HR learns about it later. Model confidence is not evidence. The cost of a wrong
-answer is asymmetric, while the cost of an escalation is a few minutes of HR time.
+Неверный ответ про дни отпуска, льготы или испытательный срок хуже отсутствия ответа: сотрудник действует по нему, а HR узнаёт позже. Уверенность модели — не доказательство. Цена ошибки асимметрична, цена эскалации — несколько минут времени HR.
 
-## Decision
+## Решение
 
-An answer is sent only if every citation refers to a chunk that was actually retrieved for that
-question. If the model answers without a citation, cites an unseen chunk, or reports confidence
-below the threshold, the answer is replaced by an escalation with the reason and the transcript.
+Ответ уходит, только если каждая цитата ссылается на фрагмент, найденный для этого вопроса. Если модель отвечает без цитаты, цитирует невиденный фрагмент или сообщает уверенность ниже порога, ответ заменяется эскалацией с причиной и стенограммой.
 
-The grounding check is deterministic code, not a second model call.
+Проверка обоснованности — детерминированный код, а не второй вызов модели.
 
-## Consequences
+## Последствия
 
-- Some answerable questions escalate; measured by `escalation_rate` and reviewed weekly.
-- The refusal text is part of the product voice and is written in `answer-policy.md`.
-- Escalated questions feed the knowledge backlog: the top unanswered questions become documents.
-- The model is never the authority on whether its own answer is grounded.
+- Часть вопросов с ответом уходит в эскалацию; это измеряет `escalation_rate`, ревью еженедельно.
+- Текст отказа — часть голоса продукта, он написан в `answer-policy.md`.
+- Эскалированные вопросы питают бэклог знаний: топ неотвеченных становится документами.
+- Модель никогда не решает, обоснован ли её собственный ответ.
 
-## Alternatives
+## Альтернативы
 
-LLM-as-judge on every answer — rejected: doubles latency and cost, and shares the failure mode.
-Showing the answer with a disclaimer — rejected: people act on confident text, not on disclaimers.
+LLM-судья на каждый ответ — отклонено: удваивает задержку и стоимость и делит тот же режим отказа. Показать ответ с дисклеймером — отклонено: люди действуют по уверенному тексту, а не по дисклеймерам.

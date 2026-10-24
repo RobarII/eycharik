@@ -1,45 +1,43 @@
-# Admin API contract
+---
+title: Контракт admin API
+summary: Какие роуты отдаёт admin API, какие права нужны и какой формы ответы получает кабинет.
+kind: контракт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The recruiter cabinet reads this API. The bot never calls it.
+# Контракт admin API
 
-## Base path
+Кабинет рекрутёра читает этот API. Бот его не вызывает.
 
-Every route lives under `/admin/api/v1`. The prefix is the version of the wire format: an
-incompatible change is a new prefix with both answering for one release, never a silent edit of
-this one (ADR 0024).
+## Базовый путь
 
-The unversioned `/admin/api` alias answers the same routes for a client that has not shipped the
-new path yet. It is deliberately absent from `/openapi.json`: it is a compatibility window, not a
-second contract, and it is removed once the cabinet has moved.
+Каждый роут живёт под `/admin/api/v1`. Префикс — версия формата обмена: несовместимая правка получает новый префикс, и оба отвечают один релиз; тихая правка текущего не допускается (ADR 0024).
 
-## Authentication
+Неверсионированный алиас `/admin/api` отвечает теми же роутами клиенту, который ещё не выпустил новый путь. В `/openapi.json` его намеренно нет: это окно совместимости, а не второй контракт, и оно исчезает, когда кабинет переедет.
 
-`Authorization: Bearer <token>`. Tokens are configured in `ADMIN_TOKENS` as
-`token:role:subject[:YYYY-MM-DD][:scope]` entries:
+## Аутентификация
+
+`Authorization: Bearer <token>`. Токены заданы в `ADMIN_TOKENS` записями `token:role:subject[:YYYY-MM-DD][:scope]`:
 
 ```
 ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-manager-token:manager:ИТ,dev-hr-token:hr_admin:hr-1:2030-12-31
 ```
 
-The optional fourth field is the last valid day; the token expires at `00:00` UTC of the next day.
-Omitting it is allowed for a local demo, not for a deployment. A token entry with a duplicate token
-or a malformed date refuses to start the process. The optional fifth field narrows the scope
-explicitly (`recruiter=rec-1`, `department=ИТ`); ADR 0024 records why it exists and what a missing
-field falls back to.
+Четвёртое поле необязательное: последний день действия. Токен истекает в `00:00` UTC следующего дня. Пропускать поле можно для локальной демонстрации, не для деплоя. Запись с повторным токеном или битой датой не даёт процессу запуститься. Пятое поле явно сужает скоуп (`recruiter=rec-1`, `department=ИТ`); почему оно есть и на что опирается отсутствующее поле — в ADR 0024.
 
-| Role | Scope |
+| Роль | Скоуп |
 |---|---|
-| `recruiter` | employees whose `recruiter_id` equals the token's subject |
-| `manager` | employees of one department: the token's subject is the department name |
-| `hr_admin` | every employee and every question |
+| `recruiter` | сотрудники, у которых `recruiter_id` равен subject токена |
+| `manager` | сотрудники одного подразделения: subject токена — имя подразделения |
+| `hr_admin` | каждый сотрудник и каждый вопрос |
 
-A token is compared in constant time. An unknown, missing or expired token answers `401`; ten
-failed attempts from one peer within a minute answer `429` for the next minute. A run outside the
-caller's scope answers `404`, so the existence of another recruiter's employee is not disclosed.
+Токен сравнивается за постоянное время. Неизвестный, отсутствующий или просроченный токен отвечает `401`; десять неудачных попыток с одного узла за минуту дают `429` на следующую минуту. Прогон вне скоупа вызывающего отвечает `404`, чтобы не раскрывать существование сотрудника другого рекрутёра.
 
-### Session cookie
+### Кука сессии
 
-The cabinet never stores the token in script-reachable storage. It trades it once:
+Кабинет никогда не кладёт токен в хранилище, доступное скриптам. Он обменивает его один раз:
 
 ```http
 POST /admin/api/session
@@ -48,44 +46,40 @@ Content-Type: application/json
 {"token": "dev-recruiter-token"}
 ```
 
-`204` with `Set-Cookie: onboarding_session=<token>; HttpOnly; SameSite=Strict; Path=/admin/api;
-Max-Age=43200`, plus `Secure` outside `local`. Every later request may authenticate with that cookie
-alone. `DELETE /admin/api/session` clears it and needs no valid token. The `Authorization` header
-stays accepted and wins over the cookie when both are present; `docs/decisions/0018` records why the
-cookie exists at all.
+`204` с `Set-Cookie: onboarding_session=<token>; HttpOnly; SameSite=Strict; Path=/admin/api; Max-Age=43200`, плюс `Secure` вне `local`. Каждый следующий запрос может аутентифицироваться одной этой кукой. `DELETE /admin/api/session` очищает её и не требует валидного токена. Заголовок `Authorization` по-прежнему принимается и выигрывает у куки, когда есть оба; почему кука вообще существует — в `docs/decisions/0018`.
 
-## Endpoints
+## Эндпоинты
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| `GET` | `/admin/api/v1/me` | the caller's role, scope, capabilities and token expiry |
-| `POST` | `/admin/api/v1/session` | trade a bearer token for an HttpOnly session cookie |
-| `DELETE` | `/admin/api/v1/session` | clear the session cookie |
-| `GET` | `/admin/api/v1/runs?limit=50&cursor=&status=all&q=` | runs, newest activity first, paged; `status` is `active`, `completed` or `all`, `q` searches name, role, department and employee id |
-| `GET` | `/admin/api/v1/runs/{run_id}` | one run: step, step text, audit events, recent questions |
-| `GET` | `/admin/api/v1/questions?status=unanswered&limit=50&cursor=&assignee=any` | questions by status: `unanswered`, `answered`, `all`, paged; `assignee` is `any`, `me` or `unassigned` |
-| `PATCH` | `/admin/api/v1/questions/{question_id}/assignee` | claim an open question, hand it to another admin, or clear the owner |
-| `POST` | `/admin/api/v1/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
-| `GET` | `/admin/api/v1/employees?limit=50&cursor=&status=all&q=` | the directory, newest first, paged; `status` is `active`, `left` or `all`, `q` searches id, name, role and department |
-| `GET` | `/admin/api/v1/employees/{employee_id}` | one person, with the messenger accounts linked to them |
-| `POST` | `/admin/api/v1/employees` | HR adds a hire; the id is the one the company already uses |
-| `PATCH` | `/admin/api/v1/employees/{employee_id}` | HR corrects a row, or restores a person who has left with `{"status": "active"}` |
-| `POST` | `/admin/api/v1/employees/bulk` | HR upserts a batch from an HRIS, keyed by `employee_id` |
-| `POST` | `/admin/api/v1/identities` | HR links one messenger account (channel + external id) to an employee; nothing else lets a stranger in |
-| `DELETE` | `/admin/api/v1/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
-| `GET` | `/admin/api/v1/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
-| `GET` | `/admin/api/v1/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
-| `GET` | `/admin/api/v1/knowledge?limit=100` | active knowledge documents, newest first; `hr_only` is hidden from every non-HR role |
-| `GET` | `/admin/api/v1/knowledge/{document_id:path}` | one active document with its source markdown; `hr_only` is a `404` for a non-HR role |
-| `POST` | `/admin/api/v1/knowledge` | HR uploads one markdown document; stored by content hash and queued for indexing |
-| `PUT` | `/admin/api/v1/knowledge/{document_id:path}` | HR replaces one document's markdown; the id must stay the same and re-indexing is queued |
-| `POST` | `/admin/api/v1/knowledge/files` | HR uploads a PDF or a deck; stored by content hash and queued for extraction |
-| `GET` | `/admin/api/v1/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |
-| `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
+| `GET` | `/admin/api/v1/me` | роль, скоуп, возможности и срок токена вызывающего |
+| `POST` | `/admin/api/v1/session` | обменять bearer-токен на HttpOnly-куку сессии |
+| `DELETE` | `/admin/api/v1/session` | очистить куку сессии |
+| `GET` | `/admin/api/v1/runs?limit=50&cursor=&status=all&q=` | прогоны, сначала новая активность, постранично; `status` — `active`, `completed` или `all`, `q` ищет по имени, роли, подразделению и id сотрудника |
+| `GET` | `/admin/api/v1/runs/{run_id}` | один прогон: шаг, текст шага, события аудита, свежие вопросы |
+| `GET` | `/admin/api/v1/questions?status=unanswered&limit=50&cursor=&assignee=any` | вопросы по статусу: `unanswered`, `answered`, `all`, постранично; `assignee` — `any`, `me` или `unassigned` |
+| `PATCH` | `/admin/api/v1/questions/{question_id}/assignee` | взять открытый вопрос, передать его другому администратору или снять владельца |
+| `POST` | `/admin/api/v1/questions/{question_id}/resolve` | ответить на эскалированный вопрос в MAX и закрыть его |
+| `GET` | `/admin/api/v1/employees?limit=50&cursor=&status=all&q=` | справочник, сначала новые, постранично; `status` — `active`, `left` или `all`, `q` ищет по id, имени, роли и подразделению |
+| `GET` | `/admin/api/v1/employees/{employee_id}` | один человек вместе с привязанными к нему аккаунтами мессенджеров |
+| `POST` | `/admin/api/v1/employees` | HR добавляет новичка; id — тот, что компания уже использует |
+| `PATCH` | `/admin/api/v1/employees/{employee_id}` | HR правит строку или возвращает ушедшего человека через `{"status": "active"}` |
+| `POST` | `/admin/api/v1/employees/bulk` | HR делает upsert пачки из HRIS по ключу `employee_id` |
+| `POST` | `/admin/api/v1/identities` | HR привязывает один аккаунт мессенджера (канал плюс внешний id) к сотруднику; больше ничто не пускает чужого |
+| `DELETE` | `/admin/api/v1/employees/{employee_id}` | HR снимает сотрудника с онбординга: останавливает прогон, удаляет стенограмму и сообщения в очереди |
+| `GET` | `/admin/api/v1/analytics/overview` | счётчики за семь дней: прогоны, уровни риска, вопросы без ответа, частые теги риска |
+| `GET` | `/admin/api/v1/digest/weekly?days=7` | сигналы, которым нужен человек, строка на сотрудника и шаг |
+| `GET` | `/admin/api/v1/knowledge?limit=100` | активные документы базы знаний, сначала новые; `hr_only` скрыт от каждой не-HR роли |
+| `GET` | `/admin/api/v1/knowledge/{document_id:path}` | один активный документ с исходным markdown; `hr_only` отдаёт `404` не-HR роли |
+| `POST` | `/admin/api/v1/knowledge` | HR загружает один markdown-документ; хранится по хешу содержимого и ставится в очередь на индексацию |
+| `PUT` | `/admin/api/v1/knowledge/{document_id:path}` | HR заменяет markdown одного документа; id должен остаться тем же, переиндексация ставится в очередь |
+| `POST` | `/admin/api/v1/knowledge/files` | HR загружает PDF или презентацию; хранится по хешу содержимого и ставится в очередь на извлечение |
+| `GET` | `/admin/api/v1/knowledge/files/{content_hash}` | что извлечение решило об этом файле, включая отказы |
+| `GET` | `/healthz`, `/readyz` | живучесть и готовность, без аутентификации |
 
-## Paging
+## Пагинация
 
-`limit` is bounded to `1..200`. `GET /runs` and `GET /questions` are keyset-paged:
+`limit` ограничен диапазоном `1..200`. `GET /runs` и `GET /questions` листаются ключом:
 
 ```json
 {
@@ -95,25 +89,19 @@ cookie exists at all.
 }
 ```
 
-- `next_cursor` is `null` on the last page. Pass it back as `cursor=` to get the next one.
-- The cursor is opaque: base64url of the last row's sort key. A client must not build or parse one,
-  and the server is free to change the key. A malformed cursor answers `400`, never a partial page.
-- `total` counts the whole caller scope, not the page: it is what the cabinet prints in a header.
-- Paging is keyset, not offset. A run that moves while a recruiter reads page one cannot shift a row
-  from page two into a hole, and cannot duplicate one either.
-- Runs are ordered by `updated_at` descending, then id: newest activity first. Questions are ordered
-  unanswered first, then `asked_at` descending, then id.
+- `next_cursor` равен `null` на последней странице. Верните его как `cursor=`, чтобы получить следующую.
+- Курсор непрозрачен: base64url ключа сортировки последней строки. Клиент не собирает и не разбирает курсор; менять ключ сервер вправе. Битый курсор отвечает `400`, никогда не частичной страницей.
+- `total` считает весь скоуп вызывающего, а не страницу: его кабинет печатает в заголовке.
+- Листание идёт по ключу, не по смещению. Прогон, сдвинувшийся, пока рекрутёр читает первую страницу, не выронит строку со второй страницы в дыру и не продублирует её.
+- Прогоны упорядочены по `updated_at` по убыванию, затем по id: сначала новая активность. Вопросы упорядочены так: сначала без ответа, затем по `asked_at` по убыванию, затем по id.
 
-Without a cursor the server answers the newest `limit` rows, so a client that ignores paging still
-gets a valid page.
+Без курсора сервер отдаёт новейшие `limit` строк, так что клиент, игнорирующий пагинацию, всё равно получает валидную страницу.
 
-`status` and `q` narrow the same statement the cursor pages through, and `total` counts the filtered
-scope. A client must not filter a fetched page instead: that silently hides every match after the
-first `limit` rows. `q` is a case-insensitive substring match; `%` and `_` are literal.
+`status` и `q` сужают тот же запрос, по которому листает курсор, и `total` считает отфильтрованный скоуп. Фильтровать уже полученную страницу нельзя: так тихо скрывается каждое совпадение после первых `limit` строк. `q` — поиск подстроки без учёта регистра; `%` и `_` совпадают как обычные символы.
 
-## Identity and capabilities
+## Идентичность и возможности
 
-`GET /admin/api/me` answers the same principal the token maps to:
+`GET /admin/api/me` отдаёт того же принципала, в которого отображается токен:
 
 ```json
 {
@@ -132,27 +120,24 @@ first `limit` rows. `q` is a case-insensitive substring match; `%` and `_` are l
 }
 ```
 
-The cabinet renders actions from `capabilities`, not from a guess about the token. A capability the
-server does not grant must never become a button that fails with `403`.
+Кабинет рисует действия из `capabilities`, а не из догадки о токене. Возможность, которую сервер не выдаёт, не должна становиться кнопкой, падающей с `403`.
 
-| Capability | `recruiter` | `manager` | `hr_admin` |
+| Возможность | `recruiter` | `manager` | `hr_admin` |
 |---|---|---|---|
-| `runs.read` | yes | yes | yes |
-| `questions.read` | yes | yes | yes |
-| `questions.resolve` | yes | yes | yes |
-| `questions.assign` | yes | yes | yes |
-| `knowledge.read` | yes | yes | yes |
-| `employees.read` | yes | yes | yes |
-| `analytics.read` | yes | yes | yes |
-| `knowledge.write` | no | no | yes |
-| `employees.write` | no | no | yes |
-| `employees.offboard` | no | no | yes |
+| `runs.read` | да | да | да |
+| `questions.read` | да | да | да |
+| `questions.resolve` | да | да | да |
+| `questions.assign` | да | да | да |
+| `knowledge.read` | да | да | да |
+| `employees.read` | да | да | да |
+| `analytics.read` | да | да | да |
+| `knowledge.write` | нет | нет | да |
+| `employees.write` | нет | нет | да |
+| `employees.offboard` | нет | нет | да |
 
-A capability is a rendering hint, never an authorisation. Every endpoint re-checks its own rule, so
-a forged capability changes the buttons and nothing else. `expires_at` is `null` only when the token
-entry omits the date field, which is allowed for a local demo and not for a deployment.
+Возможность — подсказка для отрисовки, никогда не авторизация. Каждый эндпоинт заново проверяет своё правило, поэтому подделанная возможность меняет кнопки и ничего больше. `expires_at` равен `null` только когда запись токена опускает поле даты, что допустимо для локальной демонстрации и недопустимо для деплоя.
 
-## Shapes
+## Формы
 
 `RunSummary`:
 
@@ -173,17 +158,11 @@ entry omits the date field, which is allowed for a local demo and not for a depl
 }
 ```
 
-`entered_at` is the first day of the run; `updated_at` is the last activity and the field the list is
-sorted by. A card that says "N days in the scenario" reads `entered_at`; a card that says "last seen"
-reads `updated_at`.
+`entered_at` — первый день прогона; `updated_at` — последняя активность и поле, по которому сортируется список. Карточка «N дней в сценарии» читает `entered_at`; карточка «последняя активность» читает `updated_at`.
 
-`step_title` is `null` when the pinned scenario version cannot be loaded or the step id is not in
-it; the cabinet falls back to `step_id`. `step_number` is 1-based and `0` when the step is unknown.
+`step_title` равен `null`, когда закреплённую версию сценария не удаётся загрузить или шага с таким id в ней нет; тогда кабинет откатывается на `step_id`. `step_number` считается с 1 и равен `0`, когда шаг неизвестен.
 
-`RunDetail` extends `RunSummary` with `scenario`, `scenario_version`, `tone`, `step_message`,
-`events`, and `questions`. `tone` is `formal` or `informal` and comes from the welcome choice,
-pinned on the run like the scenario version. Its questions are only that employee's, limited to the
-newest 20.
+`RunDetail` расширяет `RunSummary` полями `scenario`, `scenario_version`, `tone`, `step_message`, `events` и `questions`. `tone` — `formal` или `informal`, из выбора в приветствии, закреплённого на прогоне так же, как версия сценария. Вопросы в нём только этого сотрудника, не больше 20 свежих.
 
 `Employee`:
 
@@ -204,34 +183,19 @@ newest 20.
 }
 ```
 
-`EmployeeList` is `{items, next_cursor, total}`; a list item carries `channels: []` because the
-directory does not pay one query per row. Ask for the person to see their links.
+`EmployeeList` — `{items, next_cursor, total}`; элемент списка несёт `channels: []`, потому что справочник не платит по запросу на строку. Чтобы увидеть привязки, запросите человека.
 
-`employee_id` is an opaque company id: it arrives from an HR system, it is not minted here, and the
-server stores it verbatim. `started_at` is the first working day, which is what the scenario timer
-counts from. `audience` is the retrieval vocabulary the documents declare (`all`, `hr_only`, or
-`dept:<name>`); a free-form string is refused with `422` because it would look accepted and match
-nothing. `scenario_id` must be a deployed scenario in this release, otherwise `422`
-`unknown_scenario`: creating a hire whose first message could never be sent is worse than refusing.
+`employee_id` — непрозрачный id компании: он приходит из HR-системы, здесь не выдаётся, и сервер хранит его дословно. `started_at` — первый рабочий день, от него считает таймер сценария. `audience` — словарь поиска, который объявляют документы (`all`, `hr_only` или `dept:<name>`); свободная строка отклоняется с `422`, потому что выглядела бы принятой и не совпала бы ни с чем. `scenario_id` должен называть сценарий, развёрнутый в этом релизе, иначе `422` `unknown_scenario`: создать новичка, первое сообщение которому никогда не уйдёт, хуже отказа.
 
-`EmployeeCreate` is the writable half of that object, and `extra` fields are refused rather than
-dropped, so an HRIS typo fails loudly. `PATCH` takes any subset:
+`EmployeeCreate` — записываемая половина этого объекта, а `extra`-поля отклоняются, не отбрасываются: опечатка в HRIS падает громко. `PATCH` принимает любое подмножество:
 
 ```json
 {"name": "Анна С.", "audience": ["all"], "recruiter_id": null}
 ```
 
-`{"status": "active"}` restores a person who has left and clears `left_at`. Leaving is **not** a
-patch: it is `DELETE`, which must close the run and purge the transcript in the same transaction.
-A restore keeps that purge; the person comes back with no links and no history, which is the honest
-consequence of a deletion. `{"status": "left"}` is refused: use `DELETE`.
+`{"status": "active"}` возвращает ушедшего человека и очищает `left_at`. Уход — не patch: это `DELETE`, который обязан закрыть прогон и вычистить стенограмму в той же транзакции. Восстановление сохраняет эту чистку: человек возвращается без привязок и без истории, и это честное следствие удаления. `{"status": "left"}` отклоняется: используйте `DELETE`.
 
-`POST /employees/bulk` takes `{"employees": [EmployeeCreate, ...]}`, at most 500 rows, and answers
-`{"created": 2, "updated": 0}`. Every row is keyed by `employee_id`, so the same batch sent twice
-writes the same rows. The upsert corrects the directory fields and deliberately leaves `status` and
-`left_at` alone: an HRIS export that still lists someone who has left must not undo an offboarding
-that purged their transcript. A repeated `employee_id` inside one batch is `422`, not a silent
-last-one-wins.
+`POST /employees/bulk` принимает `{"employees": [EmployeeCreate, ...]}`, не больше 500 строк, и отвечает `{"created": 2, "updated": 0}`. Каждая строка ключуется по `employee_id`, так что одна пачка, отправленная дважды, пишет те же строки. Upsert правит поля справочника и намеренно не трогает `status` и `left_at`: выгрузка из HRIS, где всё ещё числится ушедший, не должна откатывать снятие, которое вычистило стенограмму. Повтор `employee_id` внутри одной пачки — `422`, а не тихое «побеждает последний».
 
 `Question`:
 
@@ -251,27 +215,17 @@ last-one-wins.
 }
 ```
 
-`assignee` is the admin subject that picked the question up, or `null` when nobody has. It is a
-claim, not an authorisation: the resolver still checks the scope, and a claim never prevents a
-colleague from answering.
+`assignee` — subject администратора, который взял вопрос, или `null`, когда не взял никто. Это заявка, не авторизация: резолвер всё равно проверяет скоуп, и заявка никогда не мешает коллеге ответить.
 
-`PATCH /admin/api/questions/{question_id}/assignee` takes `{"assignee": "rec-1"}` or
-`{"assignee": null}` and answers `200` with the new owner:
+`PATCH /admin/api/questions/{question_id}/assignee` принимает `{"assignee": "rec-1"}` или `{"assignee": null}` и отвечает `200` с новым владельцем:
 
 ```json
 { "id": 42, "employee_id": "1001", "assignee": "rec-1" }
 ```
 
-The name must be the subject of a configured admin token; anything else answers `422`
-`"assignee is not an admin"`, so a typo cannot invent a queue nobody can filter. The question must
-be open and inside the caller's scope: `404` when it is not visible, `409` when it is already
-resolved. Both the claim and the release write an audit event (`question_assigned` or
-`question_unassigned`) with the question id, the employee id, the new owner and the actor.
-`assignee=me` resolves to the caller's own subject on the server; the cabinet never substitutes a
-name client-side.
+Имя должно быть subject настроенного админского токена; всё прочее отвечает `422` `"assignee is not an admin"`, так что опечатка не может изобрести очередь, которую никто не отфильтрует. Вопрос должен быть открыт и внутри скоупа вызывающего: `404`, когда он не виден, `409`, когда уже решён. И взятие, и снятие пишут событие аудита (`question_assigned` или `question_unassigned`) с id вопроса, id сотрудника, новым владельцем и актором. `assignee=me` раскрывается в subject самого вызывающего на сервере; кабинет никогда не подставляет имя на клиенте.
 
-`POST /admin/api/questions/{question_id}/resolve` takes `{"text": "до 2000 символов"}` and answers
-`200` with the closed question:
+`POST /admin/api/questions/{question_id}/resolve` принимает `{"text": "до 2000 символов"}` и отвечает `200` с закрытым вопросом:
 
 ```json
 {
@@ -283,11 +237,7 @@ name client-side.
 }
 ```
 
-The reply is written to the outbox in the same transaction that closes the question, so MAX
-delivery keeps its pacing and at-least-once retries. The audit log gets `question_resolved` with
-the question id, the employee id, the actor, and the reply length — never the reply text. A
-question outside the caller's scope answers `404`; resolving an already closed question answers
-`409`. `text` is stripped; an empty reply answers `422`.
+Ответ пишется в outbox в той же транзакции, что закрывает вопрос: так отправка через MAX сохраняет свой темп и повторы at-least-once. В журнал аудита попадает `question_resolved` с id вопроса, id сотрудника, актором и длиной ответа — никогда сам текст ответа. Вопрос вне скоупа вызывающего отвечает `404`; решение уже закрытого вопроса — `409`. `text` обрезается по краям; пустой ответ отвечает `422`.
 
 `AnalyticsOverview`:
 
@@ -304,28 +254,17 @@ question outside the caller's scope answers `404`; resolving an already closed q
 }
 ```
 
-The counts cover the window that starts at `since` and come from the audit log, not from a
-materialised table. `unanswered_questions` is a live queue size; `resolved_questions` counts replies
-a recruiter sent inside the window. A wrong number must be traceable to events.
+Счётчики покрывают окно, начинающееся с `since`, и берутся из журнала аудита, а не из материализованной таблицы. `unanswered_questions` — текущий размер очереди; `resolved_questions` считает ответы, которые рекрутёр отправил внутри окна. Неверное число должно прослеживаться до событий.
 
-`POST /admin/api/identities` is HR-only and idempotent. The body is one link:
+`POST /admin/api/identities` доступен только HR и идемпотентен. Тело — одна привязка:
 
 ```json
 {"channel": "telegram", "external_id": "222", "employee_id": "1001"}
 ```
 
-`channel` is one of `max`, `telegram`, `vk`; `external_id` is the messenger's own user id, which is
-what the inbound adapter reads. An unknown employee answers `404`; a known pair answers `204` and
-rebinding the account to another employee replaces the link. This route exists because the access
-gate is a company fact: an unlinked account is acknowledged by the webhook and audited as
-`unlinked_channel_user`, and receives nothing (ADR 0019).
+`channel` — один из `max`, `telegram`, `vk`; `external_id` — собственный id пользователя в мессенджере, его и читает входной адаптер. Неизвестный сотрудник отвечает `404`; известная пара отвечает `204`, а перепривязка аккаунта к другому сотруднику заменяет привязку. Роут существует, потому что пропуск — факт компании: непривязанный аккаунт вебхук подтверждает и пишет в аудит как `unlinked_channel_user`, а в ответ не получает ничего (ADR 0019).
 
-`DELETE /admin/api/employees/{employee_id}` is HR-only; a recruiter or manager answers `403`. It
-marks the employee `left`, completes their active runs, deletes their channel identity links, deletes
-their question rows, deletes every
-outbox message for their chat (pending reminders and replies included), and strips the employee's
-own words from their audit rows. The employee row and the audit skeleton stay so counts remain
-traceable. A repeated call answers `200` with zero counts. The response is:
+`DELETE /admin/api/employees/{employee_id}` доступен только HR; рекрутёр или менеджер получает `403`. Роут помечает сотрудника как `left`, завершает его активные прогоны, удаляет привязки его каналов, удаляет строки его вопросов, удаляет каждое сообщение outbox для его чата (ожидающие напоминания и ответы включительно) и вычищает слова самого сотрудника из его строк аудита. Строка сотрудника и скелет аудита остаются, чтобы счётчики прослеживались. Повторный вызов отвечает `200` с нулевыми счётчиками. Ответ:
 
 ```json
 {
@@ -358,10 +297,7 @@ traceable. A repeated call answers `200` with zero counts. The response is:
 }
 ```
 
-Only `high` and `medium` levels appear. `reasons` and `tags` are the classifier's short phrases.
-`quote` is the employee's own words, truncated to 500 characters at write time and carried in the
-`risk_assessed` audit event as `evidence`; it is `null` for a pure scale signal, which has no text.
-A manager sees the same shape, scoped to one department.
+Появляются только уровни `high` и `medium`. `reasons` и `tags` — короткие фразы классификатора. `quote` — слова самого сотрудника, обрезанные до 500 символов при записи и перенесённые в событие аудита `risk_assessed` как `evidence`; он равен `null` для чистого сигнала шкалы, где текста нет. Менеджер видит ту же форму в скоупе одного подразделения.
 
 `KnowledgeDocument`:
 
@@ -378,7 +314,7 @@ A manager sees the same shape, scoped to one department.
 }
 ```
 
-`KnowledgeDocumentDetail` is the same shape plus the exact source markdown:
+`KnowledgeDocumentDetail` — та же форма плюс точный исходный markdown:
 
 ```json
 {
@@ -394,55 +330,34 @@ A manager sees the same shape, scoped to one department.
 }
 ```
 
-`text` is nullable: rows indexed before revision `0015_document_body` have no stored source until
-they are re-indexed. The cabinet says so and does not offer editing; it never reconstructs a
-document from chunks. Document ids contain slashes, so the route uses a path parameter:
-`GET /admin/api/v1/knowledge/hr/leave-policy`.
+`text` может быть `null`: у строк, проиндексированных до ревизии `0015_document_body`, нет сохранённого источника, пока их не переиндексируют. Кабинет так и говорит и не предлагает правку; он никогда не собирает документ заново из фрагментов. Id документов содержат слэши, поэтому роут использует path-параметр: `GET /admin/api/v1/knowledge/hr/leave-policy`.
 
-`POST /admin/api/knowledge` takes `{"text": "<markdown with frontmatter>"}` and answers `202`:
+`POST /admin/api/knowledge` принимает `{"text": "<markdown with frontmatter>"}` и отвечает `202`:
 
 ```json
 {"content_hash": "5f2c...e1", "status": "queued"}
 ```
 
-The frontmatter is validated against `docs/contracts/doc.schema.json` before anything is stored.
-An invalid document answers `422` with the exact field, for example
-`upload: owner: 'HR' does not match '^[a-z][a-z0-9_-]*$'`. Only `hr_admin` may upload; a recruiter
-or manager answers `403`. The bytes are content-addressed, the extraction row becomes `queued`, and
-an `index_document` job is enqueued in the same transaction. The worker embeds and writes the
-chunks; the cabinet polls `GET /admin/api/knowledge/files/{content_hash}` for the result. A
-successful acceptance is audited as `knowledge_queued` with the document id and the subject.
+Frontmatter проверяется по `docs/contracts/doc.schema.json` до того, как что-то сохранено. Невалидный документ отвечает `422` с точным полем, например `upload: owner: 'HR' does not match '^[a-z][a-z0-9_-]*$'`. Загружать может только `hr_admin`; рекрутёр или менеджер получает `403`. Байты адресуются содержимым, строка извлечения становится `queued`, и задача `index_document` ставится в очередь в той же транзакции. Воркер считает эмбеддинги и пишет фрагменты; кабинет опрашивает `GET /admin/api/knowledge/files/{content_hash}` за результатом. Успешный приём пишется в аудит как `knowledge_queued` с id документа и subject.
 
-`PUT /admin/api/v1/knowledge/{document_id}` takes the same `{"text": ...}` body and answers `202`
-with the same queued shape. The document must exist and be active (`404` otherwise); only
-`hr_admin` may edit (`403` otherwise); the frontmatter is validated exactly as on upload. The
-frontmatter `id` must equal the path id — an edit replaces one document instead of silently
-creating another. A successful edit is audited as `knowledge_updated`, and the old chunks remain
-retrievable until the worker replaces them atomically.
+`PUT /admin/api/v1/knowledge/{document_id}` принимает то же тело `{"text": ...}` и отвечает `202` с той же формой очереди. Документ должен существовать и быть активным (иначе `404`); править может только `hr_admin` (иначе `403`); frontmatter проверяется точно так же, как при загрузке. `id` во frontmatter должен совпадать с id в пути: правка заменяет один документ, а не тихо создаёт другой. Успешная правка пишется в аудит как `knowledge_updated`, а старые фрагменты остаются найденными, пока воркер не заменит их атомарно.
 
-### Files
+### Файлы
 
-`POST /admin/api/knowledge/files` is `multipart/form-data` with two parts:
+`POST /admin/api/knowledge/files` — `multipart/form-data` с двумя частями:
 
-- `file`: a PDF or a PPTX, at most `EXTRACTION_MAX_UPLOAD_BYTES` (default 25 MiB);
-- `metadata`: a JSON object with the document frontmatter (`id`, `title`, `type`, `status`,
-  `owner`, `audience`, `valid_from`, optional `valid_to`), validated against
-  [`doc.schema.json`](doc.schema.json) before anything is stored.
+- `file`: PDF или PPTX, не больше `EXTRACTION_MAX_UPLOAD_BYTES` (по умолчанию 25 MiB);
+- `metadata`: JSON-объект с frontmatter документа (`id`, `title`, `type`, `status`, `owner`, `audience`, `valid_from`, необязательный `valid_to`), проверяется по [`doc.schema.json`](doc.schema.json) до того, как что-то сохранено.
 
-The response is `202 Accepted`, because recognition takes seconds per page and the request path
-does not wait for it:
+Ответ — `202 Accepted`, потому что распознавание занимает секунды на страницу, а путь запроса его не ждёт:
 
 ```json
 {"content_hash": "5f2c...e1", "status": "queued"}
 ```
 
-`content_hash` is the SHA-256 of the bytes. It is the identity of the file: uploading the same bytes
-twice returns the same hash and queues no second job, so a recruiter can retry a flaky upload
-without paying for recognition twice. The file itself is a `kb_files` row; nothing is written to
-`knowledge/`, and nothing enters the corpus until extraction accepts it.
+`content_hash` — SHA-256 байтов. Это идентичность файла: загрузка тех же байтов дважды возвращает тот же хеш и не ставит вторую задачу, так что рекрутёр может повторить сбойную загрузку, не платя за распознавание дважды. Сам файл — строка `kb_files`; в `knowledge/` ничего не пишется, и в корпус ничего не попадает, пока извлечение не примет файл.
 
-`GET /admin/api/knowledge/files/{content_hash}` answers the newest extraction record for that file,
-whichever profile produced it:
+`GET /admin/api/knowledge/files/{content_hash}` отдаёт новейшую запись извлечения для этого файла, каким бы профилем она ни была сделана:
 
 ```json
 {
@@ -457,18 +372,13 @@ whichever profile produced it:
 }
 ```
 
-`status` is `queued`, `running`, `indexed`, or `rejected`. `route` is `native_text`, `ocr`, or
-`rejected`. A rejected file carries `reason` — `low_confidence`, `low_dpi`, `blurry`, `encrypted`,
-`no_pages`, `unsupported`, `unreadable`, `too_many_pages`, `too_short`, or `empty` — and
-`document_id` stays null. The upload transaction creates the `queued` row, so a poll immediately
-after `202` answers `200` with that state; an unknown hash answers `404`.
+`status` — `queued`, `running`, `indexed` или `rejected`. `route` — `native_text`, `ocr` или `rejected`. Отклонённый файл несёт `reason` — `low_confidence`, `low_dpi`, `blurry`, `encrypted`, `no_pages`, `unsupported`, `unreadable`, `too_many_pages`, `too_short` или `empty`, — и `document_id` остаётся null. Транзакция загрузки создаёт строку `queued`, так что опрос сразу после `202` отвечает `200` с этим состоянием; неизвестный хеш отвечает `404`.
 
-The status is the extraction's, not the file's: after a profile change the same file can hold one
-record per profile, and this endpoint reports the latest one.
+Статус принадлежит извлечению, а не файлу: после смены профиля у одного файла может быть по записи на профиль, и роут сообщает последнюю.
 
-## Errors
+## Ошибки
 
-Every failure answers the same object, whatever produced it:
+Каждый сбой отвечает одним и тем же объектом, что бы его ни породило:
 
 ```json
 {
@@ -478,44 +388,39 @@ Every failure answers the same object, whatever produced it:
 }
 ```
 
-`detail` is a sentence for a human and may change wording without notice. `code` is the stable
-name an integration branches on. `request_id` is the same id the request logged and the
-`X-Request-ID` header carries, so a support ticket names one log line without quoting a token.
-A caller may send its own `X-Request-ID`; the server echoes it only if it matches
-`[A-Za-z0-9._:-]{1,128}` and generates one otherwise.
+`detail` — фраза для человека, её формулировка может меняться без предупреждения. `code` — стабильное имя, по которому ветвится интеграция. `request_id` — тот же id, что записан в лог запроса и передан в заголовке `X-Request-ID`, так что тикет поддержки называет одну строку лога, не цитируя токен. Вызывающий может прислать свой `X-Request-ID`; сервер вернёт его, только если он совпадает с `[A-Za-z0-9._:-]{1,128}`, иначе сгенерирует свой.
 
-| `code` | Status | Meaning |
+| `code` | Статус | Значение |
 |---|---|---|
-| `bad_request` | 400 | the request cannot be read at all |
-| `unauthorized` | 401 | a secret is required, and none of the codes below fits |
-| `token_missing` | 401 | no `Authorization` header and no session cookie |
-| `token_unknown` | 401 | the presented secret belongs to no configured admin |
-| `token_expired` | 401 | the secret was issued for a window that has closed |
-| `bad_webhook_secret` | 401 | the messenger secret did not match |
-| `forbidden` | 403 | the role may not do this |
-| `not_found` | 404 | no such route or resource in the caller's scope |
-| `question_not_found` | 404 | the question is closed, deleted, or outside the scope |
-| `employee_not_found` | 404 | no employee with that id, or it is outside the caller's scope |
-| `unknown_channel` | 404 | the deployment does not serve that messenger |
-| `method_not_allowed` | 405 | the route exists, the verb does not |
-| `conflict` | 409 | the resource changed under the caller |
-| `question_already_resolved` | 409 | another recruiter closed the question first |
-| `employee_already_exists` | 409 | the directory already holds this id; `POST` is not an upsert |
-| `payload_too_large` | 413 | body or upload over the limit |
-| `upload_too_large` | 413 | the file is over `EXTRACTION_MAX_UPLOAD_BYTES` |
-| `unsupported_media_type` | 415 | not a PDF or a PPTX |
-| `validation_failed` | 422 | a field is missing or malformed; `errors` lists each one |
-| `unprocessable` | 422 | the request is well-formed but cannot be applied |
-| `unknown_assignee` | 422 | the requested owner holds no admin token |
-| `unknown_scenario` | 422 | `scenario_id` names a scenario this release does not deploy |
-| `knowledge_rejected` | 422 | the frontmatter violates `doc.schema.json` |
-| `rate_limited` | 429 | too many failed authentications from one peer |
-| `internal` | 500 | the server crashed; the text never echoes the exception |
-| `unavailable` | 503 | a dependency the request needs is down |
-| `channel_unavailable` | 503 | that messenger has no credentials |
+| `bad_request` | 400 | запрос не читается вообще |
+| `unauthorized` | 401 | нужен секрет, и ни один код ниже не подходит |
+| `token_missing` | 401 | нет заголовка `Authorization` и нет куки сессии |
+| `token_unknown` | 401 | предъявленный секрет не принадлежит ни одному настроенному администратору |
+| `token_expired` | 401 | секрет выдан на окно, которое закрылось |
+| `bad_webhook_secret` | 401 | секрет мессенджера не совпал |
+| `forbidden` | 403 | роль не может этого делать |
+| `not_found` | 404 | нет такого роута или ресурса в скоупе вызывающего |
+| `question_not_found` | 404 | вопрос закрыт, удалён или вне скоупа |
+| `employee_not_found` | 404 | сотрудника с таким id нет, или он вне скоупа вызывающего |
+| `unknown_channel` | 404 | деплой не обслуживает этот мессенджер |
+| `method_not_allowed` | 405 | роут есть, глагола нет |
+| `conflict` | 409 | ресурс изменился под вызывающим |
+| `question_already_resolved` | 409 | другой рекрутёр закрыл вопрос первым |
+| `employee_already_exists` | 409 | id уже есть в справочнике; `POST` не upsert |
+| `payload_too_large` | 413 | тело или загрузка сверх лимита |
+| `upload_too_large` | 413 | файл больше `EXTRACTION_MAX_UPLOAD_BYTES` |
+| `unsupported_media_type` | 415 | не PDF и не PPTX |
+| `validation_failed` | 422 | поле отсутствует или искажено; `errors` перечисляет каждое |
+| `unprocessable` | 422 | запрос корректен по форме, но неприменим |
+| `unknown_assignee` | 422 | у запрошенного владельца нет админского токена |
+| `unknown_scenario` | 422 | `scenario_id` называет сценарий, который этот релиз не разворачивает |
+| `knowledge_rejected` | 422 | frontmatter нарушает `doc.schema.json` |
+| `rate_limited` | 429 | слишком много неудачных аутентификаций с одного узла |
+| `internal` | 500 | сервер упал; текст никогда не повторяет исключение |
+| `unavailable` | 503 | зависимость, нужная запросу, недоступна |
+| `channel_unavailable` | 503 | у этого мессенджера нет реквизитов доступа |
 
-`validation_failed` adds an `errors` list, one entry per problem, in the shape FastAPI uses
-(`loc`, `message`, `type`), and its `detail` names the first field so a log line is readable:
+`validation_failed` добавляет список `errors`, по записи на проблему, в форме FastAPI (`loc`, `message`, `type`), а его `detail` называет первое поле, чтобы строка лога читалась:
 
 ```json
 {
@@ -526,18 +431,12 @@ A caller may send its own `X-Request-ID`; the server echoes it only if it matche
 }
 ```
 
-A new code is an additive change. A code that disappears or changes meaning is a `v2` change
-(ADR 0024). The cabinet shows the `detail` text and never guesses from the status code alone.
+Новый код — аддитивная правка. Код, который исчезает или меняет смысл, — правка `v2` (ADR 0024). Кабинет показывает текст `detail` и никогда не догадывается по одному коду статуса.
 
-## Rules
+## Правила
 
-- Mutations are the directory writes, the identity link, the question assignment and resolution,
-  the offboarding, and the knowledge uploads and edits. The cabinet never talks to MAX directly:
-  every outbound message is an outbox row.
-- A directory write names its actor in the audit log and never touches a run. Starting or restarting
-  a run is a scenario/timer decision, not a directory edit.
-- Only `hr_admin` may upload a file; a recruiter or manager answers `403`. A format other than PDF
-  or PPTX answers `415`, an oversized file `413`, invalid metadata `422` with the exact field.
-- Every answer attempt already writes an audit row and a question row; the cabinet does not
-  assemble them from logs.
-- Timestamps are UTC ISO 8601.
+- Мутации — это записи справочника, привязка идентичности, назначение и решение вопросов, снятие сотрудника, загрузки и правки базы знаний. Кабинет никогда не говорит с MAX напрямую: каждое исходящее сообщение — строка outbox.
+- Запись справочника называет своего актора в журнале аудита и никогда не трогает прогон. Запуск или перезапуск прогона — решение сценария и таймера, а не правка справочника.
+- Загружать файл может только `hr_admin`; рекрутёр или менеджер получает `403`. Формат не PDF и не PPTX отвечает `415`, слишком большой файл — `413`, невалидные метаданные — `422` с точным полем.
+- Каждая попытка ответа уже пишет строку аудита и строку вопроса; кабинет не собирает их из логов.
+- Отметки времени — UTC ISO 8601.

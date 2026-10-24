@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://moshackathon.local/contracts/sentiment.schema.json",
   "title": "SentimentSignal",
-  "description": "One classifier verdict for one free-text survey answer. The model returns this object; the worker validates it before anything is stored or escalated.",
+  "description": "Один вердикт классификатора по одному свободному ответу на опрос. Модель возвращает этот объект; воркер проверяет его до записи или эскалации.",
   "type": "object",
   "additionalProperties": false,
   "required": ["sentiment", "tags", "risk", "confidence", "reason"],
@@ -20,7 +20,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 200,
-      "description": "One short phrase for the recruiter. No names, no quotes longer than ten words."
+      "description": "Одна короткая фраза для рекрутёра. Без имён, без цитат длиннее десяти слов."
     },
     "escalate_to": {"enum": ["recruiter", "hr", "none"]}
   },

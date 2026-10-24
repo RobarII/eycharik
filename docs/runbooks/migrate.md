@@ -1,56 +1,65 @@
-# Runbook: database migration
+---
+title: Миграция базы
+summary: Правила правки схемы, проверка на черновой базе и вывод базы из чужой линии ревизий.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-## Rules
+# Прогон: миграция базы
 
-- Migrations are forward-only. A mistake is fixed by the next migration.
-- The baseline `0001_initial` creates the schema from the SQLAlchemy metadata. Later migrations
-  are hand-written and reviewed.
-- A migration that rewrites a large table is split: add, backfill, then switch reads.
-- `EMBED_DIM` is baked into the `kb_chunks.embedding` column and its HNSW index. Changing the
-  embedding model is a migration, not a configuration change.
+## Правила
 
-## Steps
+- Миграции только вперёд. Ошибку исправляет следующая миграция.
+- Базовая `0001_initial` создаёт схему из метаданных SQLAlchemy. Дальнейшие миграции пишутся руками
+  и проходят ревью.
+- Миграция, которая переписывает большую таблицу, делится: добавить, забэкфиллить, переключить
+  чтение.
+- `EMBED_DIM` зашит в колонку `kb_chunks.embedding` и её HNSW-индекс. Смена модели эмбеддингов — миграция, а не настройка.
 
-1. Write the revision under `apps/api/onboarding/migrations/versions/`.
-2. Apply it to a scratch database:
+## Шаги
 
-   ```bash
-   DATABASE_URL=postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding \
-     uv run alembic upgrade head
-   ```
+1. Напишите ревизию в `apps/api/onboarding/migrations/versions/`.
+2. Примените её к черновой базе:
 
-3. Run the integration suite against that database:
+```bash
+DATABASE_URL=postgresql+asyncpg://onboarding:onboarding@localhost:5432/onboarding \
+  uv run alembic upgrade head
+```
 
-   ```bash
-   ONBOARDING_TEST_DATABASE=<same url> uv run pytest -m integration
-   ```
+3. Прогоните интеграционный набор по этой базе:
 
-4. Run a backfill as a separate command, never inside the migration, when the table is large.
-5. Deploy the worker before the API if the migration changes a column the webhook reads.
+```bash
+ONBOARDING_TEST_DATABASE=<same url> uv run pytest -m integration
+```
 
-## Verification
+4. Запускайте бэкфилл отдельной командой, никогда внутри миграции, когда таблица большая.
+5. Выкатывайте воркер до `api`, если миграция меняет колонку, которую читает вебхук.
+
+## Проверка
 
 ```bash
 uv run alembic current
 uv run alembic upgrade head --sql | head    # review the SQL before applying
 ```
 
-`alembic check` is not used: the baseline reflects the metadata at its revision, and later
-migrations legitimately drift from it until autogenerate is re-baselined.
+`alembic check` не используется: базовая ревизия отражает метаданные на своём момент, а поздние
+миграции законно от него уходят, пока autogenerate не переразмечен.
 
-## A database from a feature branch
+## База из feature-ветки
 
-Two branches that both add a migration produce two histories, and the same change can be numbered
-differently on each. A database stamped by one of them cannot be upgraded by the other:
+Две ветки, каждая добавила по миграции, дают две истории, и одно и то же изменение может получить
+разные номера. Базу, помеченную одной из них, другая не поднимет:
 
 ```
 ERROR [alembic.util.messaging] Can't locate revision identified by '0011_channel_address'
 ```
 
-Here the branch added `channel_address` as `0011`; on `main` the same migration is `0014`, and
-`0011`–`0013` are a bundled image column, an index state table and a question owner. Do not delete
-rows from `alembic_version` and do not hand-edit the schema. Re-anchor the stamp to the last
-revision both histories agree on and let alembic apply the rest:
+Здесь ветка добавила `channel_address` как `0011`; в `main` та же миграция — `0014`, а ревизии с `0011` по `0013`
+ушли на колонку изображения, таблицу состояния индекса и владельца вопроса. Не удаляйте строки из
+`alembic_version` и не правьте схему руками. Переставьте метку на последнюю ревизию, с которой
+согласны обе истории, и дайте alembic применить остальное:
 
 ```bash
 # 1. What does the database claim, and what does this tree know? (the error above names the gap)
@@ -69,18 +78,18 @@ uv run alembic upgrade head
 docker exec $PG psql -U onboarding -d $DB -tAc 'select version_num from alembic_version'
 ```
 
-Then prove the schema the code needs exists, not just the stamp:
+Затем докажите, что схема, нужная коду, существует, а не только метка:
 
 ```sql
 select column_name from information_schema.columns
   where table_name = 'messages' and column_name in ('image', 'channel');
 ```
 
-A worker started before this point fails on the first outbound lease with
-`column messages.image does not exist` and keeps the row pending, so the symptom is silence, not a
-crash loop.
+Воркер, запущенный до этого момента, падает на первой исходящей аренде с
+`column messages.image does not exist` и держит строку в ожидании, поэтому симптом — тишина, а не
+цикл падений.
 
-## Rollback
+## Откат
 
-Not supported in production. If a migration is wrong, ship a corrective migration and record the
-incident.
+В продакшене не поддерживается. Если миграция неверна, выпустите исправляющую миграцию и запишите
+инцидент.

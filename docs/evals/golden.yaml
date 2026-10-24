@@ -1,4 +1,4 @@
-# Golden set. Escalation cases are as important as answerable ones.
+# Golden set. Кейсы с эскалацией так же важны, как отвечаемые.
 cases:
   - id: leave-days-first-year
     question: "Сколько дней отпуска положено в первый год?"
@@ -88,8 +88,8 @@ cases:
     expect_reason: out_of_scope
 
   - id: hr-only-sick-leave
-    # Asks for a fact that exists only in the hr_only document: how long HR has to pull the e-list
-    # out of СЭДО. The public notification document does not contain it.
+    # Просит факт, который есть только в документе hr_only: за сколько HR вытащит электронный лист
+    # из СЭДО. В публичном документе об уведомлении этого нет.
     question: "Сколько рабочих дней есть у HR, чтобы получить электронный лист из СЭДО?"
     audience: dept:it
     stratum: acl
@@ -222,7 +222,7 @@ cases:
     audience: all
     stratum: fact
     expect_docs: [hr/business-trip]
-    # The corpus says «в течение трёх рабочих дней»; the case checks the fact, not the inflection.
+    # В корпусе сказано «в течение трёх рабочих дней»; кейс проверяет факт, а не словоформу.
     expect_contains: ["рабочих дней"]
 
   - id: meals-compensation
@@ -965,8 +965,9 @@ cases:
     expect_contains: ["мастеру"]
 
   # --- волна 3: вопросам без ответа и деградировавшей формулировке тоже нужен дом ---
-  # An unanswerable case asserts only that the assistant refuses: the corpus holds no fact about
-  # a mortgage programme, hazard leave, or adoption, so any confident answer is a hallucination.
+  # Кейс без ответа утверждает только одно: ассистент отказывается. В корпусе нет факта ни про
+  # ипотечную программу, ни про отпуск за вредность, ни про усыновление, поэтому любой уверенный
+  # ответ — галлюцинация.
   - id: mortgage-support
     question: "Есть ли у компании ипотечная программа для сотрудников?"
     audience: all
@@ -985,8 +986,8 @@ cases:
     stratum: unanswerable
     expect_escalation: true
 
-  # Morphology: a typo and a scrambled phrase that keeps no keyword of the document. A lexical
-  # match is not allowed to be the reason this passes.
+  # Морфология: опечатка и переставленная фраза, где не осталось ни одного ключевого слова документа.
+  # Лексическое совпадение не должно быть причиной, по которой кейс проходит.
   - id: leave-days-typo
     question: "скалько дней отпуска паложено ф первый год?"
     audience: all

@@ -1,51 +1,60 @@
-# Runbook: model provider outage
+---
+title: Отказ провайдера моделей
+summary: Симптомы, разбор и действия, когда модель не отвечает, а бот должен жить.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-## Symptoms
+# Прогон: отказ провайдера моделей
 
-- Answers escalate with reason `unavailable` far above baseline.
-- `answer_unavailable` and `answer_rejected` rows appear in `audit_log`; `answer_completed`
-  rows keep appearing with `accepted = false`.
-- p95 answer latency approaches the timeout; the breaker opens and stays open.
+## Симптомы
 
-## Triage
+- Ответы уходят в эскалацию с причиной `unavailable` заметно выше базового уровня.
+- В `audit_log` появляются строки `answer_unavailable` и `answer_rejected`; строки
+  `answer_completed` продолжают появляться с `accepted = false`.
+- p95 задержки ответа подходит к таймауту; брейкер открывается и остаётся открытым.
 
-1. Call the provider directly with the configured key; do not trust the bot alone.
-2. Read the last `answer_unavailable` audit rows: they carry the prompt version and retrieval
-   size, never the key or the question text.
-3. Check the breaker: after `LLM_BREAKER_THRESHOLD` consecutive failures it opens for
-   `LLM_BREAKER_COOLDOWN_S` and the gateway fails fast without a request.
-4. Read the run's profile: `LLM_PROFILE` names the file, and the file states the model, the
-   capabilities, and the envelope. The answer guard is the same for every profile.
-5. If `SENTIMENT_PROVIDER=jev`, the classifier is on the same envelope: `CLASSIFY_PROFILE` names
-   its file, the same breaker covers it, and a dead endpoint costs one `timeout_s`, not one per
-   retry. Survey answers keep arriving and are labeled by `keyword_signal`; watch
-   `sentiment_fallback` with `provider=jev` in `audit_log` — a spike there is the classifier, not
-   the radar.
+## Разбор
 
-## Action
+1. Вызовите провайдера напрямую настроенным ключом; не верьте одному боту.
+2. Прочитайте последние строки аудита `answer_unavailable`: в них версия промпта и размер
+   найденного набора, но никогда ключ и текст вопроса.
+3. Проверьте брейкер: после `LLM_BREAKER_THRESHOLD` отказов подряд он открывается на
+   `LLM_BREAKER_COOLDOWN_S`, и шлюз падает быстро без запроса.
+4. Прочитайте профиль прогона: `LLM_PROFILE` называет файл, а файл задаёт модель, возможности и
+   конверт. Защита ответа одна для всех профилей.
+5. Если `SENTIMENT_PROVIDER=jev`, классификатор на том же конверте: `CLASSIFY_PROFILE` называет его
+   файл, тот же брейкер его покрывает, и мёртвый эндпоинт стоит одного `timeout_s`, а не одного на
+   каждую попытку. Ответы на опрос продолжают приходить и получают метку по `keyword_signal`;
+   следите за `sentiment_fallback` с `provider=jev` в `audit_log` — всплеск там значит
+   классификатор, не радар.
 
-| Situation | Action |
+## Действия
+
+| Ситуация | Действие |
 |---|---|
-| Provider 5xx or timeout | no action: one retry, then escalation with `unavailable` copy |
-| Breaker open, provider healthy again | wait for the cooldown; the next call probes and closes it |
-| Quota or billing | fail closed, alert the owner, never loop on a quota error |
-| Sustained provider outage | the bot keeps scenarios, reminders, and the cabinet working; answers escalate |
-| Wrong model id in a profile | edit `apps/api/model-profiles/answer/<name>.yaml`, run the tests, deploy |
-| Model too slow for the budget | switch `LLM_PROFILE` to a faster profile after `make eval` passes |
-| Model returns empty completions | set `retry_empty_completion` in the profile; if it persists, switch profiles (ADR 0010) |
-| Cost looks wrong | the profile owns the prices; an override is `LLM_PRICE_*`, and a real price change is a profile commit |
-| Classifier degraded to keywords | check `sentiment_fallback` reasons: `jev_unavailable` is the network, `jev_format` is the answer shape; the second one is a rubric/model defect, not an outage |
+| Провайдер отдаёт 5xx или таймаут | ничего: одна попытка повтора, потом эскалация с текстом `unavailable` |
+| Брейкер открыт, провайдер снова здоров | дождаться кулдауна; следующий вызов его проверит и закроет |
+| Квота или биллинг | падать закрыто, будить владельца, никогда не зацикливаться на ошибке квоты |
+| Долгий отказ провайдера | бот продолжает вести сценарии, напоминания и кабинет; ответы уходят в эскалацию |
+| Неверный id модели в профиле | поправить `apps/api/model-profiles/answer/<name>.yaml`, прогнать тесты, выкатить |
+| Модель слишком медленная для бюджета | переключить `LLM_PROFILE` на более быстрый профиль после зелёного `make eval` |
+| Модель возвращает пустые ответы | задать `retry_empty_completion` в профиле; если не помогает — сменить профиль (ADR 0010) |
+| Стоимость выглядит неправильной | цены живут в профиле; переопределение — `LLM_PRICE_*`, а реальная смена цены — коммит профиля |
+| Классификатор деградировал до ключевых слов | смотреть причины `sentiment_fallback`: `jev_unavailable` — сеть, `jev_format` — форма ответа; второе — дефект рубрики или модели, не отказ |
 
-The bot must never answer from model memory when retrieval or the provider is unavailable.
-Scenario steps and reminders keep working: they do not need the model.
+Бот не должен отвечать по памяти модели, когда поиск или провайдер недоступны. Шаги сценария и
+напоминания продолжают работать: модель им не нужна.
 
-## Recovery check
+## Проверка восстановления
 
-- New `answer_completed` audit rows appear with citations.
-- One golden question returns a cited answer; compare with `docs/evals/`.
-- Escalation rate returns to baseline within an hour.
+- Появляются новые строки аудита `answer_completed` с цитатами.
+- Один вопрос золотого набора возвращает ответ с цитатой; сверьте с `docs/evals/`.
+- Доля эскалаций возвращается к базовому уровню в течение часа.
 
-## After
+## После
 
-Write `docs/incidents/` with the timeline, the provider error text, and the change that prevents a
-repeat.
+Напишите в `docs/incidents/` таймлайн, текст ошибки провайдера и изменение, которое не даст
+повториться.

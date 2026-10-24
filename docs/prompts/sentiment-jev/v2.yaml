@@ -1,10 +1,10 @@
-# v2: the only change is tag_threshold, 0.5 -> 0.7. Chosen on the dev split from the raw noul
-# probabilities of 49 cases: precision 0.590 -> 0.754, recall unchanged at 0.767, tag F1
-# 0.667 -> 0.760. The wording is untouched, so v1 and v2 differ by one number.
+# v2: единственное изменение — tag_threshold, 0.5 -> 0.7. Выбран на dev-сплите по сырым
+# вероятностям noul на 49 кейсах: precision 0.590 -> 0.754, recall без изменений 0.767, tag F1
+# 0.667 -> 0.760. Формулировки не тронуты, поэтому v1 и v2 отличаются одним числом.
 version: 2
 name: sentiment-jev
-# The rubric is a prompt artifact: the questions below are the prompt. A wording change is a new
-# version plus an eval run, never an edit in place.
+# Рубрика — артефакт промпта: вопросы ниже и есть промпт. Правка формулировки — новая версия
+# плюс прогон eval, а не правка на месте.
 tag_threshold: 0.7
 max_tags: 3
 questions:

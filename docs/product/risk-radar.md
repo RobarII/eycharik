@@ -1,76 +1,88 @@
-# Risk radar
+---
+title: Риск-радар
+summary: Как свободные ответы становятся сигналами риска и когда рекрутёра поднимают.
+kind: продукт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The assistant does not only answer questions. Every free-text answer in a survey passes through a
-classifier, and the result becomes a signal the recruiter can act on before the employee writes a
-resignation letter.
+# Риск-радар
 
-## Pipeline
+Ассистент не только отвечает на вопросы. Каждый свободный ответ на опрос проходит через
+классификатор, и результат становится сигналом, по которому рекрутёр может действовать до того, как
+сотрудник напишет заявление.
+
+## Конвейер
 
 ```
 answer text ──▶ sentiment classifier ──▶ signals ──▶ risk rules ──▶ escalation │ digest
                  (prompt, versioned)     (core)      (core)         (worker)    (weekly)
 ```
 
-Two layers, on purpose:
+Два слоя, намеренно:
 
-1. **Classifier** — `docs/prompts/sentiment/v1.md`, one call per free-text answer, JSON per
-   `docs/contracts/sentiment.schema.json`. It labels sentiment, topics, confidence and a short
-   reason. It never decides about a person.
-2. **Rules** — `apps/api/onboarding/core/risk.py`. Pure functions over signals. Deterministic,
-   testable, explainable to HR. The same rules run on the keyword fallback, so a classifier outage
-   degrades the precision, not the safety net.
+1. **Классификатор** — `docs/prompts/sentiment/v1.md`, один вызов на свободный ответ, JSON по
+   `docs/contracts/sentiment.schema.json`. Он ставит тон, темы, уверенность и короткую причину. Про
+   человека он не решает.
+2. **Правила** — `apps/api/onboarding/core/risk.py`. Чистые функции над сигналами. Детерминированные,
+   тестируемые, объяснимые для HR. Те же правила работают на keyword-fallback, поэтому отказ
+   классификатора снижает точность, а не страховку.
 
-## Signals
+## Сигналы
 
-| Source | Signal |
+| Источник | Сигнал |
 |---|---|
-| scale answer below `low_threshold` | score and threshold, no words |
-| free-text answer | sentiment, up to three tags, confidence |
-| crisis wording (`увольн`, `конфликт`, `буллинг`, `зарплат` …) | keyword fallback and a hard floor under risk |
+| оценка по шкале ниже `low_threshold` | оценка и порог, слов нет |
+| свободный ответ | тон, до трёх тегов, уверенность |
+| кризисная лексика (`увольн`, `конфликт`, `буллинг`, `зарплат` …) | keyword-fallback и жёсткий пол под риском |
 
-Tags: `access`, `manager`, `colleagues`, `workload`, `clarity`, `hr`, `it`, `integration`, `other`.
+Теги: `access`, `manager`, `colleagues`, `workload`, `clarity`, `hr`, `it`, `integration`, `other`.
 
-## Rules
+Дефлексия — доля вопросов, закрытых без эскалации. Ради неё риск-радар и существует.
 
-| Condition | Level | Action |
+## Правила
+
+| Условие | Уровень | Действие |
 |---|---|---|
-| negative answer with a tag | `high` | escalate to the recruiter |
-| confident complaint (`confidence >= 0.5`) and a scale deficit | `high` | escalate |
-| crisis wording regardless of confidence | `high` | escalate |
-| score below the threshold, no words | `medium` | weekly digest |
-| classifier confidence below `0.5` | not worse than `medium` | digest, never a false alarm |
+| негативный ответ с тегом | `high` | эскалация рекрутёру |
+| уверенная жалоба (`confidence >= 0.5`) и дефицит по шкале | `high` | эскалация |
+| кризисная лексика независимо от уверенности | `high` | эскалация |
+| оценка ниже порога, слов нет | `medium` | недельный дайджест |
+| уверенность классификатора ниже `0.5` | не хуже `medium` | дайджест, никогда не ложная тревога |
 
-A single number cannot escalate on its own: a person may simply rate a day as a six out of ten.
-Escalation needs either words or a combination of signals.
+Одно число не может эскалировать само: человек может просто оценить день на шесть из десяти. Для
+эскалации нужны слова или сочетание сигналов.
 
-## What the recruiter sees
+## Что видит рекрутёр
 
-- `risk_assessed` and `risk_escalated` in the audit log, with step, level, score, tags and reasons.
-- The run card in the cockpit shows the current level and the answers behind it.
-- The weekly digest groups employees by level and tag, so a recruiter sees "three people cannot get
-  access" before reading three separate cards.
+- `risk_assessed` и `risk_escalated` в журнале аудита: шаг, уровень, оценка, теги и причины.
+- Карточка прогона в кабинете показывает текущий уровень и ответы, из которых он сложился.
+- Недельный дайджест группирует сотрудников по уровню и тегу, поэтому рекрутёр видит «три человека
+  не могут получить доступ», прежде чем прочитать три отдельные карточки.
 
-## Refusals
+## Ограничения
 
-The classifier sees personal text, so:
+Классификатор видит личный текст, поэтому:
 
-- the reason field is bounded to 200 characters and must not repeat names or long quotes;
-- signals are stored with the run, not in a separate profile;
-- the prompt is a versioned file, and a change needs an eval run in `docs/measurements/`.
+- поле причины ограничено 200 символами и не должно повторять имена и длинные цитаты;
+- сигналы хранятся вместе с прогоном, а не в отдельном профиле;
+- промпт — версионированный файл, и правка требует прогона оценки в `docs/measurements/`.
 
-## Failure modes
+## Отказы
 
-| Failure | Behaviour |
+| Отказ | Поведение |
 |---|---|
-| provider timeout or invalid JSON | keyword fallback, `risk_assessed` records `fallback` |
-| classifier says `low` but crisis words are present | keyword floor raises the level |
-| confidence below `0.5` | capped at `medium`, goes to the digest |
-| repeated escalation for one run | worker sends at most one message per level per run |
+| таймаут провайдера или битый JSON | keyword-fallback, `risk_assessed` пишет `fallback` |
+| классификатор говорит `low`, но кризисные слова есть | keyword-пол поднимает уровень |
+| уверенность ниже `0.5` | ограничение до `medium`, идёт в дайджест |
+| повторная эскалация по одному прогону | воркер шлёт не больше одного сообщения на уровень за прогон |
 
-## Which classifier
+## Какой классификатор
 
-Two providers implement the same port. The versioned chat prompt is the default; the keyword
-classifier is the fallback and the offline baseline. A third option, TypeSafe Jev, ships behind
-`SENTIMENT_PROVIDER=jev` with its own rubric and the same strict parsing; it is not the default
-because its quality on Russian answers is not measured yet (ADR 0011). Whatever the provider, the
-level, tags-to-signal mapping, and escalation stay in `core/risk.py`, where a test can pin them.
+Один порт реализуют два провайдера. Версионированный чат-промпт — по умолчанию; классификатор по
+словам — резерв и офлайновый базовый прогон. Третий вариант, TypeSafe Jev, поставляется за
+`SENTIMENT_PROVIDER=jev` со своей рубрикой и тем же строгим разбором; по умолчанию он не стоит,
+потому что его качество на русских ответах ещё не измерено (ADR 0011). Кто бы ни был провайдером,
+уровень, соответствие тегов сигналам и эскалация остаются в `core/risk.py`, где тест может их
+закрепить.

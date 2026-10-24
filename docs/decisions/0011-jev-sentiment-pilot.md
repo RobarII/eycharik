@@ -1,71 +1,62 @@
-# 0011 — Jev as an optional sentiment classifier, off by default
+---
+title: Jev как необязательный классификатор тональности
+summary: Что даёт Jev за флагом `SENTIMENT_PROVIDER=jev`, чем он измерен и чего ещё не хватает для решения.
+kind: решение
+owner: p4ulbr4dl3y
+status: предложено
+last_verified: 2026-10-24
+superseded_by: [20]
+---
 
-Date: 2026-10-23
-Status: proposed — code shipped behind a flag, live comparison blocked on a key
+# 0011 — Jev как необязательный классификатор тональности, выключенный по умолчанию
 
-## Context
+## Контекст
 
-The risk radar reads one free-text survey answer and must return a tone, up to three topic tags,
-and a confidence. Two implementations exist today:
+Радар риска читает один свободный ответ на опрос и должен вернуть тон, до трёх тегов темы и уверенность. Сейчас есть две реализации:
 
-- the versioned chat prompt `docs/prompts/sentiment/v1.md` on the answer model;
-- `keyword_signal()` in `core/risk.py`, the deterministic fallback.
+- версионированный chat-промпт `docs/prompts/sentiment/v1.md` на модели ответа;
+- `keyword_signal()` в `core/risk.py`, детерминированный фолбэк.
 
-TypeSafe Jev is not a chat model. It takes one `state` and a map of typed questions and returns
-probabilities (`noul` for yes/no, `choice` with a full distribution). That matches the classifier's
-contract better than a chat completion: the output is already a distribution, the prompt is a
-rubric, and the price is per input token only.
+TypeSafe Jev — не chat-модель. Он принимает один `state` и карту типизированных вопросов и возвращает вероятности (`noul` для да/нет, `choice` с полным распределением). Это лучше совпадает с контрактом классификатора, чем chat-completion: выход уже распределение, промпт — рубрика, а цена только за входные токены.
 
-## Decision
+## Решение
 
-Add Jev as a third implementation behind the existing `SentimentAnalysis` port:
+Добавить Jev третьей реализацией за существующим портом `SentimentAnalysis`:
 
-- `SENTIMENT_PROVIDER=jev` selects it; the default stays `prompt`;
-- the rubric is a versioned file, `docs/prompts/sentiment-jev/v1.yaml`. A wording change is a new
-  version, not an edit;
-- parsing is strict: every noul answer present, probabilities cover the declared options, sum to 1,
-  and the chosen sentiment is the most probable one. A malformed answer is a format error, not a
-  guess;
-- any transport or format failure degrades to `keyword_signal()` and writes `sentiment_fallback`
-  with `provider="jev"`, so a quiet week is distinguishable from a broken classifier;
-- the process refuses to start with `SENTIMENT_PROVIDER=jev` and no `JEV_API_KEY`.
+- `SENTIMENT_PROVIDER=jev` выбирает его; по умолчанию остаётся `prompt`;
+- рубрика — версионированный файл `docs/prompts/sentiment-jev/v1.yaml`. Правка формулировки — новая версия, а не правка файла;
+- разбор строгий: все ответы `noul` на месте, вероятности покрывают объявленные варианты, в сумме дают 1, выбранная тональность — самая вероятная. Кривой ответ — ошибка формата, а не повод угадывать;
+- любой транспортный отказ или отказ формата деградирует к `keyword_signal()` и пишет `sentiment_fallback` с `provider="jev"`, так что тихая неделя отличима от сломанного классификатора;
+- процесс отказывается стартовать с `SENTIMENT_PROVIDER=jev` без `JEV_API_KEY`.
 
-The risk level, tags-to-signal mapping, and escalation stay in `core/risk.py`. Jev only labels.
+Уровень риска, отображение тегов в сигналы и эскалация остаются в `core/risk.py`. Jev только размечает.
 
-## Measured
+## Измерено
 
-The labeled set is `docs/evals/sentiment.yaml`: 16 free-text answers, a tone, and the tags a
-recruiter would route.
+Размеченный набор — `docs/evals/sentiment.yaml`: 16 свободных ответов, тон и теги, которые рекрутёр отправил бы по маршруту.
 
-| provider | sentiment accuracy | tag precision | tag recall | fallback rate | p95 |
+| провайдер | точность тона | precision тегов | recall тегов | доля фолбэка | p95 |
 |---|---|---|---|---|---|
-| keyword baseline | 0.375 | 0.850 | 0.739 | 0.000 | <1 ms |
-| prompt, `openai/gpt-4.1-mini` | 0.875 | 0.808 | 0.913 | 0.062 | 2 128 ms |
+| `keyword`, базовый прогон | 0.375 | 0.850 | 0.739 | 0.000 | <1 мс |
+| `prompt`, `openai/gpt-4.1-mini` | 0.875 | 0.808 | 0.913 | 0.062 | 2 128 мс |
 
-Files: `docs/measurements/2026-10-23-sentiment-keyword-baseline.md` and
-`docs/measurements/2026-10-23-sentiment-prompt-gpt-4.1-mini.md`. Same command
-(`make eval-sentiment PROVIDER=...`), same environment, same commit recorded in each file.
+Файлы: `docs/measurements/2026-10-23-sentiment-keyword-baseline.md` и `docs/measurements/2026-10-23-sentiment-prompt-gpt-4.1-mini.md`. Та же команда (`make eval-sentiment PROVIDER=...`), то же окружение, тот же коммит, записанный в каждом файле.
 
-The Jev row is deliberately absent: no `JEV_API_KEY` exists in this environment, and a number
-without a run is worse than no number. The adapter is covered by unit tests against a mocked
-endpoint, not by a quality claim.
+Строки Jev намеренно нет: в этом окружении нет `JEV_API_KEY`, а число без прогона хуже отсутствия числа. Адаптер покрыт юнит-тестами против замоканного эндпоинта, а не заявлением о качестве.
 
-## Consequences
+## Критерии выхода
 
-- The keyword classifier is a real fallback, but its 0.375 tone accuracy is why the model is the
-  default: keywords see a crisis, not "руководитель не отвечает".
-- A Jev adoption decision needs the same table filled from a live run. The runner is ready:
-  `make eval-sentiment PROVIDER=jev`, then compare accuracy, tag recall, latency, and price.
-- One more vendor is a failure mode. ADR 0010 keeps one vendor for answers, embeddings, and
-  rerank; Jev is a classifier, not a second answer path, and the flag defaults to off.
-- The prompt provider costs one chat call per answer; Jev would cost input tokens only. The price
-  difference is not a reason to adopt before the quality difference is measured.
+`make eval-sentiment PROVIDER=jev` заполняет ту же таблицу живым прогоном; accuracy, tag recall, задержка и цена из этой строки решают вопрос о внедрении.
 
-## Alternatives
+## Последствия
 
-- Replace the prompt classifier now — rejected: no key, no Russian measurement, and the pilot's
-  gates already pass.
-- Skip the adapter until a key exists — rejected: the rubric and the strict parser are the risky
-  part, and they are testable without the vendor.
-- Use Jev for citation support in the answer eval — deferred: the same keyless blocker, and the
-  answer eval already has a deterministic citation check.
+- Классификатор `keyword` — настоящий фолбэк, но точность тона 0.375 и есть причина, по которой модель по умолчанию: этот провайдер видит кризис, а не «руководитель не отвечает».
+- Решение о внедрении Jev требует той же таблицы, заполненной живым прогоном. Раннер готов: `make eval-sentiment PROVIDER=jev`, затем сравнить accuracy, tag recall, задержку и цену.
+- Ещё один вендор — ещё один режим отказа. ADR 0010 держит одного вендора для ответов, эмбеддингов и переранжирования; Jev — классификатор, а не второй путь ответа, и флаг по умолчанию выключен.
+- Провайдер `prompt` стоит один chat-вызов на ответ; Jev стоил бы только входные токены. Разница в цене — не повод внедрять до того, как измерено качество.
+
+## Альтернативы
+
+- Заменить классификатор на промпте сейчас — отклонено: нет ключа, нет русского измерения, а гейты пилота уже проходят.
+- Отложить адаптер до появления ключа — отклонено: рубрика и строгий парсер — самая рискованная часть, и их можно тестировать без вендора.
+- Использовать Jev для проверки цитат в оценке ответов — отложено: тот же блокер без ключа, а в оценке ответов уже есть детерминированная проверка цитат.

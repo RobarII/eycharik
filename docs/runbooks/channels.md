@@ -1,108 +1,121 @@
-# Runbook: enable a channel
+---
+title: Включение канала
+summary: Как включить Telegram или VK рядом с MAX и доказать, что канал работает от вебхука до доставки.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-MAX is on by default. Telegram and VK are off until the environment says otherwise, because a
-channel without a secret and a linked account is an open door (ADR 0019). This runbook turns one on
-and proves it works.
+# Прогон: включить канал
 
-## Preconditions
+MAX включён по умолчанию. Telegram и VK выключены, пока окружение не скажет иначе: канал без
+секрета и привязанного аккаунта — открытая дверь (ADR 0019). Этот ранбук включает канал и
+доказывает, что он работает.
 
-- `make check` is green and the migrations are applied: `channel_identities` exists and every
-  employee has a MAX link.
-- `apps/api/channel-profiles/<channel>.yaml` validates against
-  `docs/contracts/channel-profile.schema.json`. `make check` covers this.
-- You have the bot token and the webhook secret for the messenger, and the public hostname from
-  `docs/runbooks/deploy.md`.
+## Условия
 
-## Steps
+- `make check` зелёный, миграции применены: `channel_identities` есть, у каждого сотрудника есть
+  привязка к MAX.
+- `apps/api/channel-profiles/<channel>.yaml` проходит проверку по
+  `docs/contracts/channel-profile.schema.json`. `make check` это покрывает.
+- Есть токен бота и секрет вебхука мессенджера, и публичное имя хоста из `docs/runbooks/deploy.md`.
 
-1. Set the environment and restart both processes:
+## Шаги
 
-   ```bash
-   CHANNELS=max,telegram        # the enabled set; an unknown name fails at startup
-   TELEGRAM_BOT_TOKEN=...       # never in git
-   TELEGRAM_WEBHOOK_SECRET=...  # the value Telegram echoes in X-Telegram-Bot-Api-Secret-Token
-   ```
-
-   For VK: `CHANNELS=max,vk`, `VK_ACCESS_TOKEN`, `VK_WEBHOOK_SECRET`, `VK_CONFIRMATION_CODE`. VK
-   needs all three.
-
-   A channel in `CHANNELS` without a webhook secret (and, for VK, without a confirmation code) is
-   not registered at all: its route answers `404`, so an unfinished setup cannot accept deliveries.
-   `503` from a registered route means the process lost the secret at runtime — check the
-   environment, not the messenger.
-
-2. Link the test account to an employee. Nothing else lets a stranger in:
-
-   ```bash
-   curl -X POST https://$HOST/admin/api/identities \
-     -H "Authorization: Bearer $HR_TOKEN" -H "content-type: application/json" \
-     -d '{"channel": "telegram", "external_id": "222", "employee_id": "1001"}'
-   ```
-
-   `external_id` is the messenger's own user id: `from.id` in Telegram, `from_id`/`user_id` in VK.
-   It is not the chat id, and it is not the employee id.
-
-3. Register the webhook.
-
-   Telegram: the CLI calls `setWebhook` with the token and the secret from the environment.
-
-   ```bash
-   uv run python -m onboarding.cli webhook --channel telegram --url "https://$HOST/webhook/telegram"
-   ```
-
-   VK: in the community settings, add a Callback API server with the URL `https://$HOST/webhook/vk`,
-   paste the secret, and enable the `message_new` and `message_event` types. VK shows a confirmation
-   string on the server tab; it has to equal `VK_CONFIRMATION_CODE`. VK calls the URL with
-   `{"type": "confirmation"}` and expects that string back as plain text, without a trailing
-   newline, inside five seconds. The route answers the handshake before it looks at the secret,
-   because VK proves the address before it will send anything.
-
-   The VK settings page is the least reliable part of this. It shows a placeholder in the secret
-   field even when a secret is stored, so the field alone proves nothing, and a scripted fill does
-   not always reach VK's model, which leaves the secret empty and every event answers `401`. Ask the
-   API instead of the page:
-
-   ```bash
-   # the address is confirmed when status is ok; secret_key must equal VK_WEBHOOK_SECRET
-   curl -s https://api.vk.com/method/groups.getCallbackServers \
-     -d group_id=$VK_GROUP_ID -d v=5.199 -d access_token=$VK_ACCESS_TOKEN
-
-   # set or repair the secret; returns the server id
-   curl -s https://api.vk.com/method/groups.editCallbackServer \
-     -d group_id=$VK_GROUP_ID -d server_id=$VK_SERVER_ID -d v=5.199 \
-     --data-urlencode url=https://$HOST/webhook/vk \
-     --data-urlencode secret_key=$VK_WEBHOOK_SECRET \
-     -d access_token=$VK_ACCESS_TOKEN
-
-   # enabled types: message_new and message_event must be true
-   curl -s https://api.vk.com/method/groups.getCallbackSettings \
-     -d group_id=$VK_GROUP_ID -d server_id=$VK_SERVER_ID -d v=5.199 \
-     -d access_token=$VK_ACCESS_TOKEN
-   ```
-
-   VK rotates the confirmation string without notice and keeps the old one on the page until it
-   re-renders, so when «Подтвердить» keeps failing, re-read the string from a freshly loaded page and
-   compare it with `VK_CONFIRMATION_CODE` before changing anything else. A `200` in the API log next
-   to a failing page is not proof either way: VK records the request, and `getCallbackServers` is
-   what settles it.
-
-4. Send `/start` from the linked account. Expect: an `events` row keyed `<channel>:<id>`, a `jobs`
-   row that reaches `done`, a queued message whose `channel` column is the new channel, and one
-   welcome message in the messenger.
-
-5. Send `/start` from an unlinked account. Expect `200`, no run, no message, and one audit row:
-
-   ```sql
-   select name, fields from audit_log where name = 'unlinked_channel_user' order by id desc limit 5;
-   ```
-
-## Proving a channel end to end
-
-`scripts/channel_smoke.py` posts messenger-shaped updates to the public webhook and then reads the
-database, so a green run means the whole path works: verification, identity, dedupe, the scenario,
-the outbox, the adapter, and the messenger's own message id.
+1. Задайте окружение и перезапустите оба процесса:
 
 ```bash
+CHANNELS=max,telegram        # the enabled set; an unknown name fails at startup
+TELEGRAM_BOT_TOKEN=...       # never in git
+TELEGRAM_WEBHOOK_SECRET=...  # the value Telegram echoes in X-Telegram-Bot-Api-Secret-Token
+```
+
+   Для VK: `CHANNELS=max,vk`, `VK_ACCESS_TOKEN`, `VK_WEBHOOK_SECRET`, `VK_CONFIRMATION_CODE`. VK
+   нужны все три.
+
+   Канал в `CHANNELS` без секрета вебхука (а для VK — без кода подтверждения) не регистрируется
+   вообще: его роут отвечает `404`, поэтому незавершённая настройка не примет доставки. `503` от
+   зарегистрированного роута значит, что процесс потерял секрет на ходу, — проверяйте окружение,
+   не мессенджер.
+
+2. Привяжите тестовый аккаунт к сотруднику. Больше ничего постороннего не пускает:
+
+```bash
+curl -X POST https://$HOST/admin/api/identities \
+  -H "Authorization: Bearer $HR_TOKEN" -H "content-type: application/json" \
+  -d '{"channel": "telegram", "external_id": "222", "employee_id": "1001"}'
+```
+
+   `external_id` — собственный id пользователя в мессенджере: `from.id` в Telegram, `from_id`/
+   `user_id` в VK. Это не id чата и не id сотрудника.
+
+3. Зарегистрируйте вебхук.
+
+   Telegram: CLI вызывает `setWebhook` с токеном и секретом из окружения.
+
+```bash
+uv run python -m onboarding.cli webhook --channel telegram --url "https://$HOST/webhook/telegram"
+```
+
+   VK: в настройках сообщества добавьте сервер Callback API с URL `https://$HOST/webhook/vk`,
+   вставьте секрет и включите типы `message_new` и `message_event`. VK показывает строку
+   подтверждения на вкладке сервера; она должна совпадать с `VK_CONFIRMATION_CODE`. VK вызывает URL
+   с `{"type": "confirmation"}` и ждёт эту строку обратно простым текстом, без перевода строки в
+   конце, в течение пяти секунд. Роут отвечает на рукопожатие до проверки секрета, потому что VK
+   сначала доказывает адрес, а потом уж отправляет.
+
+   Страница настроек VK — самое ненадёжное место во всём этом. Она показывает заглушку в поле
+   секрета, даже когда секрет сохранён, поэтому одно поле ничего не доказывает, а скриптовая
+   вставка не всегда доходит до модели VK: секрет остаётся пустым, и каждое событие получает
+   `401`. Спрашивайте API, а не страницу:
+
+```bash
+# the address is confirmed when status is ok; secret_key must equal VK_WEBHOOK_SECRET
+curl -s https://api.vk.com/method/groups.getCallbackServers \
+  -d group_id=$VK_GROUP_ID -d v=5.199 -d access_token=$VK_ACCESS_TOKEN
+
+# set or repair the secret; returns the server id
+curl -s https://api.vk.com/method/groups.editCallbackServer \
+  -d group_id=$VK_GROUP_ID -d server_id=$VK_SERVER_ID -d v=5.199 \
+  --data-urlencode url=https://$HOST/webhook/vk \
+  --data-urlencode secret_key=$VK_WEBHOOK_SECRET \
+  -d access_token=$VK_ACCESS_TOKEN
+
+# enabled types: message_new and message_event must be true
+curl -s https://api.vk.com/method/groups.getCallbackSettings \
+  -d group_id=$VK_GROUP_ID -d server_id=$VK_SERVER_ID -d v=5.199 \
+  -d access_token=$VK_ACCESS_TOKEN
+```
+
+   VK меняет строку подтверждения без предупреждения и держит старую на странице, пока та не
+   перерисуется, поэтому если «Подтвердить» продолжает падать, перечитайте строку со свежей
+   страницы и сверьте с `VK_CONFIRMATION_CODE`, прежде чем менять что-то ещё. `200` в логе API
+   рядом с падающей страницей — не доказательство ни в одну сторону: VK фиксирует запрос, а решает
+   `getCallbackServers`.
+
+4. Отправьте `/start` с привязанного аккаунта. Ожидается: строка `events` с ключом `<channel>:<id>`,
+   строка `jobs`, которая доходит до `done`, сообщение в очереди, у которого колонка `channel` —
+   новый канал, и одно приветственное сообщение в мессенджере.
+
+5. Отправьте `/start` с непривязанного аккаунта. Ожидается `200`, без прогона, без сообщения и одна
+   строка аудита:
+
+```sql
+select name, fields from audit_log where name = 'unlinked_channel_user' order by id desc limit 5;
+```
+
+## Как доказать канал целиком
+
+`scripts/channel_smoke.py` шлёт апдейты в форме мессенджера на публичный вебхук, а потом читает
+базу, поэтому зелёный прогон значит, что работает весь путь: проверка, идентичность, дедупликация,
+сценарий, `outbox`, адаптер и собственный id сообщения мессенджера.
+
+```bash
+MAX_WEBHOOK_SECRET=... DATABASE_URL=... \
+  uv run python scripts/channel_smoke.py --channel max \
+    --base-url https://$HOST --chat-id $CHAT_ID --reset
+
 TELEGRAM_WEBHOOK_SECRET=... DATABASE_URL=... \
   uv run python scripts/channel_smoke.py \
     --base-url https://$HOST --chat-id $CHAT_ID --reset
@@ -112,23 +125,34 @@ VK_WEBHOOK_SECRET=... VK_GROUP_ID=... DATABASE_URL=... \
     --base-url https://$HOST --chat-id $PEER_ID --reset
 ```
 
-For VK, `--chat-id` is the `peer_id` from the audit row of a message the account sent first: a
-community cannot open a conversation, so there is no id to send to until the person writes.
+Для VK `--chat-id` — это `peer_id` из строки аудита сообщения, которое аккаунт отправил первым:
+сообщество не может начать переписку, так что отправлять некуда, пока человек не напишет.
 
-It walks the whole scenario, presses the first option on every keyboard, files a document where the
-step expects a file, and then checks delivery, the text cap, the refusals (missing secret, wrong
-secret, non-JSON, oversized body, a channel that is off), the unlinked-account rule, and
-redelivery. `--branch trouble` presses the last option instead, which exercises the unhappy routes
-and the risk scoring. `--scenario` picks the script to drive.
+Смоук MAX шлёт `bot_started`, `message_created` и `message_callback` с заголовком
+`X-Max-Bot-Api-Secret`, поэтому годится и публичный хост, и локальный прогон: `MAX_BASE_URL`
+указывает адаптеру, куда отправлять, так что фейковый сервер на `127.0.0.1` заменяет платформу
+целиком — вебхук, сценарий, `outbox` и id сообщения проверяются без токена и без сети MAX.
 
-The refusals follow the channel: Telegram carries the secret in a header, so a body that is not JSON
-reaches the parser and answers `400`; VK carries the secret in the body, so an unparseable body
-cannot be verified at all and answers `401`.
+Файлы MAX пока не доставляет: `docs/contracts/max-api.md` фиксирует только исходящие медиа, а
+входящее вложение `parse_update` не разбирает. Поэтому шаг, который ждёт файл, смоук не проходит, а
+честно сообщает об этом одной строкой. Активные сценарии такого шага не содержат — он остался в
+первой версии `onboarding_default`, — но если шаг вернётся, MAX-прогон упадёт на нём и назовёт
+причину.
 
-### Proving that a run follows the person
+Скрипт проходит сценарий целиком, жмёт первую опцию на каждой клавиатуре, прикладывает документ
+там, где шаг ждёт файл, и затем проверяет доставку, лимит текста, отказы (нет секрета, неверный
+секрет, не-JSON, тело сверх лимита, выключенный канал), правило непривязанного аккаунта и повторную
+доставку. `--branch trouble` жмёт вместо этого последнюю опцию, что прогоняет несчастливые ветки и
+подсчёт риска. `--scenario` выбирает сценарий для прогона.
 
-One scenario, two messengers. `--switch-to` drives the same employee's chat on a second channel, so
-the smoke proves what ADR 0019 promises instead of assuming it:
+Отказы следуют за каналом: MAX и Telegram несут секрет в заголовке, поэтому тело не-JSON доходит
+до парсера и получает `400`; VK несёт секрет в теле, поэтому неразбираемое тело проверить нельзя
+вообще и оно получает `401`.
+
+### Как доказать, что прогон следует за человеком
+
+Один сценарий, два мессенджера. `--switch-to` ведёт чат того же сотрудника во втором канале, так
+что смоук доказывает обещанное ADR 0019, а не предполагает:
 
 ```bash
 TELEGRAM_WEBHOOK_SECRET=... VK_WEBHOOK_SECRET=... VK_GROUP_ID=... DATABASE_URL=... \
@@ -137,20 +161,20 @@ TELEGRAM_WEBHOOK_SECRET=... VK_WEBHOOK_SECRET=... VK_GROUP_ID=... DATABASE_URL=.
     --switch-to telegram --switch-chat-id $TELEGRAM_CHAT_ID --reset
 ```
 
-Both chats must already be linked to one employee (`/admin/api/identities`), and both are written
-to for real. The added checks are: a start on the other messenger moves the run there and re-asks
-the current question in the new conversation; the run id, its step and its question index do not
-change; an answer typed in the new messenger advances that same run; a start back on the first
-messenger returns the address; and each move leaves a `channel_changed` audit row. Delivery, the
-text cap and the refusals are then checked on both channels.
+Оба чата уже привязаны к одному сотруднику (`/admin/api/identities`), и смоук пишет в оба.
+Добавленные проверки: старт в другом мессенджере переносит прогон туда и заново задаёт текущий
+вопрос в новой переписке; id прогона, его шаг и индекс вопроса не меняются; ответ, набранный в
+новом мессенджере, двигает тот же прогон; старт обратно в первом мессенджере возвращает адрес; и
+каждый перенос оставляет строку аудита `channel_changed`. Затем доставка, лимит текста и отказы
+проверяются в обоих каналах.
 
-The run needs a linked chat: the script cannot invent a messenger account, and an unlinked one is
-refused by design. Telegram is asked directly, so `api.telegram.org` must be reachable from the
-host running the smoke (use `HTTPS_PROXY` when it is not). The worker needs the same proxy: with a
-stale one, the scenario still advances — the run does not depend on delivery — but every outbound
-row stays `pending` with `last_error` set to `ConnectError`, and the smoke reports `0/N sent`.
+Прогону нужен привязанный чат: аккаунт мессенджера скрипт не выдумает, а непривязанный отклоняется
+по замыслу. Telegram спрашивают напрямую, поэтому `api.telegram.org` должен быть доступен с хоста,
+где идёт смоук (используйте `HTTPS_PROXY`, когда нет). Воркеру нужен тот же прокси: с устаревшим
+сценарий всё равно двигается — прогон не зависит от доставки, — но каждая исходящая строка остаётся
+в `pending` с `last_error` = `ConnectError`, и смоук сообщает `0/N sent`.
 
-## Verification queries
+## Проверочные запросы
 
 ```sql
 select channel, count(*) from messages group by channel;
@@ -160,12 +184,12 @@ select fields->>'channel' as to_channel, count(*) from audit_log
   where name = 'channel_changed' group by 1;
 ```
 
-A message stuck in `pending` for one channel while others deliver means that channel's token or
-rate limit, not the dispatcher: the dispatcher leases rows per channel and one failing channel does
-not block the rest.
+Сообщение, застрявшее в `pending` в одном канале, пока остальные доставляются, значит токен или
+лимит этого канала, а не диспетчер: диспетчер арендует строки по каналам, и один падающий канал не
+блокирует остальные.
 
-## Rolling back
+## Откат
 
-Remove the channel from `CHANNELS` and restart. Its inbound route answers `404`, its queued rows stay
-in `messages` untouched, and nothing is deleted. Rows for that channel resume when it is enabled
-again.
+Уберите канал из `CHANNELS` и перезапустите. Его входящий роут отвечает `404`, строки в очереди
+остаются в `messages` нетронутыми, ничего не удаляется. Строки этого канала продолжатся, когда его
+включат снова.

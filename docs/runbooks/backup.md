@@ -1,24 +1,33 @@
-# Runbook: backup and restore
+---
+title: Бэкап и восстановление
+summary: Как снимать дамп Postgres, проверять его и восстанавливать базу после сбоя.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The single Postgres holds runs, jobs, the outbox, knowledge chunks, audit rows, and vectors. Losing
-it loses the product state, so the backup is a dump of that database, not a copy of the Docker
-volume.
+# Прогон: бэкап и восстановление
 
-## What runs
+Единственный Postgres хранит прогоны, задачи, `outbox`, фрагменты базы знаний, строки аудита и
+векторы. Потерять его — потерять состояние продукта, поэтому бэкап — дамп этой базы, а не копия
+docker-тома.
+
+## Что запускается
 
 `scripts/backup.sh`:
 
-1. Takes a lock so two runs cannot overlap.
-2. Runs `pg_dump --format=custom --no-owner --no-privileges` inside the Postgres container.
-3. Proves the dump is readable with `pg_restore --list`.
-4. Writes `onboarding-<UTC timestamp>.dump` with mode `600`.
-5. Uploads it to `BACKUP_S3_URI` when set; a failed upload fails the run.
-6. Deletes local dumps older than `BACKUP_KEEP_DAYS`.
+1. Берёт блокировку, чтобы два запуска не наложились.
+2. Выполняет `pg_dump --format=custom --no-owner --no-privileges` внутри контейнера Postgres.
+3. Проверяет, что дамп читается: `pg_restore --list`.
+4. Пишет `onboarding-<UTC timestamp>.dump` с правами `600`.
+5. Загружает его в `BACKUP_S3_URI`, когда переменная задана; неудачная загрузка валит запуск.
+6. Удаляет локальные дампы старше `BACKUP_KEEP_DAYS`.
 
-The systemd timer `onboarding-backup.timer` runs it daily at 03:30 UTC with a random delay. The
-service runs as `deploy`; `NoNewPrivileges` and `PrivateTmp` are on.
+Таймер systemd `onboarding-backup.timer` запускает это ежедневно в 03:30 UTC со случайной
+задержкой. Сервис работает под `deploy`; `NoNewPrivileges` и `PrivateTmp` включены.
 
-Configuration lives in `/etc/onboarding-backup.env`, not in the repository:
+Настройки лежат в `/etc/onboarding-backup.env`, не в репозитории:
 
 ```bash
 BACKUP_DIR=/var/backups/onboarding
@@ -27,11 +36,11 @@ BACKUP_S3_URI=s3://bucket/onboarding
 # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY or an instance role
 ```
 
-`BACKUP_DIR` must be writable by `deploy`. `BACKUP_S3_URI` needs the `aws` CLI and credentials
-that can write only that prefix. Use server-side encryption and a lifecycle rule on the bucket; the
-dump contains personal data and must not be public.
+`BACKUP_DIR` должен быть записываемым для `deploy`. `BACKUP_S3_URI` требует `aws` CLI и учётные
+данные, которые умеют писать только в этот префикс. Включите серверное шифрование и правило
+жизненного цикла на бакете; дамп содержит персональные данные и не должен быть публичным.
 
-## Check it
+## Как проверить
 
 ```bash
 systemctl status onboarding-backup.timer
@@ -40,13 +49,13 @@ journalctl -u onboarding-backup.service -n 50 --no-pager
 ls -lh /var/backups/onboarding
 ```
 
-The service succeeds only when the dump lists and, if configured, uploads.
+Сервис завершается успешно, только когда дамп листается и, если настроено, загружается.
 
-## Restore drill
+## Учения по восстановлению
 
-Run a drill on a staging host before the first real employee, and after a schema change that
-touches a large table. A restore is destructive: it stops the API and worker, drops the current
-schema objects, and loads the dump in one transaction.
+Прогоняйте учения на стейджинге до первого реального сотрудника и после изменения схемы, которое
+затрагивает большую таблицу. Восстановление разрушительно: оно останавливает `api` и воркер, роняет
+текущие объекты схемы и загружает дамп одной транзакцией.
 
 ```bash
 cd /opt/onboarding
@@ -54,25 +63,25 @@ CONFIRM_RESTORE=yes scripts/restore.sh /var/backups/onboarding/onboarding-202610
 BASE_URL=https://bot.example.com scripts/smoke.sh
 ```
 
-Then verify the audit log and one known employee:
+Затем проверьте аудит-лог и одного известного сотрудника:
 
 ```sql
 select count(*) from employees;
 select name, created_at from audit_log order by created_at desc limit 20;
 ```
 
-The restore does not roll migrations back. A dump older than the current schema needs
-`alembic upgrade head` after the restore; a dump newer than the image needs the matching image tag.
+Восстановление не откатывает миграции. Дамп старше текущей схемы требует `alembic upgrade head`
+после восстановления; дамп новее образа требует подходящий тег образа.
 
-## Failure modes
+## Отказы
 
-| Symptom | Cause | Fix |
+| Симптом | Причина | Что делать |
 |---|---|---|
-| `pg_dump` exits non-zero | Postgres down or disk full | start Postgres, free space, rerun |
-| upload fails | missing `aws`, expired credentials, wrong prefix | fix credentials; the run stays failed until it succeeds |
-| timer inactive | unit not enabled | `systemctl enable --now onboarding-backup.timer` |
-| restore fails mid-way | dump corrupt or schema mismatch | keep the API stopped, inspect `pg_restore` output, retry with the matching image |
-| disk fills with dumps | `BACKUP_KEEP_DAYS` too large | lower it, move retention to the bucket lifecycle |
+| `pg_dump` вернул ненулевой код | Postgres лежит или диск полон | поднять Postgres, освободить место, повторить |
+| загрузка падает | нет `aws`, истекли учётные данные, неверный префикс | починить учётные данные; запуск остаётся проваленным, пока не пройдёт |
+| таймер неактивен | юнит не включён | `systemctl enable --now onboarding-backup.timer` |
+| восстановление падает на середине | дамп битый или схема не та | держать `api` остановленным, смотреть вывод `pg_restore`, повторить с подходящим образом |
+| диск заполняется дампами | `BACKUP_KEEP_DAYS` слишком велик | уменьшить, перенести хранение в жизненный цикл бакета |
 
-A backup that has never been restored is a hypothesis. Keep the drill result in
-`docs/measurements/` if it changes an operational number.
+Бэкап, который ни разу не восстанавливали, — гипотеза. Держите результат учений в
+`docs/measurements/`, если он меняет эксплуатационное число.

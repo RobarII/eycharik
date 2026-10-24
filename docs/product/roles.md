@@ -1,36 +1,46 @@
-# Roles and access
+---
+title: Роли и доступ
+summary: Кто что видит и что может в кабинете и в базе знаний.
+kind: продукт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-| Capability | employee | recruiter | manager | hr_admin |
+# Роли и доступ
+
+| Возможность | employee | recruiter | manager | hr_admin |
 |---|---|---|---|---|
-| Chat with the bot | own | own | own | own |
-| See own onboarding run | yes | yes | yes | yes |
-| See other employees' runs | no | own pipeline | own department | all |
-| See the employee directory | no | own pipeline | own department | all |
-| See the risk digest | no | own pipeline | own department | all |
-| Send a manual message | no | own pipeline | no | all |
-| Resolve an escalation | no | own pipeline | own department | all |
-| Read `audience: hr_only` documents | no | no | no | yes |
-| Add or correct a directory row | no | no | no | yes |
-| Upload and edit knowledge documents | no | no | no | yes |
-| Edit scenarios and prompts | no | no | no | via review only |
-| Read metrics | no | own pipeline | own department | all |
+| Чат с ботом | свой | свой | свой | свой |
+| Видеть свой прогон онбординга | да | да | да | да |
+| Видеть прогоны других сотрудников | нет | свой пул | своё подразделение | все |
+| Видеть справочник сотрудников | нет | свой пул | своё подразделение | все |
+| Видеть дайджест рисков | нет | свой пул | своё подразделение | все |
+| Отправить сообщение вручную | нет | свой пул | нет | все |
+| Закрыть эскалацию | нет | свой пул | своё подразделение | все |
+| Читать документы `audience: hr_only` | нет | нет | нет | да |
+| Добавить или исправить строку справочника | нет | нет | нет | да |
+| Загружать и править документы базы знаний | нет | нет | нет | да |
+| Править сценарии и промпты | нет | нет | нет | только через ревью |
+| Читать метрики | нет | свой пул | своё подразделение | все |
 
-## Rules
+## Правила
 
-1. Audience is enforced twice: in the retrieval SQL filter and in the admin API query.
-2. A recruiter's token carries `recruiter_id`; a mismatch answers `404`, never `403`.
-   A manager's token carries the department name as its subject, so the same SQL predicate becomes
-   `employees.department = :subject`. A department head sees the digest and the numbers, not the
-   conversation text and not the ability to write to the base.
-3. The bot runs with a service identity that has read access to `audience: all` and
-   `dept:*` chunks for the employee's department, and no access to `hr_only`.
-4. Every escalation resolution writes `question_resolved` with the actor and queues the reply
-   through the outbox; the cabinet never calls MAX directly.
-5. Removing an employee from the directory sets `status='left'`, closes the run, deletes the
-   question rows, and redacts personal fields in the audit log. The audit skeleton survives. The
-   call is HR-only and idempotent. Restoring the row clears `left_at` but cannot restore what the
-   purge deleted: links and transcripts stay gone, and the person starts over.
-6. A directory write names its actor and never starts, stops or restarts a run. The scenario and its
-   timer own that, so an HRIS sync cannot hijack an onboarding in flight.
-7. Age-based retention is a scheduled pass, not a manual chore: questions and personal audit
-   fields older than `DATA_RETENTION_DAYS` are purged. See the retention runbook.
+1. Аудитория проверяется дважды: в SQL-фильтре поиска и в запросе admin API.
+2. Токен рекрутёра несёт `recruiter_id`; несовпадение отвечает `404`, никогда `403`. Токен
+   менеджера несёт имя подразделения как subject, поэтому тот же SQL-предикат становится
+   `employees.department = :subject`. Руководитель подразделения видит дайджест и числа, но не
+   текст переписки и не право писать в базу.
+3. Бот работает под сервисной учётной записью: чтение фрагментов `audience: all` и `dept:*` своего
+   подразделения сотрудника, доступа к `hr_only` нет.
+4. Каждое закрытие эскалации пишет `question_resolved` с действующим лицом и ставит ответ в
+   очередь через outbox; кабинет никогда не вызывает MAX напрямую.
+5. Удаление сотрудника из справочника ставит `status='left'`, закрывает прогон, удаляет строки
+   вопросов и вычищает личные поля в журнале аудита. Каркас аудита остаётся. Вызов доступен только
+   HR-администратору и идемпотентен. Восстановление строки очищает `left_at`, но не возвращает то,
+   что удалила очистка: связи и стенограммы остаются стёртыми, и человек начинает заново.
+6. Запись в справочник называет действующее лицо и никогда не запускает, не останавливает и не
+   перезапускает прогон. Этим владеет сценарий и его таймер, поэтому синхронизация с HRIS не
+   перехватит идущий онбординг.
+7. Ретеншн по возрасту — плановый проход, а не ручная работа: вопросы и личные поля аудита старше
+   `DATA_RETENTION_DAYS` вычищаются. Смотрите ранбук по ретеншну.

@@ -1,24 +1,33 @@
-# Run the cron pass
+---
+title: Прогон по cron
+summary: Как устроен отдельный cron-вход и как проверить один проход планировщика.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The worker owns the real-time loop. A separate cron entrypoint exists because schedules in the
-client's infrastructure are cron jobs, and a process that exits is easier to alert on than a
-daemon that silently stops.
+# Прогон по cron
+
+Воркер владеет циклом реального времени. Отдельная точка входа для cron существует потому, что
+расписания в инфраструктуре клиента — это cron-задачи, а процесс, который завершается, проще
+поставить под алерт, чем демон, который молча умирает.
 
 ```bash
 make cron                       # one pass, then exit
 uv run python -m onboarding.app.scheduler --max-jobs 200
 ```
 
-One pass does three things, in this order:
+Один проход делает три вещи, в таком порядке:
 
-1. `ReminderScheduler.tick()` — turns every active run whose `reminder_at` is due into a `timeout`
-   job, and clears the timestamp so a second pass cannot duplicate it.
-2. `JobRunner.run_once()` in a loop until the queue is empty or `--max-jobs` is reached.
-3. `MessageDispatcher.run_once()` — delivers the outbox to MAX with backoff.
+1. `ReminderScheduler.tick()` — превращает каждый активный прогон с наступившим `reminder_at` в
+   задачу `timeout` и очищает отметку времени, чтобы второй проход не задвоил её.
+2. `JobRunner.run_once()` в цикле, пока очередь не опустеет или не упрётся в `--max-jobs`.
+3. `MessageDispatcher.run_once()` — доставляет `outbox` в MAX с бэкоффом.
 
-Every step is idempotent across passes: the reminder timestamp is cleared under the same row lock
-that selects it, jobs are claimed with `FOR UPDATE SKIP LOCKED`, and outbox delivery records the
-MAX message id.
+Каждый шаг идемпотентен между проходами: отметка напоминания очищается под той же блокировкой
+строки, которой она выбирается, задачи забираются через `FOR UPDATE SKIP LOCKED`, а доставка из
+`outbox` записывает id сообщения MAX.
 
 ## Crontab
 
@@ -26,13 +35,13 @@ MAX message id.
 * * * * * cd /srv/onboarding && /usr/bin/env uv run python -m onboarding.app.scheduler >> /var/log/onboarding-cron.log 2>&1
 ```
 
-Use a lock so a slow pass cannot overlap the next one:
+Берите блокировку, чтобы медленный проход не наложился на следующий:
 
 ```cron
 * * * * * flock -n /tmp/onboarding-cron.lock sh -c 'cd /srv/onboarding && uv run python -m onboarding.app.scheduler'
 ```
 
-## Verify
+## Проверка
 
 ```bash
 make cron                                   # expect "cron pass: reminders=N jobs=N messages=N"
@@ -40,6 +49,7 @@ psql "$DATABASE_URL" -c "select kind, status, count(*) from jobs group by 1, 2"
 psql "$DATABASE_URL" -c "select status, count(*) from messages group by 1"
 ```
 
-- `jobs.status = 'running'` and older than five minutes: a pass died mid-job. The worker retries
-  with backoff up to five attempts; after that the row is `failed` and visible in the audit log.
-- Exit code is non-zero only on a crash. A pass that finds nothing to do exits `0` and logs zeros.
+- `jobs.status = 'running'` и старше пяти минут: проход умер на задаче. Воркер повторяет с бэкоффом
+  до пяти попыток; дальше строка `failed` и видна в аудите.
+- Код выхода ненулевой только при падении. Проход, которому нечего делать, выходит с `0` и пишет
+  нули в лог.

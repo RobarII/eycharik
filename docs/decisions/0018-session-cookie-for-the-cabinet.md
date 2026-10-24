@@ -1,61 +1,70 @@
-# 0018: The cabinet authenticates with an HttpOnly session cookie
+---
+title: Сессионная кука кабинета
+summary: Почему кабинет меняет bearer-токен на HttpOnly-куку и что это меняет в защите.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-- Status: accepted
-- Date: 2026-10-25
-- Supersedes: nothing (amends the authentication section of `docs/contracts/admin-api.md`)
+# 0018 — Кабинет аутентифицируется сессионной кукой HttpOnly
 
-## Context
+Дополняет раздел аутентификации в `docs/contracts/admin-api.md`.
 
-The contract said "there is no session and no cookie", and the cabinet kept its bearer token in
-`localStorage`. That choice had one property nobody wanted: any script on the page — a dependency,
-a compromised CDN, an injected string — could read the token and take it home. The token cannot be
-revoked by the browser, has no rotation, and one leaked value opens every employee the role can see.
+## Контекст
 
-The SPA is served from the same origin as `/admin/api`, so the token never needed to leave the
-browser in a place script can reach.
+Контракт говорил «сессии и куки нет», а кабинет хранил bearer-токен в `localStorage`. У этого
+выбора было одно свойство, которого никто не хотел: любой скрипт на странице — зависимость,
+скомпрометированный CDN, внедрённая строка — мог прочитать токен и унести его. Токен нельзя отозвать
+из браузера, у него нет ротации, а одна утёкшая величина открывает всех сотрудников, которых видит
+роль.
 
-## Decision
+SPA отдаётся с того же origin, что `/admin/api`, поэтому токену не нужно было покидать браузер в
+место, доступное скрипту.
 
-**The cabinet trades the token for an `HttpOnly` session cookie.**
+## Решение
 
-`POST /admin/api/session` takes `{"token": "..."}` once, resolves it exactly like a bearer header
-(same constant-time comparison, same expiry, same per-peer throttle), and answers `204` with:
+**Кабинет меняет токен на сессионную куку `HttpOnly`.**
+
+`POST /admin/api/session` принимает `{"token": "..."}` один раз, проверяет его точно так же, как
+bearer-заголовок (то же сравнение за постоянное время, тот же срок, тот же тормоз на пира), и
+отвечает `204` с:
 
 ```
 Set-Cookie: onboarding_session=<token>; HttpOnly; SameSite=Strict; Path=/admin/api; Max-Age=43200
 ```
 
-`Secure` is added whenever `ENVIRONMENT` is not `local`, so the plain-http docker demo still works.
-`DELETE /admin/api/session` clears the cookie and is deliberately unauthenticated: signing out must
-work for a token that just expired.
+`Secure` добавляется, когда `ENVIRONMENT` не `local`, так что docker-демо на простом http работает.
+`DELETE /admin/api/session` стирает куку и намеренно не требует аутентификации: выход должен
+работать и для токена, который только что истёк.
 
-**The bearer header stays accepted.** curl, the server tests and a reverse proxy that injects the
-header keep working. The header wins when both are present, so an explicit credential is never
-silently overridden by a cookie.
+**Bearer-заголовок продолжает приниматься.** curl, серверные тесты и обратный прокси, который
+вставляет заголовок, работают. При наличии обоих выигрывает заголовок, так что явную учётку кука не
+перебивает молча.
 
-**The token value is the cookie value.** A session is not a separate record with its own lifetime;
-it is the same secret, held where script cannot read it. Revocation is the existing one: remove the
-entry from `ADMIN_TOKENS` and redeploy. This keeps one source of truth and no new table.
+**Значение токена и есть значение куки.** Сессия — не отдельная запись со своим сроком; это тот же
+секрет, положенный туда, куда скрипт не достанет. Отзыв прежний: убрать запись из `ADMIN_TOKENS` и
+выкатить заново. Один источник истины, новой таблицы нет.
 
-## Consequences
+## Последствия
 
-- `localStorage` no longer holds a secret. An XSS bug can still act as the signed-in user for the
-  length of the visit, but it cannot copy a credential off the machine.
-- CSRF is controlled by `SameSite=Strict`: another origin cannot make the browser attach the cookie
-  to a cross-site request. Same-origin script is already inside the trust boundary.
-- `Path=/admin/api` keeps the cookie off `/healthz`, `/readyz` and `/metrics`.
-- The cookie lasts 12 hours; the token's own expiry is still checked on every request. A short-lived
-  token expires the session early, which is the intended failure mode.
-- The cookie carries no `Domain`, so it is host-only. A second cabinet hostname needs its own login.
-- Logging in is a `POST` with a body, so the token never appears in a URL, a `Referer`, or an access
-  log line.
+- `localStorage` больше не держит секрет. XSS-баг по-прежнему может действовать от имени вошедшего
+  на время визита, но скопировать учётку с машины не может.
+- CSRF закрыт `SameSite=Strict`: чужой origin не заставит браузер приложить куку к кросс-сайтовому
+  запросу. Скрипт того же origin и так внутри границы доверия.
+- `Path=/admin/api` держит куку вне `/healthz`, `/readyz` и `/metrics`.
+- Кука живёт 12 часов; собственный срок токена всё равно проверяется на каждом запросе.
+  Короткоживущий токен заканчивает сессию раньше, и это задуманный режим отказа.
+- Кука не несёт `Domain`, поэтому она только для хоста. Второму имени кабинета нужен свой вход.
+- Вход — это `POST` с телом, так что токен не попадает ни в URL, ни в `Referer`, ни в строку лога
+  доступа.
 
-## Alternatives rejected
+## Альтернативы
 
-- **Keep the bearer token in `localStorage`.** Simplest, and one XSS away from a permanent leak.
-- **Keep the token in memory only.** Survives nothing: every reload is a login, and two tabs cannot
-  share a session.
-- **A signed opaque session id with a server-side table.** Better revocation, but it adds a table, a
-  cleanup job and a session store to a cabinet whose whole auth model is "the token is the identity".
-  Revisit when a person needs several concurrent long-lived sessions.
-- **`sessionStorage` instead of `localStorage`.** Still readable by script, and breaks the second tab.
+- **Держать bearer-токен в `localStorage`.** Проще всего, и один XSS от постоянной утечки.
+- **Держать токен только в памяти.** Не переживает ничего: каждая перезагрузка — вход, а две
+  вкладки не разделят сессию.
+- **Подписанный непрозрачный id сессии с серверной таблицей.** Лучше отзыв, но это таблица, задача
+  очистки и хранилище сессий для кабинета, вся модель аутентификации которого — «токен и есть
+  личность». Вернуться, когда человеку понадобится несколько одновременных долгих сессий.
+- **`sessionStorage` вместо `localStorage`.** Скрипт всё так же читает, и вторая вкладка ломается.

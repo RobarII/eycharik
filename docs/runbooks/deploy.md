@@ -1,37 +1,44 @@
-# Runbook: deploy
+---
+title: Деплой
+summary: Как выкатить прод на одну VM, проверить его смоуком и откатиться на прошлый образ.
+kind: прогон
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-The deployment is one VM running the compose stack behind the host nginx. Images are built in CI,
-pushed to GHCR, and pulled by immutable commit SHA. The host never builds an image, and nginx is the
-only process listening on 443.
+# Прогон: деплой
 
-Current demo host: `bot.state3407.space` on a 1 vCPU / 921 MB VPS
-([capacity](../measurements/2026-10-23-demo-vps-capacity.md)). That is enough for a demo, not
-for real employee data: the VPS is outside Russia (152-ФЗ) and the RAM headroom is thin. A pilot
-moves to a Russian host with 2–4 GB and keeps the same compose files.
+Деплой — одна VM с compose-стеком за nginx хоста. Образы собираются в CI, публикуются в GHCR и
+тянутся по неизменяемому SHA коммита. Хост никогда не собирает образ, и nginx — единственный
+процесс, слушающий 443.
 
-## Preconditions
+Текущий демо-хост: `bot.state3407.space` на VPS 1 vCPU / 921 MB
+([запас по мощности](../measurements/2026-10-23-demo-vps-capacity.md)). Этого хватает для демо, не
+для реальных данных сотрудников: VPS вне России (152-ФЗ), и запас RAM тонкий. Пилот переезжает на
+российский хост с 2–4 GB и теми же compose-файлами.
 
-- `make check` is green. `make eval-retrieval` is green; `make eval` is green if a provider is
-  reachable.
-- Every schema change has a migration under `apps/api/onboarding/migrations/versions/`.
-- The release workflow produced `ghcr.io/<owner>/moshackathon-api:<sha>` and
+## Условия
+
+- `make check` зелёный. `make eval-retrieval` зелёный; `make eval` зелёный, если провайдер доступен.
+- У каждого изменения схемы есть миграция в `apps/api/onboarding/migrations/versions/`.
+- Релизный workflow выпустил `ghcr.io/<owner>/moshackathon-api:<sha>` и
   `ghcr.io/<owner>/moshackathon-admin:<sha>`.
-- `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_PATH` are repository variables;
-  `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` are repository or `production` environment secrets.
-- The `production` environment exists. If the plan supports protection rules, add a required
-  reviewer; otherwise the human gate is pushing the release tag, and automation must never push
-  tags.
+- `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_PATH` — переменные репозитория;
+  `DEPLOY_SSH_KEY` и `DEPLOY_KNOWN_HOSTS` — секреты репозитория или окружения `production`.
+- Окружение `production` существует. Если тариф поддерживает правила защиты, добавьте обязательного
+  ревьюера; иначе человеческий барьер — пуш релизного тега, и автоматика не должна пушить теги.
 
-## One-time host bootstrap
+## Первичная настройка хоста
 
-Generate a dedicated CI key first; the private half goes to the `DEPLOY_SSH_KEY` secret, the public
-half to the bootstrap command:
+Сначала сгенерируйте отдельный ключ CI; приватная половина идёт в секрет `DEPLOY_SSH_KEY`,
+публичная — в команду настройки:
 
 ```bash
 ssh-keygen -t ed25519 -C github-actions-onboarding -f /tmp/onboarding_deploy -N ''
 ```
 
-Run as root from a checkout of this repository:
+Запустите от root из чекаута этого репозитория:
 
 ```bash
 DOMAIN=bot.example.com \
@@ -41,12 +48,11 @@ REPO_URL=git@github.com:owner/repo.git \
 scripts/bootstrap-vps.sh
 ```
 
-The script installs missing packages, creates the unprivileged `deploy` user, creates
-`/opt/onboarding` and `/var/backups/onboarding`, installs the ACME vhost, issues the certificate,
-installs the TLS vhost, and enables the backup timer. It does not edit the other nginx sites, SSH
-configuration, or the firewall.
+Скрипт ставит недостающие пакеты, создаёт непривилегированного пользователя `deploy`, создаёт
+`/opt/onboarding` и `/var/backups/onboarding`, ставит ACME-vhost, выпускает сертификат, ставит
+TLS-vhost и включает таймер бэкапа. Он не трогает другие сайты nginx, конфигурацию SSH и файрвол.
 
-Then, as `deploy`:
+Затем под `deploy`:
 
 ```bash
 cd /opt/onboarding
@@ -55,90 +61,75 @@ cp .env.production.example .env.prod && chmod 600 .env.prod
 $EDITOR .env.prod
 ```
 
-`ENVIRONMENT=production` refuses to start without `MAX_BOT_TOKEN`, `MAX_WEBHOOK_SECRET`,
-`LLM_API_KEY`, `ADMIN_TOKENS`, and `METRICS_TOKEN`. The demo model choice also needs
-`EMBED_API_KEY` for OpenRouter; GigaChat uses one key for both roles. The API image already installs
-the Russian Trusted CA and points `MAX_CA_BUNDLE` at the merged system bundle.
+`ENVIRONMENT=production` отказывается стартовать без `MAX_BOT_TOKEN`, `MAX_WEBHOOK_SECRET`,
+`LLM_API_KEY`, `ADMIN_TOKENS` и `METRICS_TOKEN`. Демо-выбор модели требует ещё `EMBED_API_KEY` для
+OpenRouter; GigaChat использует один ключ на обе роли. Образ `api` уже ставит Russian Trusted CA и
+указывает `MAX_CA_BUNDLE` на объединённый системный бандл.
 
-The example env selects OpenCode Go for answers and OpenRouter Qwen3 for embeddings. Both endpoints
-answer from the demo host, and neither model runs on it. The GigaChat block is commented out for a
-Russian-hosted 152-ФЗ pilot; see [ADR 0025](../decisions/0025-demo-models-on-opencode-and-openrouter.md).
+Пример окружения выбирает OpenCode Go для ответов и OpenRouter Qwen3 для эмбеддингов. Оба эндпоинта
+отвечают с демо-хоста, и ни одна модель на нём не работает. Блок GigaChat закомментирован для
+пилота на российском хосте по 152-ФЗ; см.
+[ADR 0025](../decisions/0025-demo-models-on-opencode-and-openrouter.md).
 
-Add the host key to the CI secret once:
+Один раз добавьте ключ хоста в секрет CI:
 
 ```bash
 ssh-keyscan -p 22 "$DEPLOY_HOST" 2>/dev/null
 ```
 
-Put the output in `DEPLOY_KNOWN_HOSTS`. Do not use `StrictHostKeyChecking=no` in CI.
+Положите вывод в `DEPLOY_KNOWN_HOSTS`. Не используйте `StrictHostKeyChecking=no` в CI.
 
-## Release
+## Релиз
 
-A push to `main` releases and deploys itself. Nothing has to be tagged by hand:
-
-1. `version` runs `scripts/next_release.py` and picks the next patch after the highest `v*` tag
-   (`v0.1.3` -> `v0.1.4`); a commit that already carries a release tag reuses that tag instead of
-   inventing a second version.
-2. `build` checks out that exact commit and pushes both images under the commit SHA, with
-   provenance and an SBOM, plus `org.opencontainers.image.version` set to the version.
-3. `tag` creates the annotated `vX.Y.Z` tag on that commit and pushes it, and only runs after both
-   images are in the registry: a failed build leaves no tag behind, and a re-run is a no-op.
-4. The deploy workflow then calls `scripts/deploy-remote.sh <sha>` over SSH, waiting for the
-   `production` environment approval when the plan supports it.
-
-The release workflow needs `contents: write` to push the tag. Tags pushed by `GITHUB_TOKEN` do not
-trigger workflows, which is why the deploy follows the release run rather than the tag event: one
-push to `main` means one release and one deploy, never a second pass over the tag.
-
-A tag or a manual dispatch still work when the commit must not move `main`:
+Тег запускает релизный workflow:
 
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
-gh workflow run release.yml -f ref=<tag-or-sha>
 ```
 
-Both publish the ref they were given and create no tag. Manual dispatches do not auto-deploy; run
-`deploy.yml` with the SHA afterwards.
+Он собирает оба образа, публикует provenance и SBOM и пушит тег с SHA коммита. Деплой-workflow идёт
+после успешного релиза, ждёт одобрения окружения `production`, если тариф это поддерживает, и
+вызывает `scripts/deploy-remote.sh <sha>` по SSH.
 
-The remote script, in order:
+Удалённый скрипт по порядку:
 
-1. Takes a deploy lock and records the previous SHA.
-2. Fetches the commit and checks it out.
-3. Pulls the API, worker, migration, and cabinet images.
-4. Starts Postgres and waits for its health check.
-5. Runs `alembic upgrade head` once, before any new process starts.
-6. Starts the worker, then the API and the cabinet.
-7. Waits for API and cabinet health, runs `scripts/smoke.sh`, records `.deployed_sha`.
-8. On failure, redeploys the previous SHA and runs the smoke test again.
+1. Берёт блокировку деплоя и запоминает прошлый SHA.
+2. Забирает коммит и переключается на него.
+3. Тянет образы `api`, воркера, миграций и кабинета.
+4. Запускает Postgres и ждёт его health check.
+5. Прогоняет `alembic upgrade head` один раз, до старта любых новых процессов.
+6. Запускает воркер, затем `api` и кабинет.
+7. Ждёт health `api` и кабинета, прогоняет `scripts/smoke.sh`, записывает `.deployed_sha`.
+8. При сбое выкатывает прошлый SHA и снова гоняет смоук.
 
-Manual deploy or rollback to an already released SHA:
+Ручной деплой или откат на уже выпущенный SHA:
 
 ```bash
 gh workflow run deploy.yml -f sha=<40-character-sha>
 ```
 
-## Smoke test
+## Смоук-тест
 
-`scripts/smoke.sh` checks:
+`scripts/smoke.sh` проверяет:
 
-- `/healthz` returns `{"status":"ok"}`.
-- `/readyz` is `200` (the database answers).
-- `POST /webhook/max` without a secret is `401`.
-- The cabinet response carries CSP, `X-Frame-Options: DENY`, and `nosniff`.
-- `/metrics` is not public (`401` or `403`).
+- `/healthz` возвращает `{"status":"ok"}`.
+- `/readyz` — `200` (база отвечает).
+- `POST /webhook/max` без секрета — `401`.
+- Ответ кабинета несёт CSP, `X-Frame-Options: DENY` и `nosniff`.
+- `/metrics` не публичен (`401` или `403`).
 
-Run it from anywhere:
+Запускать откуда угодно:
 
 ```bash
 BASE_URL=https://bot.example.com scripts/smoke.sh
 ```
 
-## Register the subscription
+## Регистрация подписки
 
-After the host and secret are in place:
+Когда хост и секрет на месте:
 
-Run this on the host as `deploy`; the container carries the Russian CA and the production env:
+Запускайте это на хосте под `deploy`; контейнер несёт российский CA и продовое окружение:
 
 ```bash
 HOST=bot.example.com
@@ -148,14 +139,14 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.
   --types message_created,bot_started
 ```
 
-Re-running replaces the subscription for this bot. Tunnels change hostnames; re-register after
-every tunnel restart. Telegram and VK register their webhooks their own way; the same runbook
-covers both.
+Повторный запуск заменяет подписку для этого бота. Туннели меняют имена хостов; перерегистрируйте
+после каждого перезапуска туннеля. Telegram и VK регистрируют вебхуки своим способом; этот же
+ранбук покрывает оба.
 
-Send `/start` from a test account. Expect: an `events` row, a `jobs` row that reaches `done`, an
-outbox row that reaches `sent`, and one welcome message in MAX.
+Отправьте `/start` с тестового аккаунта. Ожидается: строка `events`, строка `jobs`, которая доходит
+до `done`, строка `outbox`, которая доходит до `sent`, и одно приветственное сообщение в MAX.
 
-## Verification queries
+## Проверочные запросы
 
 ```sql
 select status, count(*) from jobs group by status;
@@ -164,37 +155,36 @@ select name, count(*) from audit_log group by name order by 2 desc;
 select count(*) filter (where resolved_at is not null) as resolved, count(*) from questions;
 ```
 
-`messages` rows stuck in `pending` mean the dispatcher or the MAX API is failing; read
-`last_error`.
+Строки `messages` в `pending` значат, что падает диспетчер или MAX API; читайте `last_error`.
 
-Check the cabinet headers over HTTPS:
+Проверьте заголовки кабинета по HTTPS:
 
 ```bash
 curl -sI https://$HOST/ | grep -iE 'content-security-policy|x-frame|x-content-type|referrer'
 ```
 
-`apps/admin/nginx.conf` sends a policy with no `unsafe-inline` for scripts, `frame-ancestors
-'none'`, `nosniff` and `no-referrer`. If any of them is missing, a proxy in front of the container
-is stripping headers: fix that before handing the cabinet to recruiters. The session cookie is
-`Secure`, so a plain-HTTP host silently loses the login.
+`apps/admin/nginx.conf` отдаёт политику без `unsafe-inline` для скриптов, с `frame-ancestors 'none'`,
+`nosniff` и `no-referrer`. Если чего-то нет, прокси перед контейнером срезает заголовки: почините
+это до передачи кабинета рекрутёрам. Кука сессии `Secure`, поэтому хост по простому HTTP молча
+теряет вход.
 
-## Rollback
+## Откат
 
-Redeploy the previous image tag:
+Выкатите прошлый тег образа:
 
 ```bash
 gh workflow run deploy.yml -f sha=<previous-sha>
 ```
 
-Do not roll back migrations in production; ship a forward fix. The subscription stays valid because
-the URL does not change.
+Не откатывайте миграции в продакшене; выпускайте исправление вперёд. Подписка остаётся валидной,
+потому что URL не меняется.
 
-## Backup
+## Бэкап
 
-The daily timer runs `scripts/backup.sh`; see [backup.md](backup.md). A deploy does not replace a
-backup policy: verify the timer and one restore drill before the first real employee.
+Ежедневный таймер запускает `scripts/backup.sh`; см. [backup.md](backup.md). Деплой не заменяет
+политику бэкапа: проверьте таймер и одни учения восстановления до первого реального сотрудника.
 
-## Post-deploy
+## После деплоя
 
-Record the version and the smoke result in `docs/measurements/` if the deploy changes a measured
-number. If something broke, write `docs/incidents/` the same day.
+Запишите версию и результат смоука в `docs/measurements/`, если деплой меняет измеренное число.
+Если что-то сломалось, пишите `docs/incidents/` в тот же день.

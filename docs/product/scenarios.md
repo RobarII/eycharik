@@ -1,52 +1,62 @@
-# Onboarding scenarios
+---
+title: Сценарии онбординга
+summary: Как устроены шаги, таймеры, опросы и картинки в сценарии.
+kind: продукт
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-A scenario is data: YAML validated by [scenario.schema.json](../contracts/scenario.schema.json).
-A run pins the version it started on, so editing a scenario never strands a live newcomer. Every
-step also has a human-readable `title`; the cabinet shows it instead of the raw `step_id`.
+# Сценарии онбординга
 
-## First run: `onboarding_default` v1
+Сценарий — это YAML, проверяемый по [scenario.schema.json](../contracts/scenario.schema.json).
+Прогон держит версию, с которой начался, поэтому правка сценария не подвешивает живой онбординг. У
+каждого шага есть человекочитаемый `title`; кабинет показывает его вместо голого `step_id`.
 
-| Step | Kind | What happens | Timeout |
+## Первый прогон: `onboarding_default` v1
+
+| Шаг | Вид | Что происходит | Таймаут |
 |---|---|---|---|
-| `welcome` | send | greeting, then the first-day checklist follows automatically | — |
-| `first_day_checklist` | wait | pass, laptop, mentor, access checklist; buttons "Готово" / "Задать вопрос" both lead to the next step | 48 h → remind |
-| `meet_the_team` | wait | mentor and team; expects a reply, default route to documents | 72 h → remind |
-| `documents` | wait | passport, SNILS, INN, diploma, photo; expects a file, default route to the week-one check | 72 h → escalate and move on |
-| `week_one_check` | wait | three questions about the first week; any acknowledgement finishes the run | 48 h → escalate |
-| `done` | terminal | completed; no timeout, no routes | — |
+| `welcome` | send | приветствие, дальше чек-лист первого дня приходит сам | — |
+| `first_day_checklist` | wait | чек-лист: пропуск, ноутбук, наставник, доступы; кнопки «Готово» / «Задать вопрос» ведут на следующий шаг | 48 ч: напоминание |
+| `meet_the_team` | wait | наставник и команда; ждёт ответа, по умолчанию ведёт к документам | 72 ч: напоминание |
+| `documents` | wait | паспорт, СНИЛС, ИНН, диплом, фото; ждёт файл, по умолчанию ведёт к проверке первой недели | 72 ч: эскалация и дальше |
+| `week_one_check` | wait | три вопроса о первой неделе; любое подтверждение завершает прогон | 48 ч: эскалация |
+| `done` | terminal | завершён; таймаута и маршрутов нет | — |
 
-Free text at a step that expects a button or a file is answered by the assistant and the run does
-not move. At a step that expects a message, a question is answered and the run stays; a plain
-acknowledgement ("готово", "отправил") advances the step. The check is deterministic
-(`core.transitions.is_question`), not a model decision.
+Свободный текст на шаге, который ждёт кнопку или файл, ассистент отвечает, и прогон не двигается. На
+шаге, который ждёт сообщение, вопрос получает ответ, а прогон стоит; простое подтверждение («готово»,
+«отправил») двигает шаг. Проверка детерминированная (`core.transitions.is_question`), а не решение
+модели.
 
-Timeout actions are `remind` (send a nudge, keep the run) or `escalate` (hand the run to the
-recruiter, optionally continue with `next`). Documents uses `escalate` with `next` so a newcomer who
-never sends files still gets to the week-one check and a human sees the stall.
+Действия по таймауту — `remind` (послать напоминание, прогон сохранить) или `escalate` (передать
+прогон рекрутёру, при желании продолжить через `next`). В документах стоит `escalate` с `next`:
+новичок, который так и не прислал файлы, всё равно доходит до проверки первой недели, а человек
+видит застревание.
 
-## Deployed scenarios
+## Развёрнутые сценарии
 
-| Scenario | Version | Shape |
+| Сценарий | Версия | Форма |
 |---|---|---|
-| `onboarding_default` | 1 | five-step demo: welcome, first day, team, documents, week one |
-| `onboarding_default` | 2 | the client timeline: day before, day one, day three, two weeks, month two, end of probation |
-| `onboarding_plant` | 1 | the plant variant: same timeline, own transport copy, no remote-work question |
+| `onboarding_default` | 1 | демо из пяти шагов: приветствие, первый день, команда, документы, первая неделя |
+| `onboarding_default` | 2 | таймлайн заказчика: день до, первый день, третий день, две недели, второй месяц, конец испытательного срока |
+| `onboarding_plant` | 1 | заводской вариант: тот же таймлайн, своя копия транспорта, без вопроса об удалёнке |
 
-The employee row names the scenario (`employees.scenario_id`), so the plant is not a dead file: a
-new run starts the variant its site needs. A missing value means `onboarding_default`. The demo
-seeds Анна Смирнова on the plant branch to make the difference visible; the cabinet shows
-«Завод (ГТП)» in her card.
+Строка сотрудника называет сценарий (`employees.scenario_id`), поэтому завод — не мёртвый файл:
+новый прогон стартует вариант, нужный площадке. Пустое значение значит `onboarding_default`. Демо
+кладёт Анну Смирнову на заводскую ветку, чтобы разница была видна; кабинет показывает в её карточке
+«Завод (ГТП)».
 
-Version 1 stays deployed after version 2 ships: a run is pinned to the version it started with, so
-editing content never rewrites someone's script mid-onboarding.
+Версия 1 остаётся развёрнутой и после выхода версии 2: прогон привязан к версии, с которой начался,
+поэтому правка контента не переписывает чужой сценарий посреди онбординга.
 
-The timeline is relative, not absolute. The client's spreadsheet names clock times ("day one,
-12:00"); a scenario names delays ("three hours after the previous step"). Absolute times would
-need a per-site working calendar, which the pilot does not have yet.
+Таймлайн относительный, а не абсолютный. В таблице заказчика стоят часы («первый день, 12:00»); в
+сценарии — задержки («три часа после предыдущего шага»). Абсолютные времена потребовали бы рабочего
+календаря на каждую площадку, а у пилота его пока нет.
 
-## Tone
+## Тон
 
-The welcome step asks «ты» or «вы». A step maps its buttons to a tone with `tone`:
+Шаг приветствия спрашивает «ты» или «вы». Шаг связывает свои кнопки с тоном через `tone`:
 
 ```yaml
 tone:
@@ -54,67 +64,67 @@ tone:
   tone_formal: formal
 ```
 
-The choice lives on the run (`runs.tone`), not in the process, so a restart, a cron reminder and a
-later step all keep it. Any step may carry `informal_message`; with the informal tone the engine
-sends it instead of `message`, otherwise the default is used. A tone map on a step without buttons
-is a deployment error, and so is a map that names a button the step does not have.
+Выбор живёт в прогоне (`runs.tone`), а не в процессе, поэтому перезапуск, напоминание из cron и
+поздний шаг его сохраняют. Любой шаг может нести `informal_message`; при неформальном тоне движок
+шлёт его вместо `message`, иначе берётся значение по умолчанию. Карта тонов на шаге без кнопок — ошибка развёртывания, как и карта, называющая кнопку, которой у шага нет.
 
-## Images
+## Картинки
 
-A step may name one bundled image with `image:`. The name is a file in
-`apps/api/onboarding/assets/scenario/`, never a path or a URL. The parser accepts only
-`^[a-z][a-z0-9_]*\.(jpg|jpeg|png)$`, so a hand-edited scenario cannot read a file outside the
-bundle; the MAX adapter repeats that check before it reads a byte.
+Шаг может назвать одну вложенную картинку через `image:`. Имя — файл в
+`apps/api/onboarding/assets/scenario/`, никогда путь или URL. Парсер принимает только
+`^[a-z][a-z0-9_]*\.(jpg|jpeg|png)$`, поэтому сценарий, правленный руками, не прочитает файл вне
+пакета; адаптер MAX повторяет эту проверку, прежде чем прочитать байт.
 
-The image travels with the step message and with a `remind` copy of it. A timeout that escalates
-sends the escalation copy without the image. A `terminal` step may carry a farewell image, which
-is attached to the completion message. The image is uploaded to MAX once per process and the media
-token is cached by asset name; the outbox stores the asset name, not the token.
+Картинка идёт вместе с сообщением шага и с его копией для `remind`. Таймаут с эскалацией шлёт копию
+для эскалации без картинки. Шаг `terminal` может нести прощальную картинку, её прикрепляют к
+сообщению о завершении. Картинка загружается в MAX один раз на процесс, а медиатокен кешируется по
+имени ассета; outbox хранит имя ассета, а не токен.
 
-The current mapping and the source captions live in
-[scenario-images.md](scenario-images.md). A missing asset is a deployment error caught by
-`apps/api/tests/test_scenarios_deployed.py`, not a silent text-only message.
+Текущая привязка и подписи исходников — в [scenario-images.md](scenario-images.md). Отсутствующий
+ассет — ошибка развёртывания, её ловит `apps/api/tests/test_scenarios_deployed.py`, а не тихое
+сообщение без картинки.
 
-## Surveys
+## Опросы
 
-A `survey` step asks its `questions` one at a time and stores every answer in the run. Three
-question kinds exist:
+Шаг `survey` задаёт свои `questions` по одному и сохраняет каждый ответ в прогоне. Видов вопроса
+три:
 
-| Kind | Input | Follow-up |
+| Вид | Ввод | Дальше |
 |---|---|---|
-| `choice` | the option buttons drawn from `options` | none |
-| `scale` | a number from 1 to 10 | a score below `low_threshold` asks `reason_prompt` before the survey continues |
-| `open` | free text | the answer goes to the sentiment classifier |
+| `choice` | кнопки вариантов из `options` | ничего |
+| `scale` | число от 1 до 10 | оценка ниже `low_threshold` спрашивает `reason_prompt` прежде, чем опрос продолжится |
+| `open` | свободный текст | ответ уходит в классификатор тональности |
 
-Every free-text answer, including a reason, produces a risk signal. Scores and text are evaluated
-by the pure rules in `core/risk.py`: a negative answer with a tag, or a confident complaint plus a
-low score, escalates to `escalate_to`; a weak signal only feeds the weekly digest. A survey has no
-routes: it ends at `next`, and its `timeout` re-asks the current question.
+Каждый свободный ответ, включая причину, даёт риск-сигнал. Оценки и текст оценивают чистые правила в
+`core/risk.py`: негативный ответ с тегом или уверенная жалоба плюс низкая оценка эскалируют на
+`escalate_to`; слабый сигнал идёт только в недельный дайджест. У опроса нет маршрутов: он
+заканчивается на `next`, а его `timeout` переспрашивает текущий вопрос.
 
-A scenario may declare `segments` (production sites). The run picks the scenario that matches the
-employee's site at creation time, so office copy and plant copy never mix.
+Сценарий может объявлять `segments` (площадки). Прогон выбирает сценарий под площадку сотрудника в
+момент создания, поэтому офисная и заводская копии не смешиваются.
 
-## Recruiter flows
+## Работа рекрутёра
 
-| Flow | Trigger | Behaviour |
+| Поток | Триггер | Поведение |
 |---|---|---|
-| Stall detection | no step progress past its timeout | escalation audit row with the step and the reason |
-| Progress overview | cabinet list | current step title, progress fraction, last activity, status |
-| Question inbox | assistant cannot ground an answer | question, owner, reason, citations; scoped to the recruiter's employees |
-| Role scoping | recruiter vs HR token | recruiter sees own employees, HR sees all; enforced by SQL, out-of-scope is 404 |
-| Audit trail | every transition and escalation | append-only `audit_log`, read in the run detail |
+| Детект застревания | шаг не двигается дольше таймаута | строка аудита об эскалации с шагом и причиной |
+| Обзор прогресса | список кабинета | title текущего шага, доля прогресса, последняя активность, статус |
+| Очередь вопросов | ассистент не может обосновать ответ | вопрос, владелец, причина, цитаты; в скоупе сотрудников рекрутёра |
+| Скоуп роли | токен рекрутёра против токена HR | рекрутёр видит своих сотрудников, HR — всех; проверяет SQL, вне скоупа — 404 |
+| Аудит | каждый переход и эскалация | append-only `audit_log`, читается в карточке прогона |
 
-Manual nudges from the cabinet are not implemented: the cabinet is read-only in v1. Sending a
-message to a newcomer stays with the bot's scenario messages and the human HR channel.
+Ручные напоминания из кабинета не реализованы: в v1 кабинет только читает. Отправка сообщения
+новичку остаётся за сообщениями сценария и живым каналом HR.
 
-## Rules
+## Правила
 
-1. Every `wait` step has a timeout with an action; a step without one is a review blocker.
-2. Every keyboard button id is unique inside the scenario; the router maps id to a route, never to
-   free text.
-3. A terminal step has no timeout and no routes.
-4. Escalation never blocks the scenario: the run continues when the answer arrives.
-5. A survey answer is stored before the next question is sent; a repeated delivery must not lose it.
-6. Copy is Russian, in the company voice, second person plural ("вы"), no emoji in scenario text.
-7. A step image is a bundled asset named in the scenario; the source file is not edited in place,
-   and a new image gets a row in `docs/product/scenario-images.md`.
+1. У каждого шага `wait` есть таймаут с действием; шаг без него — блокер ревью.
+2. Id каждой кнопки клавиатуры уникален внутри сценария; роутер сопоставляет id маршруту, никогда
+   свободному тексту.
+3. У терминального шага нет таймаута и маршрутов.
+4. Эскалация никогда не блокирует сценарий: прогон продолжается, когда приходит ответ.
+5. Ответ на опрос сохраняется до отправки следующего вопроса; повторная доставка не должна его
+   потерять.
+6. Тексты русские, в голосе компании, на «вы», без эмодзи в тексте сценария.
+7. Картинка шага — вложенный ассет, названный в сценарии; исходный файл не правят на месте, а новая
+   картинка получает строку в `docs/product/scenario-images.md`.

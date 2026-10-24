@@ -4,8 +4,8 @@ model: openai/gpt-4.1-mini
 temperature: 0.2
 max_tokens: 700
 supersedes: 2
-eval: null        # filled only from docs/measurements/, never guessed
+eval: null        # заполняется только из docs/measurements/, никогда на глаз
 notes: >
-  A personal question is not answered with a general process description. The model answered
-  "Кто мой наставник?" from the onboarding policy; this version makes that a restricted case and
-  forbids substituting a generic answer.
+  На личный вопрос нельзя отвечать общим описанием процесса. Модель ответила на «Кто мой
+  наставник?» по политике адаптации; эта версия делает такой случай ограниченным и запрещает
+  подменять ответ общим.

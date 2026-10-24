@@ -3,8 +3,8 @@ name: context
 model: deepseek-v4.1-flash
 temperature: 0.0
 max_tokens: 160
-eval: null        # no measurement yet: ADR 0016 is proposed, not accepted
+eval: null        # измерения пока нет: ADR 0016 предложен, не принят
 notes: >
-  Contextual retrieval (ADR 0016). The pass runs at ingest, once per chunk, and its output is
-  embedded with the chunk but never quoted: citations keep the chunk text. A measurement has to
-  compare recall and MRR against the same golden set before this prompt leaves `proposed`.
+  Контекстный retrieval (ADR 0016). Проход идёт при загрузке, один раз на чанк, его вывод
+  встраивается вместе с чанком, но никогда не цитируется: в цитатах остаётся текст чанка. Прежде
+  чем промпт выйдет из `proposed`, нужно сравнить recall и MRR на том же golden set.

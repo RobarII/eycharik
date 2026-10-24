@@ -6,7 +6,7 @@ max_tokens: 700
 supersedes: 6
 eval: docs/measurements/2026-10-24-eval-full-prompt-v7.md
 notes: >
-  The text is version 6 unchanged; the temperature is 0 instead of 0.2. Two runs of version 6 on the
-  same corpus moved `escalation_recall` from 1.000 to 0.867 and `answer_contains` from 0.918 to
-  0.885, which is two deciding cases in fifteen. A gate cannot separate a regression from a sampler,
-  so the sampler goes away before the gate is trusted.
+  Текст — версия 6 без изменений; температура 0 вместо 0.2. Два прогона версии 6 на одном корпусе
+  сдвинули `escalation_recall` с 1.000 до 0.867, а `answer_contains` с 0.918 до 0.885 — это два
+  решающих кейса из пятнадцати. Гейт не отличит регрессию от сэмплера, поэтому сэмплер убираем
+  раньше, чем начнём доверять гейту.

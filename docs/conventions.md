@@ -1,54 +1,76 @@
-# Conventions
+---
+title: Соглашения
+summary: Как писать код, тесты и коммиты и как вести документацию в репозитории.
+kind: правило
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-## Language
+# Соглашения
 
-Code, identifiers, commits, and `docs/` are English. `knowledge/`, product copy, and prompts sent
-to employees are Russian. Conversation with the user follows the user.
+## Язык
 
-## Code
+Код, идентификаторы, коммиты и `docs/` — английский. `knowledge/`, продуктовые тексты и промпты
+сотрудникам — русский. Разговор с пользователем идёт на его языке.
 
-- Python 3.12, `from __future__ import annotations` where it helps, no wildcard imports.
-- `core/` imports only the standard library, `dataclasses`, `enum`, `typing`, and sibling `core/`
-  modules. Importing `httpx`, `sqlalchemy`, `logging`, or `time` there is a review blocker.
-- Domain values are frozen dataclasses. Public functions take and return them, not dicts.
-- `NewType` for identifiers: `EmployeeId`, `RunId`, `ChunkId`, `DocId`. Never pass a bare `int`
-  where an identifier is expected.
-- No `Any` in public signatures; `mypy --strict` covers `core/` and `ports.py`.
-- Errors are explicit classes in the module that raises them. No bare `except`. Expected refusals
-  are values (`Decision`), unexpected failures are exceptions.
-- No boolean flag parameters. Two functions beat one with a mode switch.
-- Functions are commands or queries, not both. Early return, nesting depth at most two.
-- Names come from [glossary.md](glossary.md). `utils`, `helpers`, `common`, `manager`, `data`,
-  `info`, `process` are forbidden module and function names.
+## Код
 
-## Tests
+- Python 3.12, `from __future__ import annotations` там, где помогает, без wildcard-импортов.
+- `core/` импортирует только стандартную библиотеку, `dataclasses`, `enum`, `typing` и соседние
+  модули `core/`. Импорт `httpx`, `sqlalchemy`, `logging` или `time` там — блокер на ревью.
+- Доменные значения — замороженные датаклассы. Публичные функции принимают и возвращают их, а не
+  словари.
+- `NewType` для идентификаторов: `EmployeeId`, `RunId`, `ChunkId`, `DocId`. Голый `int` там, где
+  ждут идентификатор, не передаётся никогда.
+- Никаких `Any` в публичных сигнатурах; `mypy --strict` покрывает `core/` и `ports.py`.
+- Ошибки — явные классы в модуле, который их поднимает. Голого `except` нет. Ожидаемые отказы —
+  значения (`Decision`), неожиданные сбои — исключения.
+- Никаких булевых флагов в параметрах. Две функции лучше одной с переключателем режима.
+- Функция — команда или запрос, не то и другое. Ранний выход, глубина вложенности не больше двух.
+- Имена берутся из [glossary.md](glossary.md). `utils`, `helpers`, `common`, `manager`, `data`,
+  `info`, `process` — запрещённые имена модулей и функций.
 
-- Unit tests cover `core/` with no I/O and no patching. Fakes for ports live in `tests/fakes.py`
-  and are five lines each, not mocks.
-- Integration tests run against Postgres in docker and are marked `@pytest.mark.integration`.
-- Eval tests are marked `@pytest.mark.eval` and never run in `make check`.
-- Test names state behaviour: `test_escalates_when_answer_has_no_supported_citation`.
-- No `sleep`, no wall-clock dependency, no network.
+## Тесты
 
-## Database
+- Юнит-тесты покрывают `core/` без I/O и без патчей. Фейки портов лежат в `tests/fakes.py`, по
+  пять строк каждый, а не моки.
+- Интеграционные тесты идут против Postgres и помечены `@pytest.mark.integration`. CI гоняет
+  их вместе с офлайн-тиром в `make test-cov`: тир, который никто не запускает, не существует.
+- `make test-cov` падает ниже `COVERAGE_MIN` (85). Порог не заменяет смысл теста, но ловит
+  набор, который перестал запускаться.
+- Eval-тесты помечены `@pytest.mark.eval` и в `make check` не запускаются никогда.
+- Админка: vitest в `make admin-check`, Playwright (кабинет и axe) — `make admin-e2e`, оба идут в CI.
+- Имя теста называет поведение: `test_escalates_when_answer_has_no_supported_citation`.
+- Без `sleep`, без зависимости от системных часов, без сети.
 
-- SQLAlchemy 2 style, typed models, Alembic migrations, forward only.
-- Every table has `created_at`; mutable tables have `updated_at`.
-- Money and cost are `numeric`, never `float`.
-- Identifiers are UUIDv7 in application code, not database defaults.
+## База данных
 
-## Commits
+- Стиль SQLAlchemy 2, типизированные модели, миграции Alembic, только вперёд.
+- В каждой таблице есть `created_at`; в изменяемых — `updated_at`.
+- Деньги и стоимость — `numeric`, никогда `float`.
+- Идентификаторы — UUIDv7 в коде приложения, а не в умолчаниях базы.
 
-Conventional Commits, English, header only, at most 72 characters.
+## Коммиты
 
-`type(scope): subject`, scope is `api`, `admin`, `docs`, `infra`, `eval`, `kb`.
+Conventional Commits, английский, только заголовок, не больше 72 символов.
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
+`type(scope): subject`, где scope — `api`, `admin`, `docs`, `infra`, `eval`, `kb`.
+
+Типы: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`,
 `revert`.
 
-## Documentation
+## Документация
 
-- Every doc is listed in [README.md](README.md).
-- Headings are stable: they are link targets and eval references.
-- Numbers require command, environment, and commit in `measurements/`.
-- A decision that reverses an accepted ADR is a new ADR with `supersedes:`.
+- Каждый `.md` в `docs/` начинается с frontmatter: `title`, `summary`, `kind`, `owner`, `status`,
+  `last_verified`. Схема — `_meta/frontmatter.schema.json`. Без frontmatter сборка индекса падает.
+- Индекс `README.md` и глоссарий `glossary.md` генерируются: `make docs-index` пишет их,
+  `make docs` ловит расхождение. Руками эти два файла не правятся.
+- Измерение — сводка до 200 строк: команда, окружение, коммит, числа. Полные прогоны и кейсы —
+  рядом, в `jsonl`.
+- Число живёт только в `measurements/`. Остальные документы ссылаются на файл измерения, а не
+  переписывают значение.
+- Новый термин — строка в `docs/glossary.yaml`. Английские написания из кода и идентификаторов —
+  в `aliases`.
+- Заголовки стабильны: на них ведут ссылки и на них ссылаются кейсы оценки.
+- Решение, которое разворачивает принятый ADR, — новый ADR с `supersedes:`.

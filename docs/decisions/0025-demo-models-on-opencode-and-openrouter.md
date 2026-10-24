@@ -1,49 +1,56 @@
-# 0025 — Demo models: OpenCode Go answers, OpenRouter embeddings
+---
+title: Демо-модели на OpenCode и OpenRouter
+summary: Какие модели отвечают в демо, откуда они и что это значит для 152-ФЗ.
+kind: решение
+owner: p4ulbr4dl3y
+status: принято
+last_verified: 2026-10-24
+---
 
-Date: 2026-10-24
-Status: accepted
-Supersedes: the model choice in 0010 for this demo deployment, not the port design.
+# 0025 — Демо-модели: OpenCode Go отвечает, OpenRouter считает эмбеддинги
 
-## Context
+Дополняет выбор модели в [0010](0010-one-model-vendor.md) для этого демо-развёртывания, но не
+устройство порта.
 
-The demo host has no GigaChat key. It does reach two OpenAI-compatible gateways: OpenCode Go at
-`https://opencode.ai/inference/go/v1` and OpenRouter at `https://openrouter.ai/api/v1`. Both
-answered `200` from the host on 2026-10-24. The repository already has measured profiles for the
-answer model `opencode-deepseek-v4.1-flash` and the embedder
-`openrouter-qwen3-embedding-8b`; no new adapter is needed.
+## Контекст
 
-The host is in the Netherlands. That already makes the demo unsuitable for real personal data under
-152-ФЗ, independent of the model vendor.
+У демо-хоста нет ключа GigaChat. Зато он достаёт до двух шлюзов, совместимых с OpenAI: OpenCode Go по
+`https://opencode.ai/inference/go/v1` и OpenRouter по `https://openrouter.ai/api/v1`. Оба ответили
+`200` с хоста 2026-10-24. В репозитории уже есть измеренные профили для модели ответа
+`opencode-deepseek-v4.1-flash` и эмбеддера `openrouter-qwen3-embedding-8b`; новый адаптер не нужен.
 
-## Decision
+Хост стоит в Нидерландах. Это уже делает демо непригодным для настоящих персональных данных по
+152-ФЗ, независимо от вендора модели.
 
-The demo `.env.prod` uses:
+## Решение
 
-- answer: `LLM_PROVIDER=openai`, `LLM_PROFILE=opencode-deepseek-v4.1-flash`,
-  `LLM_BASE_URL=https://opencode.ai/inference/go/v1`, with the OpenCode Go session headers;
-- embeddings: `EMBED_PROVIDER=openai`, `EMBED_PROFILE=openrouter-qwen3-embedding-8b`,
-  `EMBED_BASE_URL=https://openrouter.ai/api/v1`, `EMBED_DIM=1024`.
+Демо `.env.prod` использует:
 
-The models are hosted APIs. The VPS stores no weights, needs no GPU, and downloads no model files.
-Keys live only in `/opt/onboarding/.env.prod`.
+- ответ: `LLM_PROVIDER=openai`, `LLM_PROFILE=opencode-deepseek-v4.1-flash`,
+  `LLM_BASE_URL=https://opencode.ai/inference/go/v1`, с сессионными заголовками OpenCode Go;
+- эмбеддинги: `EMBED_PROVIDER=openai`, `EMBED_PROFILE=openrouter-qwen3-embedding-8b`,
+  `EMBED_BASE_URL=https://openrouter.ai/api/v1`, ширина `EMBED_DIM=1024`.
 
-GigaChat remains the single-vendor alternative for a Russian-hosted pilot: switch the commented
-block in `.env.production.example`, reindex the corpus with the GigaChat embedder, and run the evals.
-That switch is a deployment change, not a code change.
+Модели хостятся у провайдеров. VPS не хранит весов, не нуждается в GPU и не скачивает файлы моделей.
+Ключи живут только в `/opt/onboarding/.env.prod`.
 
-## Consequences
+GigaChat остаётся альтернативой одного вендора для пилота на российской площадке: переключить
+закомментированный блок в `.env.production.example`, переиндексировать корпус эмбеддером GigaChat и
+прогнать оценки. Это изменение развёртывания, а не кода.
 
-- The demo uses two vendors and two keys: `LLM_API_KEY` for OpenCode Go and `EMBED_API_KEY` for
-  OpenRouter. A failure in either degrades the same way as before: answers escalate, retrieval
-  falls back to its hybrid order.
-- The embedding width stays 1024. A different embedder width is a migration plus a reindex, never a
-  setting.
-- This does not satisfy 152-ФЗ localisation. The demo carries synthetic or public data only.
-- The production guard still rejects `LLM_PROVIDER=extractive` and `EMBED_PROVIDER=hashing`.
+## Последствия
 
-## Alternatives
+- Демо берёт двух вендоров и два ключа: `LLM_API_KEY` для OpenCode Go и `EMBED_API_KEY` для
+  OpenRouter. Отказ любого из них деградирует так же, как раньше: ответы эскалируются, поиск
+  откатывается на свой гибридный порядок.
+- Ширина эмбеддинга остаётся 1024. Другая ширина — это миграция и переиндексация, никогда не
+  настройка.
+- Это не выполняет локализацию по 152-ФЗ. Демо несёт только синтетические или публичные материалы.
+- Продовый предохранитель по-прежнему отвергает `LLM_PROVIDER=extractive` и `EMBED_PROVIDER=hashing`.
 
-- GigaChat for both roles — the right choice for a Russian pilot, but it needs a Sber key that this
-  demo does not have.
-- Local weights on the VPS — rejected: one vCPU and 921 MiB of RAM cannot serve an answer model and
-  an embedder, and the host has no GPU.
+## Альтернативы
+
+- GigaChat на обе роли — верный выбор для российского пилота, но нужен ключ Сбера, которого у этого
+  демо нет.
+- Локальные веса на VPS — отклонено: один vCPU и 921 MiB памяти не обслужат модель ответа и эмбеддер,
+  а GPU у хоста нет.

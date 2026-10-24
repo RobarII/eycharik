@@ -1300,3 +1300,258 @@ async def test_the_webhook_rejects_a_wrong_secret_and_an_unknown_channel(
 
     assert wrong.status_code == 401
     assert unknown.status_code == 404
+
+
+async def test_hr_creates_an_employee_and_the_list_is_scoped(database: Database) -> None:
+    app = admin_app()
+    body = {
+        "employee_id": "2001",
+        "name": "Пётр Петров",
+        "role": "Оператор",
+        "department": "ИТ",
+        "recruiter_id": "rec-1",
+        "started_at": "2026-11-01",
+        "audience": ["all", "dept:it"],
+        "scenario_id": "onboarding_default",
+    }
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        created = await http.post(
+            "/admin/api/employees", json=body, headers={"Authorization": "Bearer hr"}
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["employee_id"] == "2001"
+        assert created.json()["channels"] == []
+        assert created.json()["status"] == "active"
+
+        repeated = await http.post(
+            "/admin/api/employees", json=body, headers={"Authorization": "Bearer hr"}
+        )
+        assert repeated.status_code == 409
+        assert repeated.json()["code"] == "employee_already_exists"
+
+        recruiter = await http.get(
+            "/admin/api/employees", headers={"Authorization": "Bearer rec"}
+        )
+        assert recruiter.status_code == 200, recruiter.text
+        assert {item["employee_id"] for item in recruiter.json()["items"]} == {
+            str(EMPLOYEE),
+            "2001",
+        }
+
+        other = await http.get(
+            "/admin/api/employees", headers={"Authorization": "Bearer other"}
+        )
+        assert other.json()["items"] == []
+        assert other.json()["total"] == 0
+
+        found = await http.get(
+            "/admin/api/employees",
+            params={"q": "Пётр"},
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert [item["employee_id"] for item in found.json()["items"]] == ["2001"]
+
+        refused = await http.post(
+            "/admin/api/employees", json=body, headers={"Authorization": "Bearer rec"}
+        )
+        assert refused.status_code == 403
+        assert refused.json()["code"] == "forbidden"
+
+        unknown = await http.post(
+            "/admin/api/employees",
+            json={**body, "employee_id": "2002", "scenario_id": "nope"},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert unknown.status_code == 422
+        assert unknown.json()["code"] == "unknown_scenario"
+
+
+async def test_employee_detail_carries_the_linked_channels(database: Database) -> None:
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        linked = await http.post(
+            "/admin/api/identities",
+            json={"channel": "max", "external_id": "4242", "employee_id": str(EMPLOYEE)},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert linked.status_code == 204, linked.text
+
+        detail = await http.get(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer rec"}
+        )
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["channels"] == [
+            {
+                "channel": "max",
+                "external_id": "4242",
+                "linked_at": detail.json()["channels"][0]["linked_at"],
+            }
+        ]
+
+        hidden = await http.get(
+            f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer other"}
+        )
+        assert hidden.status_code == 404
+        assert hidden.json()["code"] == "employee_not_found"
+
+
+async def test_hr_corrects_a_row_and_restores_after_leaving(database: Database) -> None:
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+            patched = await http.patch(
+                f"/admin/api/employees/{EMPLOYEE}",
+                json={"name": "Иван Петров", "audience": ["all"]},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert patched.status_code == 200, patched.text
+            assert patched.json()["name"] == "Иван Петров"
+            assert patched.json()["audience"] == ["all"]
+
+            invalid = await http.patch(
+                f"/admin/api/employees/{EMPLOYEE}",
+                json={"audience": ["everyone"]},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert invalid.status_code == 422
+            assert invalid.json()["code"] == "validation_failed"
+
+            left = await http.delete(
+                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+            )
+            assert left.status_code == 200, left.text
+
+            gone = await http.get(
+                f"/admin/api/employees/{EMPLOYEE}", headers={"Authorization": "Bearer hr"}
+            )
+            assert gone.json()["status"] == "left"
+            assert gone.json()["left_at"] is not None
+
+            restored = await http.patch(
+                f"/admin/api/employees/{EMPLOYEE}",
+                json={"status": "active"},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert restored.status_code == 200, restored.text
+            assert restored.json()["status"] == "active"
+            assert restored.json()["left_at"] is None
+
+
+async def test_bulk_upsert_corrects_a_row_without_resurrecting_it(database: Database) -> None:
+    app = admin_app()
+    rows = [
+        {
+            "employee_id": "3001",
+            "name": "Анна",
+            "role": "Бухгалтер",
+            "department": "Бухгалтерия",
+            "started_at": "2026-11-03",
+        },
+        {
+            "employee_id": "3002",
+            "name": "Борис",
+            "role": "Логист",
+            "department": "Склад",
+            "started_at": "2026-11-04",
+        },
+    ]
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+            first = await http.post(
+                "/admin/api/employees/bulk",
+                json={"employees": rows},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert first.status_code == 200, first.text
+            assert first.json() == {"created": 2, "updated": 0}
+
+            second = await http.post(
+                "/admin/api/employees/bulk",
+                json={"employees": [{**rows[0], "role": "Старший бухгалтер"}, rows[1]]},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert second.json() == {"created": 0, "updated": 2}
+
+            detail = await http.get(
+                "/admin/api/employees/3001", headers={"Authorization": "Bearer hr"}
+            )
+            assert detail.json()["role"] == "Старший бухгалтер"
+
+            offboarded = await http.delete(
+                "/admin/api/employees/3002", headers={"Authorization": "Bearer hr"}
+            )
+            assert offboarded.status_code == 200, offboarded.text
+
+            third = await http.post(
+                "/admin/api/employees/bulk",
+                json={"employees": [{**rows[1], "name": "Борис С."}]},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert third.json() == {"created": 0, "updated": 1}
+
+            after = await http.get(
+                "/admin/api/employees/3002", headers={"Authorization": "Bearer hr"}
+            )
+            assert after.json()["name"] == "Борис С."
+            assert after.json()["status"] == "left"
+
+            duplicate = await http.post(
+                "/admin/api/employees/bulk",
+                json={"employees": [rows[0], rows[0]]},
+                headers={"Authorization": "Bearer hr"},
+            )
+            assert duplicate.status_code == 422
+            assert duplicate.json()["code"] == "validation_failed"
+
+
+async def test_the_directory_pages_without_gaps_or_repeats(database: Database) -> None:
+    app = admin_app()
+    rows = [
+        {
+            "employee_id": f"400{number}",
+            "name": f"Сотрудник {number}",
+            "role": "Оператор",
+            "department": "Склад",
+            "started_at": "2026-11-05",
+        }
+        for number in range(3)
+    ]
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        seeded = await http.post(
+            "/admin/api/employees/bulk",
+            json={"employees": rows},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert seeded.status_code == 200, seeded.text
+        # One batch shares a transaction timestamp, so the id is the tiebreaker that keeps the
+        # page boundary stable.
+        seen: list[str] = []
+        cursor: str | None = None
+        for _ in range(4):
+            params: dict[str, str | int] = {"limit": 2}
+            if cursor is not None:
+                params["cursor"] = cursor
+            page = await http.get(
+                "/admin/api/employees", params=params, headers={"Authorization": "Bearer hr"}
+            )
+            assert page.status_code == 200, page.text
+            body = page.json()
+            seen.extend(item["employee_id"] for item in body["items"])
+            cursor = body["next_cursor"]
+            if cursor is None:
+                break
+        assert len(seen) == len(set(seen))
+        assert set(seen) == {str(EMPLOYEE), "4000", "4001", "4002"}

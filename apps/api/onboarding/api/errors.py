@@ -19,10 +19,12 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from onboarding.app.admin.actions import (
+    EmployeeAlreadyExistsError,
     EmployeeNotFoundError,
     QuestionAlreadyResolvedError,
     QuestionNotFoundError,
     UnknownAssigneeError,
+    UnknownScenarioError,
 )
 from onboarding.app.use_cases.inbound import (
     BadSecretError,
@@ -72,6 +74,13 @@ def install(app: FastAPI) -> None:
     )
     app.add_exception_handler(
         EmployeeNotFoundError, _fixed("employee_not_found", 404, "employee not found")
+    )
+    app.add_exception_handler(
+        EmployeeAlreadyExistsError,
+        _fixed("employee_already_exists", 409, "employee already exists"),
+    )
+    app.add_exception_handler(
+        UnknownScenarioError, _fixed("unknown_scenario", 422, "scenario is not deployed")
     )
     # The framework's own failures answer in the same shape, so a client never has two parsers.
     app.add_exception_handler(StarletteHTTPException, _http)

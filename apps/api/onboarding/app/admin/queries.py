@@ -24,7 +24,10 @@ from sqlalchemy import (
 
 from onboarding.app.admin.records import (
     DigestRecord,
+    EmployeeCursor,
+    EmployeeRecord,
     EventRecord,
+    IdentityRecord,
     KnowledgeRecord,
     OverviewRecord,
     QuestionCursor,
@@ -32,13 +35,23 @@ from onboarding.app.admin.records import (
     RunCursor,
     RunRecord,
 )
-from onboarding.app.db.models import AuditRow, DocumentRow, EmployeeRow, QuestionRow, RunRow
+from onboarding.app.db.models import (
+    AuditRow,
+    ChannelIdentityRow,
+    DocumentRow,
+    EmployeeRow,
+    QuestionRow,
+    RunRow,
+)
 from onboarding.app.db.session import Database
 
 __all__ = [
     "AdminQueries",
     "DigestRecord",
+    "EmployeeCursor",
+    "EmployeeRecord",
     "EventRecord",
+    "IdentityRecord",
     "KnowledgeRecord",
     "OverviewRecord",
     "QuestionCursor",
@@ -112,6 +125,76 @@ class AdminQueries:
                 )
             ).first()
             return _run_record(*row) if row is not None else None
+
+    async def employees_page(
+        self,
+        *,
+        recruiter_id: str | None,
+        department: str | None = None,
+        status_filter: str | None = None,
+        search: str | None = None,
+        limit: int,
+        after: EmployeeCursor | None = None,
+    ) -> tuple[tuple[EmployeeRecord, ...], bool]:
+        """One page of the directory, newest first, scoped in SQL like every other read.
+
+        ``status_filter`` is ``active``, ``left``, or ``None`` for everybody. The scope predicate
+        is the same one the runs and questions use, so the three lists cannot disagree about who
+        a caller may see.
+        """
+        statement = _employee_query(
+            recruiter_id, department, status_filter=status_filter, search=search
+        )
+        if after is not None:
+            statement = statement.where(
+                tuple_(EmployeeRow.created_at, EmployeeRow.id)
+                < tuple_(after.created_at, after.employee_id)
+            )
+        async with self._database.session() as session:
+            rows = (
+                await session.scalars(statement.limit(limit + 1))
+            ).all()
+        return tuple(employee_record(row) for row in rows[:limit]), len(rows) > limit
+
+    async def employees_total(
+        self,
+        *,
+        recruiter_id: str | None,
+        department: str | None = None,
+        status_filter: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        statement = select(func.count()).select_from(EmployeeRow)
+        statement = _scope_runs(statement, recruiter_id, department)
+        statement = _filter_employees(statement, status_filter=status_filter, search=search)
+        async with self._database.session() as session:
+            return int(await session.scalar(statement) or 0)
+
+    async def employee(
+        self, employee_id: str, *, recruiter_id: str | None, department: str | None = None
+    ) -> EmployeeRecord | None:
+        statement = _employee_query(recruiter_id, department).where(
+            EmployeeRow.id == employee_id
+        )
+        async with self._database.session() as session:
+            row = await session.scalar(statement)
+        return employee_record(row) if row is not None else None
+
+    async def identities(self, employee_id: str) -> tuple[IdentityRecord, ...]:
+        async with self._database.session() as session:
+            rows = await session.scalars(
+                select(ChannelIdentityRow)
+                .where(ChannelIdentityRow.employee_id == employee_id)
+                .order_by(ChannelIdentityRow.channel, ChannelIdentityRow.external_id)
+            )
+            return tuple(
+                IdentityRecord(
+                    channel=row.channel,
+                    external_id=row.external_id,
+                    linked_at=row.linked_at,
+                )
+                for row in rows
+            )
 
     async def events(self, employee_id: str, *, limit: int = 50) -> tuple[EventRecord, ...]:
         async with self._database.session() as session:
@@ -370,6 +453,54 @@ class AdminQueries:
         counter = select(func.count()).select_from(statement.subquery())
         async with self._database.session() as session:
             return int(await session.scalar(counter) or 0)
+
+
+def _employee_query(
+    recruiter_id: str | None,
+    department: str | None,
+    *,
+    status_filter: str | None = None,
+    search: str | None = None,
+) -> Any:
+    statement = select(EmployeeRow)
+    for condition in employee_scope_filters(recruiter_id, department):
+        statement = statement.where(condition)
+    statement = _filter_employees(statement, status_filter=status_filter, search=search)
+    return statement.order_by(desc(EmployeeRow.created_at), desc(EmployeeRow.id))
+
+
+def _filter_employees(
+    statement: Any, *, status_filter: str | None, search: str | None
+) -> Any:
+    if status_filter is not None:
+        statement = statement.where(EmployeeRow.status == status_filter)
+    if search:
+        pattern = f"%{_escape_like(search.strip())}%"
+        statement = statement.where(
+            or_(
+                EmployeeRow.name.ilike(pattern, escape="\\"),
+                EmployeeRow.role.ilike(pattern, escape="\\"),
+                EmployeeRow.department.ilike(pattern, escape="\\"),
+                EmployeeRow.id.ilike(pattern, escape="\\"),
+            )
+        )
+    return statement
+
+
+def employee_record(row: EmployeeRow) -> EmployeeRecord:
+    return EmployeeRecord(
+        employee_id=row.id,
+        name=row.name,
+        role=row.role,
+        department=row.department,
+        recruiter_id=row.recruiter_id,
+        started_at=row.started_at,
+        audience=tuple(row.audience),
+        scenario_id=row.scenario_id,
+        status=row.status,
+        left_at=row.left_at,
+        created_at=row.created_at,
+    )
 
 
 def _texts(value: object) -> tuple[str, ...]:

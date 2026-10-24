@@ -43,6 +43,13 @@ from onboarding.api.schemas import (
     AuditEvent,
     DigestItem,
     DigestList,
+    Employee,
+    EmployeeBulkResult,
+    EmployeeChannel,
+    EmployeeCreate,
+    EmployeeList,
+    EmployeesBulk,
+    EmployeeUpdate,
     KnowledgeDocument,
     KnowledgeExtraction,
     KnowledgeFileQueued,
@@ -60,7 +67,16 @@ from onboarding.api.schemas import (
     SessionRequest,
     TagCount,
 )
-from onboarding.app.admin.records import QuestionCursor, QuestionRecord, RunCursor, RunRecord
+from onboarding.app.admin.actions import EmployeeFields, EmployeeNotFoundError
+from onboarding.app.admin.records import (
+    EmployeeCursor,
+    EmployeeRecord,
+    IdentityRecord,
+    QuestionCursor,
+    QuestionRecord,
+    RunCursor,
+    RunRecord,
+)
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 
 # The cabinet talks to a versioned surface. The unversioned prefix keeps answering for a client
@@ -212,6 +228,102 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
     )
 
 
+@router.get("/employees", response_model=EmployeeList)
+async def list_employees(  # noqa: PLR0917 - the query parameters are the endpoint's interface
+    request: Request,
+    principal: Admin,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    cursor: Annotated[str | None, Query()] = None,
+    status_filter: Annotated[
+        Literal["active", "left", "all"], Query(alias="status")
+    ] = "all",
+    q: Annotated[str | None, Query(max_length=120)] = None,
+) -> EmployeeList:
+    """The directory, newest first, scoped like every other list.
+
+    ``q`` searches the id, name, role and department: an HR system keys a person by an id, and a
+    recruiter remembers a name.
+    """
+    admin = request.app.state.container.admin
+    recruiter_id = _scope(principal)
+    department = _department(principal)
+    status_value = None if status_filter == "all" else status_filter
+    records, has_more = await admin.employees_page(
+        recruiter_id=recruiter_id,
+        department=department,
+        status_filter=status_value,
+        search=q,
+        limit=limit,
+        after=_employee_cursor(cursor),
+    )
+    return EmployeeList(
+        items=[_employee(record, ()) for record in records],
+        next_cursor=_next_employee_cursor(records, has_more),
+        total=await admin.employees_total(
+            recruiter_id=recruiter_id,
+            department=department,
+            status_filter=status_value,
+            search=q,
+        ),
+    )
+
+
+@router.get("/employees/{employee_id}", response_model=Employee)
+async def employee_detail(
+    request: Request, principal: Admin, employee_id: str
+) -> Employee:
+    admin = request.app.state.container.admin
+    record = await admin.employee(
+        employee_id, recruiter_id=_scope(principal), department=_department(principal)
+    )
+    if record is None:
+        raise EmployeeNotFoundError(employee_id)
+    return _employee(record, await admin.identities(employee_id))
+
+
+@router.post(
+    "/employees",
+    response_model=Employee,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_employee(
+    request: Request, principal: Admin, body: EmployeeCreate
+) -> Employee:
+    """Add a hire. The id is the one the company already uses, so a retry is a 409, not a twin."""
+    _require_hr(principal, "create an employee")
+    record = await request.app.state.container.admin.create_employee(
+        _fields(body), actor=principal.subject
+    )
+    return _employee(record, ())
+
+
+@router.patch("/employees/{employee_id}", response_model=Employee)
+async def update_employee(
+    request: Request, principal: Admin, employee_id: str, body: EmployeeUpdate
+) -> Employee:
+    """Correct a directory row. Only ``status: "active"`` touches the lifecycle, and it restores.
+
+    Leaving stays on ``DELETE``: it must close the run and purge the transcript in one transaction.
+    """
+    _require_hr(principal, "change an employee")
+    changes: dict[str, Any] = body.model_dump(exclude_unset=True)
+    admin = request.app.state.container.admin
+    record = await admin.update_employee(employee_id, changes, actor=principal.subject)
+    return _employee(record, await admin.identities(employee_id))
+
+
+@router.post("/employees/bulk", response_model=EmployeeBulkResult)
+async def sync_employees(
+    request: Request, principal: Admin, body: EmployeesBulk
+) -> EmployeeBulkResult:
+    """Upsert a batch from an HRIS. Rows are keyed by ``employee_id``; leaving is never implied."""
+    _require_hr(principal, "sync employees")
+    created, updated = await request.app.state.container.admin.sync_employees(
+        [_fields(employee) for employee in body.employees], actor=principal.subject
+    )
+    return EmployeeBulkResult(created=created, updated=updated)
+
+
 @router.get("/questions", response_model=QuestionList)
 async def list_questions(  # noqa: PLR0917 - the query parameters are the endpoint's interface
 
@@ -296,7 +408,7 @@ async def link_identity(
         body.channel, body.external_id, body.employee_id
     )
     if not linked:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "employee not found")
+        raise EmployeeNotFoundError(body.employee_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -398,6 +510,19 @@ def _run_cursor(raw: str | None) -> RunCursor | None:
         raise _bad_cursor() from error
 
 
+def _employee_cursor(raw: str | None) -> EmployeeCursor | None:
+    if raw is None:
+        return None
+    payload = _payload(raw)
+    try:
+        return EmployeeCursor(
+            created_at=datetime.fromisoformat(str(payload["created_at"])),
+            employee_id=str(payload["employee_id"]),
+        )
+    except (KeyError, ValueError) as error:
+        raise _bad_cursor() from error
+
+
 def _question_cursor(raw: str | None) -> QuestionCursor | None:
     if raw is None:
         return None
@@ -437,6 +562,60 @@ def _next_question_cursor(records: tuple[QuestionRecord, ...], has_more: bool) -
     return encode(
         {"answered": last.answered, "asked_at": last.asked_at.isoformat(), "id": last.id}
     )
+
+
+def _next_employee_cursor(records: tuple[EmployeeRecord, ...], has_more: bool) -> str | None:
+    if not has_more or not records:
+        return None
+    last = records[-1]
+    return encode(
+        {"created_at": last.created_at.isoformat(), "employee_id": last.employee_id}
+    )
+
+
+def _fields(body: EmployeeCreate) -> EmployeeFields:
+    return EmployeeFields(
+        employee_id=body.employee_id,
+        name=body.name,
+        role=body.role,
+        department=body.department,
+        recruiter_id=body.recruiter_id,
+        started_at=body.started_at,
+        audience=tuple(body.audience),
+        scenario_id=body.scenario_id,
+    )
+
+
+def _employee(record: EmployeeRecord, channels: tuple[IdentityRecord, ...]) -> Employee:
+    return Employee(
+        employee_id=record.employee_id,
+        name=record.name,
+        role=record.role,
+        department=record.department,
+        recruiter_id=record.recruiter_id,
+        started_at=record.started_at,
+        audience=list(record.audience),
+        scenario_id=record.scenario_id,
+        status=record.status,
+        left_at=record.left_at,
+        created_at=record.created_at,
+        channels=[
+            EmployeeChannel(
+                channel=channel.channel,
+                external_id=channel.external_id,
+                linked_at=channel.linked_at,
+            )
+            for channel in channels
+        ],
+    )
+
+
+def _require_hr(principal: AdminPrincipal, action: str) -> None:
+    if not principal.is_hr:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"only hr_admin may {action}",
+        )
 
 
 def _question(record: QuestionRecord) -> Question:

@@ -10,6 +10,32 @@ from datetime import date, datetime
 
 
 @dataclass(frozen=True, slots=True)
+class EmployeeRecord:
+    """One person in the directory, with the fields the cabinet and an HRIS sync both care about."""
+
+    employee_id: str
+    name: str
+    role: str
+    department: str
+    recruiter_id: str | None
+    started_at: date
+    audience: tuple[str, ...]
+    scenario_id: str
+    status: str
+    left_at: datetime | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityRecord:
+    """One messenger account linked to the employee: the person's address, not a run's."""
+
+    channel: str
+    external_id: str
+    linked_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class RunRecord:
     run_id: str
     employee_id: str
@@ -83,6 +109,14 @@ class KnowledgeRecord:
     valid_from: date | None
     valid_to: date | None
     updated_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeCursor:
+    """The sort key of the last row on a page: ``(created_at, id)``, newest first."""
+
+    created_at: datetime
+    employee_id: str
 
 
 @dataclass(frozen=True, slots=True)

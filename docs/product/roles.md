@@ -5,10 +5,12 @@
 | Chat with the bot | own | own | own | own |
 | See own onboarding run | yes | yes | yes | yes |
 | See other employees' runs | no | own pipeline | own department | all |
+| See the employee directory | no | own pipeline | own department | all |
 | See the risk digest | no | own pipeline | own department | all |
 | Send a manual message | no | own pipeline | no | all |
 | Resolve an escalation | no | own pipeline | own department | all |
 | Read `audience: hr_only` documents | no | no | no | yes |
+| Add or correct a directory row | no | no | no | yes |
 | Upload knowledge documents | no | no | no | yes |
 | Edit scenarios and prompts | no | no | no | via review only |
 | Read metrics | no | own pipeline | own department | all |
@@ -26,6 +28,9 @@
    through the outbox; the cabinet never calls MAX directly.
 5. Removing an employee from the directory sets `status='left'`, closes the run, deletes the
    question rows, and redacts personal fields in the audit log. The audit skeleton survives. The
-   call is HR-only and idempotent.
-6. Age-based retention is a scheduled pass, not a manual chore: questions and personal audit
+   call is HR-only and idempotent. Restoring the row clears `left_at` but cannot restore what the
+   purge deleted: links and transcripts stay gone, and the person starts over.
+6. A directory write names its actor and never starts, stops or restarts a run. The scenario and its
+   timer own that, so an HRIS sync cannot hijack an onboarding in flight.
+7. Age-based retention is a scheduled pass, not a manual chore: questions and personal audit
    fields older than `DATA_RETENTION_DAYS` are purged. See the retention runbook.

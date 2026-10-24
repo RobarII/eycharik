@@ -25,6 +25,7 @@ export const CAPABILITIES: Record<Role, readonly string[]> = {
     "questions.resolve",
     "questions.assign",
     "knowledge.read",
+    "employees.read",
     "analytics.read",
   ],
   hr_admin: [
@@ -34,6 +35,8 @@ export const CAPABILITIES: Record<Role, readonly string[]> = {
     "questions.assign",
     "knowledge.read",
     "knowledge.write",
+    "employees.read",
+    "employees.write",
     "employees.offboard",
     "analytics.read",
   ],

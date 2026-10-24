@@ -7,23 +7,29 @@ place whether the caller is HTTP, a test, or a future CLI.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from onboarding.app.admin.actions import (
     Assignment,
+    EmployeeDirectory,
+    EmployeeFields,
     EmployeeOffboarder,
     Offboarding,
     QuestionAssigner,
     QuestionResolver,
     Resolution,
+    UnknownScenarioError,
 )
 from onboarding.app.admin.queries import AdminQueries
 from onboarding.app.admin.records import (
     DigestRecord,
+    EmployeeCursor,
+    EmployeeRecord,
     EventRecord,
+    IdentityRecord,
     KnowledgeRecord,
     OverviewRecord,
     QuestionCursor,
@@ -70,6 +76,7 @@ class AdminService:
         self.settings = settings
         self._extractions = extractions
         self._extraction_profile_hash = extraction_profile_hash
+        self._employees = EmployeeDirectory(database, clock)
         self._resolver = QuestionResolver(database, clock)
         self._assigner = QuestionAssigner(database, clock)
         self._offboarder = EmployeeOffboarder(database, clock)
@@ -118,6 +125,50 @@ class AdminService:
             active=active,
             search=search,
         )
+
+    async def employees_page(
+        self,
+        *,
+        recruiter_id: str | None,
+        department: str | None = None,
+        status_filter: str | None = None,
+        search: str | None = None,
+        limit: int,
+        after: EmployeeCursor | None = None,
+    ) -> tuple[tuple[EmployeeRecord, ...], bool]:
+        return await self._queries.employees_page(
+            recruiter_id=recruiter_id,
+            department=department,
+            status_filter=status_filter,
+            search=search,
+            limit=limit,
+            after=after,
+        )
+
+    async def employees_total(
+        self,
+        *,
+        recruiter_id: str | None,
+        department: str | None = None,
+        status_filter: str | None = None,
+        search: str | None = None,
+    ) -> int:
+        return await self._queries.employees_total(
+            recruiter_id=recruiter_id,
+            department=department,
+            status_filter=status_filter,
+            search=search,
+        )
+
+    async def employee(
+        self, employee_id: str, *, recruiter_id: str | None, department: str | None = None
+    ) -> EmployeeRecord | None:
+        return await self._queries.employee(
+            employee_id, recruiter_id=recruiter_id, department=department
+        )
+
+    async def identities(self, employee_id: str) -> tuple[IdentityRecord, ...]:
+        return await self._queries.identities(employee_id)
 
     async def run(
         self, run_id: str, *, recruiter_id: str | None, department: str | None = None
@@ -211,6 +262,29 @@ class AdminService:
         return await self._queries.knowledge(limit=limit, include_hr_only=include_hr_only)
 
     # --- commands ----------------------------------------------------------
+
+    async def create_employee(self, fields: EmployeeFields, *, actor: str) -> EmployeeRecord:
+        self._require_scenario(fields.scenario_id)
+        return await self._employees.create(fields, actor=actor)
+
+    async def update_employee(
+        self, employee_id: str, changes: Mapping[str, object], *, actor: str
+    ) -> EmployeeRecord:
+        chosen = changes.get("scenario_id")
+        if isinstance(chosen, str):
+            self._require_scenario(chosen)
+        return await self._employees.update(employee_id, changes, actor=actor)
+
+    async def sync_employees(
+        self, rows: Sequence[EmployeeFields], *, actor: str
+    ) -> tuple[int, int]:
+        for row in rows:
+            self._require_scenario(row.scenario_id)
+        return await self._employees.upsert(rows, actor=actor)
+
+    def _require_scenario(self, scenario_id: str) -> None:
+        if scenario_id not in self.catalog.ids():
+            raise UnknownScenarioError(f"scenario {scenario_id!r} is not deployed")
 
     async def resolve_question(
         self,

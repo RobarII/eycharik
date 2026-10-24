@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from onboarding.core.models import Channel
 
@@ -35,6 +42,135 @@ class AdminIdentity(BaseModel):
     scope: AdminScope
     capabilities: list[str]
     expires_at: datetime | None
+
+
+# A person id comes from an HR system, so it is an opaque token, not a display name.
+EmployeeIdText = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9._:@-]+$"
+    ),
+]
+_PERSON = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+# An audience entry is one of the three shapes the retrieval ACL understands. A free-form string
+# would look accepted and then match no document.
+_AUDIENCE = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=80, pattern=r"^(all|hr_only|dept:[\w.-]{1,64})$"),
+]
+# An inline ``Literal["active"]`` confuses the quote-removal lint under postponed evaluation.
+RestoreStatus = Literal["active"]
+_SCENARIO_ID = Annotated[
+    str,
+    StringConstraints(pattern=r"^[a-z0-9][a-z0-9._-]*$", min_length=1, max_length=64),
+]
+
+
+class EmployeeChannel(BaseModel):
+    """One messenger account linked to the person. The link is the access gate (ADR 0019)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    channel: str
+    external_id: str
+    linked_at: datetime
+
+
+class Employee(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    employee_id: str
+    name: str
+    role: str
+    department: str
+    recruiter_id: str | None
+    started_at: date
+    audience: list[str]
+    scenario_id: str
+    status: str
+    left_at: datetime | None
+    created_at: datetime
+    channels: list[EmployeeChannel] = Field(default_factory=list)
+
+
+class EmployeeCreate(BaseModel):
+    """A new hire. ``employee_id`` is the id the company already uses, not one the server mints."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    employee_id: EmployeeIdText
+    name: _PERSON
+    role: _PERSON
+    department: _PERSON
+    recruiter_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=64)
+    ] | None = None
+    started_at: date
+    audience: list[_AUDIENCE] = Field(default_factory=lambda: ["all"], min_length=1, max_length=32)
+    scenario_id: _SCENARIO_ID = "onboarding_default"
+
+    @field_validator("audience")
+    @classmethod
+    def _unique_audience(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("audience entries must be unique")
+        return value
+
+
+class EmployeeUpdate(BaseModel):
+    """A correction to the directory. ``status: "active"`` restores a person who has left.
+
+    Leaving is not an update: it is ``DELETE /employees/{id}``, which stops the run and purges the
+    transcript. Restoring keeps that purge; the person comes back with no history and no links.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: _PERSON | None = None
+    role: _PERSON | None = None
+    department: _PERSON | None = None
+    recruiter_id: Annotated[
+        str, StringConstraints(strip_whitespace=True, max_length=64)
+    ] | None = None
+    started_at: date | None = None
+    audience: list[_AUDIENCE] | None = Field(default=None, min_length=1, max_length=32)
+    scenario_id: _SCENARIO_ID | None = None
+    status: RestoreStatus | None = None
+
+    @field_validator("audience")
+    @classmethod
+    def _unique_audience(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and len(set(value)) != len(value):
+            raise ValueError("audience entries must be unique")
+        return value
+
+
+class EmployeesBulk(BaseModel):
+    """An HRIS batch: the same body repeated is the same batch, because every row is keyed by id."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    employees: list[EmployeeCreate] = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def _unique_ids(self) -> EmployeesBulk:
+        ids = [employee.employee_id for employee in self.employees]
+        if len(set(ids)) != len(ids):
+            raise ValueError("employees must not repeat an employee_id inside one batch")
+        return self
+
+
+class EmployeeBulkResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    created: int
+    updated: int
+
+
+class EmployeeList(BaseModel):
+    items: list[Employee]
+    next_cursor: str | None = None
+    total: int
 
 
 class RunSummary(BaseModel):

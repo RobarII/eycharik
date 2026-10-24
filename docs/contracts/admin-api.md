@@ -66,6 +66,11 @@ cookie exists at all.
 | `GET` | `/admin/api/v1/questions?status=unanswered&limit=50&cursor=&assignee=any` | questions by status: `unanswered`, `answered`, `all`, paged; `assignee` is `any`, `me` or `unassigned` |
 | `PATCH` | `/admin/api/v1/questions/{question_id}/assignee` | claim an open question, hand it to another admin, or clear the owner |
 | `POST` | `/admin/api/v1/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
+| `GET` | `/admin/api/v1/employees?limit=50&cursor=&status=all&q=` | the directory, newest first, paged; `status` is `active`, `left` or `all`, `q` searches id, name, role and department |
+| `GET` | `/admin/api/v1/employees/{employee_id}` | one person, with the messenger accounts linked to them |
+| `POST` | `/admin/api/v1/employees` | HR adds a hire; the id is the one the company already uses |
+| `PATCH` | `/admin/api/v1/employees/{employee_id}` | HR corrects a row, or restores a person who has left with `{"status": "active"}` |
+| `POST` | `/admin/api/v1/employees/bulk` | HR upserts a batch from an HRIS, keyed by `employee_id` |
 | `POST` | `/admin/api/v1/identities` | HR links one messenger account (channel + external id) to an employee; nothing else lets a stranger in |
 | `DELETE` | `/admin/api/v1/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
 | `GET` | `/admin/api/v1/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
@@ -118,6 +123,7 @@ first `limit` rows. `q` is a case-insensitive substring match; `%` and `_` are l
     "questions.read",
     "questions.resolve",
     "knowledge.read",
+    "employees.read",
     "analytics.read"
   ],
   "expires_at": "2030-12-31T00:00:00Z"
@@ -134,8 +140,10 @@ server does not grant must never become a button that fails with `403`.
 | `questions.resolve` | yes | yes | yes |
 | `questions.assign` | yes | yes | yes |
 | `knowledge.read` | yes | yes | yes |
+| `employees.read` | yes | yes | yes |
 | `analytics.read` | yes | yes | yes |
 | `knowledge.write` | no | no | yes |
+| `employees.write` | no | no | yes |
 | `employees.offboard` | no | no | yes |
 
 A capability is a rendering hint, never an authorisation. Every endpoint re-checks its own rule, so
@@ -174,6 +182,54 @@ it; the cabinet falls back to `step_id`. `step_number` is 1-based and `0` when t
 `events`, and `questions`. `tone` is `formal` or `informal` and comes from the welcome choice,
 pinned on the run like the scenario version. Its questions are only that employee's, limited to the
 newest 20.
+
+`Employee`:
+
+```json
+{
+  "employee_id": "1001",
+  "name": "Анна Смирнова",
+  "role": "Инженер-технолог",
+  "department": "Производство",
+  "recruiter_id": "rec-1",
+  "started_at": "2026-10-20",
+  "audience": ["all", "dept:production"],
+  "scenario_id": "onboarding_default",
+  "status": "active",
+  "left_at": null,
+  "created_at": "2026-10-18T12:00:00Z",
+  "channels": [{"channel": "max", "external_id": "4242", "linked_at": "2026-10-20T08:55:00Z"}]
+}
+```
+
+`EmployeeList` is `{items, next_cursor, total}`; a list item carries `channels: []` because the
+directory does not pay one query per row. Ask for the person to see their links.
+
+`employee_id` is an opaque company id: it arrives from an HR system, it is not minted here, and the
+server stores it verbatim. `started_at` is the first working day, which is what the scenario timer
+counts from. `audience` is the retrieval vocabulary the documents declare (`all`, `hr_only`, or
+`dept:<name>`); a free-form string is refused with `422` because it would look accepted and match
+nothing. `scenario_id` must be a deployed scenario in this release, otherwise `422`
+`unknown_scenario`: creating a hire whose first message could never be sent is worse than refusing.
+
+`EmployeeCreate` is the writable half of that object, and `extra` fields are refused rather than
+dropped, so an HRIS typo fails loudly. `PATCH` takes any subset:
+
+```json
+{"name": "Анна С.", "audience": ["all"], "recruiter_id": null}
+```
+
+`{"status": "active"}` restores a person who has left and clears `left_at`. Leaving is **not** a
+patch: it is `DELETE`, which must close the run and purge the transcript in the same transaction.
+A restore keeps that purge; the person comes back with no links and no history, which is the honest
+consequence of a deletion. `{"status": "left"}` is refused: use `DELETE`.
+
+`POST /employees/bulk` takes `{"employees": [EmployeeCreate, ...]}`, at most 500 rows, and answers
+`{"created": 2, "updated": 0}`. Every row is keyed by `employee_id`, so the same batch sent twice
+writes the same rows. The upsert corrects the directory fields and deliberately leaves `status` and
+`left_at` alone: an HRIS export that still lists someone who has left must not undo an offboarding
+that purged their transcript. A repeated `employee_id` inside one batch is `422`, not a silent
+last-one-wins.
 
 `Question`:
 
@@ -409,17 +465,19 @@ A caller may send its own `X-Request-ID`; the server echoes it only if it matche
 | `forbidden` | 403 | the role may not do this |
 | `not_found` | 404 | no such route or resource in the caller's scope |
 | `question_not_found` | 404 | the question is closed, deleted, or outside the scope |
-| `employee_not_found` | 404 | no employee with that id |
+| `employee_not_found` | 404 | no employee with that id, or it is outside the caller's scope |
 | `unknown_channel` | 404 | the deployment does not serve that messenger |
 | `method_not_allowed` | 405 | the route exists, the verb does not |
 | `conflict` | 409 | the resource changed under the caller |
 | `question_already_resolved` | 409 | another recruiter closed the question first |
+| `employee_already_exists` | 409 | the directory already holds this id; `POST` is not an upsert |
 | `payload_too_large` | 413 | body or upload over the limit |
 | `upload_too_large` | 413 | the file is over `EXTRACTION_MAX_UPLOAD_BYTES` |
 | `unsupported_media_type` | 415 | not a PDF or a PPTX |
 | `validation_failed` | 422 | a field is missing or malformed; `errors` lists each one |
 | `unprocessable` | 422 | the request is well-formed but cannot be applied |
 | `unknown_assignee` | 422 | the requested owner holds no admin token |
+| `unknown_scenario` | 422 | `scenario_id` names a scenario this release does not deploy |
 | `knowledge_rejected` | 422 | the frontmatter violates `doc.schema.json` |
 | `rate_limited` | 429 | too many failed authentications from one peer |
 | `internal` | 500 | the server crashed; the text never echoes the exception |
@@ -443,8 +501,11 @@ A new code is an additive change. A code that disappears or changes meaning is a
 
 ## Rules
 
-- Mutations are limited to the two knowledge uploads and the question resolution above. The cabinet
-  never talks to MAX directly: every outbound message is an outbox row.
+- Mutations are the directory writes, the identity link, the question assignment and resolution,
+  the offboarding, and the two knowledge uploads. The cabinet never talks to MAX directly: every
+  outbound message is an outbox row.
+- A directory write names its actor in the audit log and never touches a run. Starting or restarting
+  a run is a scenario/timer decision, not a directory edit.
 - Only `hr_admin` may upload a file; a recruiter or manager answers `403`. A format other than PDF
   or PPTX answers `415`, an oversized file `413`, invalid metadata `422` with the exact field.
 - Every answer attempt already writes an audit row and a question row; the cabinet does not

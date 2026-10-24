@@ -1,20 +1,25 @@
-"""The two writes the recruiter cabinet is allowed to make.
+"""The writes the recruiter cabinet is allowed to make.
 
-Both are a single database transaction: the cabinet must never close a question without queueing
-its reply, and it must never remove an employee while leaving an active run behind. The reply goes
-through the outbox, not through MAX, so pacing and retries stay in one place.
+Each is a single database transaction: the cabinet must never close a question without queueing its
+reply, must never remove an employee while leaving an active run behind, and must never write a
+directory row without saying who did it. The reply goes through the outbox, not through MAX, so
+pacing and retries stay in one place.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, cast
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 
-from onboarding.app.admin.queries import employee_scope_filters
+from onboarding.app.admin.queries import employee_record, employee_scope_filters
+from onboarding.app.admin.records import EmployeeRecord
 from onboarding.app.db.models import (
     AuditRow,
     ChannelIdentityRow,
@@ -43,6 +48,32 @@ class EmployeeNotFoundError(Exception):
 
 class UnknownAssigneeError(Exception):
     """The requested owner is not an admin the server knows how to authenticate."""
+
+
+class EmployeeAlreadyExistsError(Exception):
+    """The directory already holds a row with this id; a create is not an upsert."""
+
+
+class UnknownScenarioError(Exception):
+    """The scenario is not deployed, so a new employee could not start onboarding."""
+
+
+class EmployeeStillActiveError(Exception):
+    """Restoring is only for a person who has left; an active row is already restored."""
+
+
+@dataclass(frozen=True, slots=True)
+class EmployeeFields:
+    """The mutable directory columns, as a route or an HRIS sync hands them over."""
+
+    employee_id: str
+    name: str
+    role: str
+    department: str
+    recruiter_id: str | None
+    started_at: date
+    audience: tuple[str, ...]
+    scenario_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,3 +342,140 @@ class EmployeeOffboarder:
                 runs_closed=runs_closed,
                 audit_redacted=redacted,
             )
+
+
+class EmployeeDirectory:
+    """The directory writes: create, correct, and sync a batch from an HR system.
+
+    A row's history is the audit log, not a shadow table. ``status`` is deliberately not a part of
+    an ordinary update: leaving goes through ``EmployeeOffboarder`` (which also purges), and
+    restoring is a separate, explicit change that cannot resurrect a transcript.
+    """
+
+    def __init__(self, database: Database, clock: Clock) -> None:
+        self._database = database
+        self._clock = clock
+
+    async def create(self, fields: EmployeeFields, *, actor: str) -> EmployeeRecord:
+        now = self._clock.now()
+        async with self._database.session() as session:
+            row = EmployeeRow(
+                id=fields.employee_id,
+                name=fields.name,
+                role=fields.role,
+                department=fields.department,
+                recruiter_id=fields.recruiter_id,
+                started_at=fields.started_at,
+                audience=list(fields.audience),
+                scenario_id=fields.scenario_id,
+                status="active",
+                created_at=now,
+            )
+            session.add(row)
+            try:
+                await session.flush()
+            except IntegrityError as error:
+                raise EmployeeAlreadyExistsError(fields.employee_id) from error
+            session.add(
+                AuditRow(
+                    name="employee_created",
+                    fields={
+                        "employee_id": fields.employee_id,
+                        "by": actor,
+                        "scenario": fields.scenario_id,
+                        "department": fields.department,
+                    },
+                )
+            )
+            return employee_record(row)
+
+    async def update(
+        self,
+        employee_id: str,
+        changes: Mapping[str, object],
+        *,
+        actor: str,
+    ) -> EmployeeRecord:
+        values = dict(changes)
+        restore = values.pop("status", None) == "active"
+        if restore:
+            values["status"] = "active"
+            values["left_at"] = None
+        async with self._database.session() as session:
+            row = await session.get(EmployeeRow, employee_id)
+            if row is None:
+                raise EmployeeNotFoundError(f"employee {employee_id} not found")
+            if values:
+                await session.execute(
+                    update(EmployeeRow)
+                    .where(EmployeeRow.id == employee_id)
+                    .values(**values)
+                )
+                await session.refresh(row)
+                session.add(
+                    AuditRow(
+                        name="employee_restored" if restore else "employee_updated",
+                        fields={
+                            "employee_id": employee_id,
+                            "by": actor,
+                            "changed": sorted(values),
+                        },
+                    )
+                )
+            return employee_record(row)
+
+    async def upsert(
+        self, rows: Sequence[EmployeeFields], *, actor: str
+    ) -> tuple[int, int]:
+        """Insert or correct a batch. A left employee is not resurrected by a sync.
+
+        The status columns are excluded from the conflict update on purpose: an HRIS feed that
+        still lists someone who has left must not undo an offboarding that purged a transcript.
+        """
+        if not rows:
+            return (0, 0)
+        ids = [row.employee_id for row in rows]
+        async with self._database.session() as session:
+            known = set(
+                (await session.scalars(select(EmployeeRow.id).where(EmployeeRow.id.in_(ids))))
+                .all()
+            )
+            statement = insert(EmployeeRow).values(
+                [
+                    {
+                        "id": row.employee_id,
+                        "name": row.name,
+                        "role": row.role,
+                        "department": row.department,
+                        "recruiter_id": row.recruiter_id,
+                        "started_at": row.started_at,
+                        "audience": list(row.audience),
+                        "scenario_id": row.scenario_id,
+                        "status": "active",
+                    }
+                    for row in rows
+                ]
+            )
+            await session.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[EmployeeRow.id],
+                    set_={
+                        "name": statement.excluded.name,
+                        "role": statement.excluded.role,
+                        "department": statement.excluded.department,
+                        "recruiter_id": statement.excluded.recruiter_id,
+                        "started_at": statement.excluded.started_at,
+                        "audience": statement.excluded.audience,
+                        "scenario_id": statement.excluded.scenario_id,
+                    },
+                )
+            )
+            created = len(set(ids) - known)
+            updated = len(set(ids) & known)
+            session.add(
+                AuditRow(
+                    name="employees_synced",
+                    fields={"by": actor, "created": created, "updated": updated},
+                )
+            )
+            return created, updated

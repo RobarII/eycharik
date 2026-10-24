@@ -38,6 +38,7 @@ CAPABILITIES: dict[str, tuple[str, ...]] = {
         "questions.resolve",
         "questions.assign",
         "knowledge.read",
+        "employees.read",
         "analytics.read",
     ),
     "manager": (
@@ -46,6 +47,7 @@ CAPABILITIES: dict[str, tuple[str, ...]] = {
         "questions.resolve",
         "questions.assign",
         "knowledge.read",
+        "employees.read",
         "analytics.read",
     ),
     "hr_admin": (
@@ -55,6 +57,8 @@ CAPABILITIES: dict[str, tuple[str, ...]] = {
         "questions.assign",
         "knowledge.read",
         "knowledge.write",
+        "employees.read",
+        "employees.write",
         "employees.offboard",
         "analytics.read",
     ),

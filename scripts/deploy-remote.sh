@@ -88,11 +88,16 @@ wait_healthy postgres 60 || { echo "deploy: postgres did not become healthy" >&2
 log "applying migrations"
 "${COMPOSE[@]}" run --rm migrate
 
-log "starting worker, then api and admin"
-"${COMPOSE[@]}" up -d --no-deps --remove-orphans worker
-"${COMPOSE[@]}" up -d --no-deps --remove-orphans api admin
+log "starting worker and api"
+"${COMPOSE[@]}" up -d --no-deps --remove-orphans worker api
 
 wait_healthy api 60 || { echo "deploy: api did not become healthy" >&2; exit 1; }
+
+# The cabinet resolves the API name at startup on older nginx images; start it only after the API
+# address is stable. The nginx config also resolves per request, so an API-only restart is safe.
+log "starting admin"
+"${COMPOSE[@]}" up -d --no-deps --remove-orphans admin
+
 wait_healthy admin 30 || { echo "deploy: admin did not become healthy" >&2; exit 1; }
 
 log "smoke testing $PUBLIC_URL"

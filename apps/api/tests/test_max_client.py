@@ -256,6 +256,47 @@ def test_a_declared_and_a_streamed_file_are_both_capped() -> None:
         asyncio.run(build_files(streamed).fetch(InboundFile(token="t", url="https://cdn.max.ru/f")))
 
 
+def test_a_live_media_host_is_fetched_without_the_token() -> None:
+    """Measured 2026-10-24: MAX answers `payload.url` on `fd.oneme.ru`, not on `max.ru`.
+
+    The first live document died here with `untrusted_host`, so the host family is pinned.
+    """
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"%PDF-1.7")
+
+    files = build_files(httpx.MockTransport(handler))
+    for url in (
+        "https://fd.oneme.ru/f/1",
+        "https://iu.oneme.ru/uploadImage?r=signed",
+        "https://i.oneme.ru/i?r=signed",
+        "https://oneme.ru/f/1",
+    ):
+        assert asyncio.run(files.fetch(InboundFile(token="t", url=url))) == b"%PDF-1.7"
+    assert seen
+    assert all(request.headers.get("authorization") is None for request in seen)
+
+
+def test_a_lookalike_of_the_media_domain_is_refused() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"%PDF-1.7")
+
+    files = build_files(httpx.MockTransport(handler))
+    for url in (
+        "https://oneme.ru.evil.test/f/1",
+        "https://evil-oneme.ru/f/1",
+        "https://max.ru.evil.test/f/1",
+    ):
+        with pytest.raises(FileFetchError, match="untrusted_host"):
+            asyncio.run(files.fetch(InboundFile(token="t", url=url)))
+    assert seen == []
+
+
 def test_an_attachment_url_outside_max_is_not_fetched() -> None:
     seen: list[httpx.Request] = []
 

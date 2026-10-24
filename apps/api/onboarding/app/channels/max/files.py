@@ -6,6 +6,11 @@ not be able to exhaust memory.
 
 The bot token is attached only for MAX's own host. A CDN URL signed by the platform does not expect
 an Authorization header, and sending a secret to a host the messenger named is how a token leaks.
+
+The platform hands out two families of hosts: the bot API (`platform-api2.max.ru`) and the media CDN
+(`*.oneme.ru`). A live attachment on 2026-10-24 pointed at `fd.oneme.ru`; before it was allowlisted
+every real document failed with `untrusted_host` and the employee's file was never stored. Both
+families are the vendor's, so both are trusted; the token still goes to the bot API only.
 """
 
 from __future__ import annotations
@@ -17,6 +22,10 @@ from pydantic import SecretStr
 
 from onboarding.app.files.errors import FileTooLargeError
 from onboarding.ports import InboundFile
+
+# The vendor's own domains. `max.ru` is the public one, `oneme.ru` is the media CDN the bot API
+# returns in `payload.url` (`fd.oneme.ru`, `iu.oneme.ru`, `i.oneme.ru`).
+TRUSTED_DOMAINS = ("max.ru", "oneme.ru")
 
 
 class FileFetchError(RuntimeError):
@@ -43,7 +52,9 @@ class MaxFiles:
         self._max_bytes = max_bytes
 
     def _trusted(self, host: str) -> bool:
-        return host in (self._platform_host, "max.ru") or host.endswith(".max.ru")
+        return host == self._platform_host or any(
+            host == domain or host.endswith(f".{domain}") for domain in TRUSTED_DOMAINS
+        )
 
     async def fetch(self, file: InboundFile) -> bytes:
         if file.url is None:

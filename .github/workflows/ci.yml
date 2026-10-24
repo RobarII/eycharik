@@ -35,15 +35,20 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/admin/package-lock.json
       - run: uv sync --frozen
+      - run: cd apps/admin && npm ci
       - name: Migrate a fresh database
         run: uv run alembic upgrade head
-      - name: Lint, type-check, docs
-        run: make lint types arch docs
-      - name: Offline and integration tiers with a coverage floor
-        # `make test` would drop the 52 integration cases; the database is already here, so run
-        # both tiers and let the coverage floor notice a suite that quietly stopped running.
-        run: make test-cov
+      - name: The gate, exactly as README tells a reviewer to run it
+        # `make verify` is doctor + lint + types + imports + docs + both test tiers with the
+        # coverage floor + the cabinet. The same command is documented in docs/checker.md, so CI
+        # and the reviewer cannot drift apart.
+        run: make verify
       - name: Run migrations from an empty database again
         run: |
           uv run alembic downgrade base

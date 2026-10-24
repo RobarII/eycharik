@@ -403,6 +403,11 @@ class OnboardingService:
                 question=None,
             )
             return ServiceResult(handled=True)
+        if event.kind is EventKind.BUTTON_PRESSED and event.button_id in _POST_RUN_BUTTONS:
+            await self._on_post_run_button(
+                event.button_id or "", employee_id, address, now.date()
+            )
+            return ServiceResult(handled=True)
         asks = (
             event.text
             if event.kind in {EventKind.MESSAGE_RECEIVED, EventKind.FILE_RECEIVED}
@@ -420,6 +425,37 @@ class OnboardingService:
             return ServiceResult(handled=True)
         await self._audit.record("event_without_run", employee_id=str(employee_id))
         return ServiceResult(handled=False)
+
+    async def _on_post_run_button(
+        self,
+        button_id: str,
+        employee_id: EmployeeId,
+        address: Address,
+        today: date,
+    ) -> None:
+        """The completion menu: benefits answer, a question for HR, or a fresh run."""
+        await self._audit.record(
+            "post_run_menu", employee_id=str(employee_id), button=button_id
+        )
+        if button_id == "post_reboot":
+            await self.reboot(employee_id, address)
+            return
+        if button_id == "post_ask":
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=self._executor.ask_question_text()),),
+                address,
+                employee_id,
+                today,
+                question=None,
+            )
+            return
+        await self._act(
+            (Action(kind=ActionKind.ANSWER),),
+            address,
+            employee_id,
+            today,
+            question=self._executor.post_run_benefits_text(),
+        )
 
     async def reboot(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
         """Close the current run and make the same person start from the welcome again.
@@ -671,6 +707,9 @@ class OnboardingService:
         )
         for action in actions:
             await self._executor.execute(action, context)
+
+
+_POST_RUN_BUTTONS = frozenset({"post_benefits", "post_ask", "post_reboot"})
 
 
 def _asks_a_question(button_id: str | None) -> bool:

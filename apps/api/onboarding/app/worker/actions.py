@@ -16,6 +16,7 @@ from onboarding.core.models import (
     Action,
     ActionKind,
     Address,
+    Button,
     EmployeeId,
     EmployeeProfile,
     EscalationReason,
@@ -101,11 +102,14 @@ class ActionExecutor:
                     note=action.note,
                 )
             case ActionKind.COMPLETE:
+                # The completion is not a dead end: the menu keeps the usual questions one tap
+                # away instead of asking the person to invent a command.
                 await self._messaging.send(
                     OutboundMessage(
                         address=context.address,
                         text=self._copy.completion,
                         image=action.image,
+                        keyboard=(_menu_buttons(self._copy),),
                     )
                 )
                 await self._audit.record(
@@ -115,6 +119,9 @@ class ActionExecutor:
                 )
             case ActionKind.IGNORE:
                 await self._audit.record("action_ignored", employee_id=_employee(context))
+
+    def post_run_benefits_text(self) -> str:
+        return self._copy.post_run_benefits
 
     def file_received_text(self) -> str:
         return self._copy.file_received
@@ -164,6 +171,10 @@ class ActionExecutor:
         await self._messaging.send(
             OutboundMessage(address=context.address, text=outcome.text)
         )
+
+
+def _menu_buttons(copy: Copy) -> tuple[Button, ...]:
+    return tuple(Button(id=button_id, text=text) for button_id, text in copy.post_run_menu)
 
 
 def _employee(context: ActionContext) -> str | None:

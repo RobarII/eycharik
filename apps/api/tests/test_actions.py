@@ -198,3 +198,18 @@ async def test_an_open_answer_is_acknowledged_without_a_value() -> None:
     )
 
     assert messaging.sent[0].text == "Записал, спасибо."
+
+
+async def test_completion_carries_a_menu_instead_of_a_dead_end() -> None:
+    executor, messaging, _, _ = build()
+
+    await executor.execute(
+        Action(kind=ActionKind.COMPLETE, outcome=Outcome.COMPLETED),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 23)),
+    )
+
+    assert [button.id for button in messaging.sent[0].keyboard[0]] == [
+        "post_benefits",
+        "post_ask",
+        "post_reboot",
+    ]

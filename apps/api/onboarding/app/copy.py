@@ -42,6 +42,8 @@ class Copy:
     survey_ack: str = ""
     survey_ack_open: str = ""
     stage_progress: str = ""
+    post_run_benefits: str = ""
+    post_run_menu: tuple[tuple[str, str], ...] = ()
 
     def source_line(self, names: Sequence[str]) -> str:
         """A human-readable source line instead of the raw ``[doc#chunk]`` markers.
@@ -115,6 +117,12 @@ def load_copy(path: Path) -> Copy:
         survey_ack=_text(raw, "survey_ack", path),
         survey_ack_open=_text(raw, "survey_ack_open", path),
         stage_progress=_text(raw, "stage_progress", path),
+        post_run_benefits=_text(raw, "post_run_benefits", path),
+        post_run_menu=(
+            ("post_benefits", "Льготы и бонусы"),
+            ("post_ask", "Спросить HR"),
+            ("post_reboot", "Пройти заново"),
+        ),
     )
 
 

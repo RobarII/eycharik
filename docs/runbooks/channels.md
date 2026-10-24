@@ -125,6 +125,25 @@ The refusals follow the channel: Telegram carries the secret in a header, so a b
 reaches the parser and answers `400`; VK carries the secret in the body, so an unparseable body
 cannot be verified at all and answers `401`.
 
+### Proving that a run follows the person
+
+One scenario, two messengers. `--switch-to` drives the same employee's chat on a second channel, so
+the smoke proves what ADR 0019 promises instead of assuming it:
+
+```bash
+TELEGRAM_WEBHOOK_SECRET=... VK_WEBHOOK_SECRET=... VK_GROUP_ID=... DATABASE_URL=... \
+  uv run python scripts/channel_smoke.py --channel vk \
+    --base-url https://$HOST --chat-id $PEER_ID --group-id $GROUP_ID \
+    --switch-to telegram --switch-chat-id $TELEGRAM_CHAT_ID --reset
+```
+
+Both chats must already be linked to one employee (`/admin/api/identities`), and both are written
+to for real. The added checks are: a start on the other messenger moves the run there and re-asks
+the current question in the new conversation; the run id, its step and its question index do not
+change; an answer typed in the new messenger advances that same run; a start back on the first
+messenger returns the address; and each move leaves a `channel_changed` audit row. Delivery, the
+text cap and the refusals are then checked on both channels.
+
 The run needs a linked chat: the script cannot invent a messenger account, and an unlinked one is
 refused by design. Telegram is asked directly, so `api.telegram.org` must be reachable from the
 host running the smoke (use `HTTPS_PROXY` when it is not). The worker needs the same proxy: with a
@@ -137,6 +156,8 @@ row stays `pending` with `last_error` set to `ConnectError`, and the smoke repor
 select channel, count(*) from messages group by channel;
 select channel, count(*) from runs group by channel;
 select channel, count(*) from channel_identities group by channel;
+select fields->>'channel' as to_channel, count(*) from audit_log
+  where name = 'channel_changed' group by 1;
 ```
 
 A message stuck in `pending` for one channel while others deliver means that channel's token or

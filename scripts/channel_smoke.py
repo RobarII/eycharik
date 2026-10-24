@@ -29,7 +29,7 @@ import itertools
 import os
 import sys
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -333,6 +333,16 @@ async def _scalar(engine: AsyncEngine, sql: str, **params: Any) -> int:
     return int(value or 0)
 
 
+async def _run_by_id(engine: AsyncEngine, run_id: object) -> dict[str, Any] | None:
+    """One run, whatever address it currently sits at. A channel move must not change the row."""
+    return await _first(
+        engine,
+        "select id, employee_id, channel, chat_id, step_id, question_index, status"
+        " from runs where id = :id",
+        id=run_id,
+    )
+
+
 async def _active_run(engine: AsyncEngine, channel: str, chat_id: int) -> dict[str, Any] | None:
     return await _first(
         engine,
@@ -446,6 +456,113 @@ async def drive(
         if probe_start:
             probe_start = False
             await check_second_start(engine, scenario, updates, reporter, chat_id=chat_id)
+
+
+async def check_cross_channel(
+    engine: AsyncEngine,
+    scenario: Scenario,
+    primary: UpdatesLike,
+    alt: UpdatesLike,
+    reporter: Reporter,
+    *,
+    primary_chat: int,
+    alt_chat: int,
+    timeout: float,
+) -> bool:
+    """The run follows the person across messengers and keeps its progress (ADR 0019).
+
+    A start on the other messenger is a request to continue there: same run, same step, the current
+    question re-asked in the new conversation, and the move audited. An answer from the new
+    messenger then advances that same run, so the portability is not start-only.
+    """
+    run = await _active_run(engine, primary.channel, primary_chat)
+    if run is None:
+        reporter.check(False, "cross-channel: a run is open to follow", "no active run")
+        return False
+    run_id = run["id"]
+    employee = str(run["employee_id"])
+    step_before = cast(str, run["step_id"])
+    index_before = int(run["question_index"])
+    alt_before = (await _message_stats(engine, alt.channel, alt_chat))["total"]
+
+    def moved_to(channel: str, chat_id: int, sent_before: int) -> Callable[[], Awaitable[bool]]:
+        async def check() -> bool:
+            row = await _run_by_id(engine, run_id)
+            stats = await _message_stats(engine, channel, chat_id)
+            audits = await _scalar(
+                engine,
+                "select count(*) from audit_log where name = 'channel_changed'"
+                " and fields->>'employee_id' = :employee and fields->>'channel' = :channel",
+                employee=employee,
+                channel=channel,
+            )
+            return (
+                row is not None
+                and row["channel"] == channel
+                and int(row["chat_id"]) == chat_id
+                and stats["total"] > sent_before
+                and audits >= 1
+            )
+
+        return check
+
+    answer = await alt.start()
+    landed = await wait_for(moved_to(alt.channel, alt_chat, alt_before), timeout)
+    alt_after = (await _message_stats(engine, alt.channel, alt_chat))["total"]
+    reporter.check(
+        landed and answer.status_code == 200,
+        f"a start on {alt.channel} moves the run there",
+        f"http {answer.status_code}, {alt.channel} outbound {alt_before} -> {alt_after}",
+    )
+    moved = await _run_by_id(engine, run_id)
+    reporter.check(
+        moved is not None and moved["id"] == run_id and moved["step_id"] == step_before,
+        "the move keeps the run and its step",
+        f"{step_before} -> {(moved or {}).get('step_id', 'gone')}",
+    )
+
+    step = scenario.step(step_before)
+    label, _value = await _answer(step, moved or run, alt, alt_chat)
+
+    async def advanced() -> bool:
+        row = await _run_by_id(engine, run_id)
+        if row is None:
+            return True
+        return (cast(str, row["step_id"]), int(row["question_index"])) != (
+            step_before,
+            index_before,
+        )
+
+    progressed = await wait_for(advanced, timeout)
+    after = await _run_by_id(engine, run_id)
+    reporter.check(
+        progressed,
+        f"an answer on {alt.channel} advances the same run",
+        f"{step_before} <- {label} -> {(after or {}).get('step_id', 'closed')}",
+    )
+
+    primary_before = (await _message_stats(engine, primary.channel, primary_chat))["total"]
+    back = await primary.start()
+    returned = await wait_for(moved_to(primary.channel, primary_chat, primary_before), timeout)
+    reporter.check(
+        returned and back.status_code == 200,
+        f"a start on {primary.channel} brings it back",
+        f"http {back.status_code}",
+    )
+    final = await _run_by_id(engine, run_id)
+    reporter.check(
+        final is not None and final["channel"] == primary.channel and final["status"] == "active",
+        "the run is back on the first messenger and still running",
+        f"{final['channel'] if final else 'gone'} {final['step_id'] if final else ''}",
+    )
+    moves = await _scalar(
+        engine,
+        "select count(*) from audit_log where name = 'channel_changed'"
+        " and fields->>'employee_id' = :employee",
+        employee=employee,
+    )
+    reporter.check(moves >= 2, "every move is audited", f"{moves} channel_changed rows")
+    return True
 
 
 async def check_delivery(
@@ -627,23 +744,39 @@ async def reset(engine: AsyncEngine, channel: str, chat_id: int) -> None:
         )
 
 
-async def smoke(args: argparse.Namespace, secret: str, database_url: str) -> int:
+def _updates_for(
+    args: argparse.Namespace,
+    secrets: Mapping[str, str],
+    http: httpx.AsyncClient,
+    channel: str,
+    chat_id: int,
+) -> UpdatesLike:
+    url = f"{args.base_url.rstrip('/')}/webhook/{channel}"
+    if channel == "vk":
+        return VkUpdates(http, url, secrets["vk"], chat_id, args.group_id)
+    return Updates(http, url, secrets["telegram"], chat_id)
+
+
+async def smoke(args: argparse.Namespace, secrets: Mapping[str, str], database_url: str) -> int:
     engine = create_async_engine(database_url)
     reporter = Reporter()
     scenario = ScenarioCatalog.load(ROOT / "apps" / "api" / "onboarding" / "scenarios").active(
         args.scenario
     )
-    url = f"{args.base_url.rstrip('/')}/webhook/{args.channel}"
     async with httpx.AsyncClient(timeout=30) as http:
-        updates: UpdatesLike
-        if args.channel == "vk":
-            updates = VkUpdates(http, url, secret, args.chat_id, args.group_id)
-        else:
-            updates = Updates(http, url, secret, args.chat_id)
+        updates = _updates_for(args, secrets, http, args.channel, args.chat_id)
+        alt: UpdatesLike | None = (
+            _updates_for(args, secrets, http, args.switch_to, args.switch_chat_id)
+            if args.switch_to
+            else None
+        )
         try:
             if args.reset:
                 await reset(engine, updates.channel, args.chat_id)
-                reporter.check(True, "run reset", f"chat {args.chat_id}")
+                reporter.check(True, "run reset", f"{updates.channel} chat {args.chat_id}")
+                if alt is not None:
+                    await reset(engine, alt.channel, args.switch_chat_id)
+                    reporter.check(True, "run reset", f"{alt.channel} chat {args.switch_chat_id}")
 
             risks_before = await _scalar(
                 engine, "select count(*) from audit_log where name = 'risk_assessed'"
@@ -660,6 +793,18 @@ async def smoke(args: argparse.Namespace, secret: str, database_url: str) -> int
                 "start opens a run",
                 f"http {started.status_code}, step {run['step_id'] if run else 'none'}",
             )
+
+            if alt is not None:
+                await check_cross_channel(
+                    engine,
+                    scenario,
+                    updates,
+                    alt,
+                    reporter,
+                    primary_chat=args.chat_id,
+                    alt_chat=args.switch_chat_id,
+                    timeout=args.timeout,
+                )
 
             await drive(
                 engine,
@@ -695,6 +840,10 @@ async def smoke(args: argparse.Namespace, secret: str, database_url: str) -> int
                 )
 
             await check_delivery(engine, http, updates, args.token, reporter, chat_id=args.chat_id)
+            if alt is not None:
+                await check_delivery(
+                    engine, http, alt, args.token, reporter, chat_id=args.switch_chat_id
+                )
             await check_negative(engine, updates, reporter, chat_id=args.chat_id)
             await check_dedupe(engine, updates, reporter, chat_id=args.chat_id)
         finally:
@@ -707,6 +856,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base-url", required=True, help="public origin, e.g. https://host")
     parser.add_argument("--chat-id", type=int, required=True, help="the linked chat to drive")
     parser.add_argument("--channel", choices=["telegram", "vk"], default="telegram")
+    parser.add_argument(
+        "--switch-to",
+        choices=["telegram", "vk"],
+        default=None,
+        help="prove the run follows the person into this messenger and back",
+    )
+    parser.add_argument(
+        "--switch-chat-id",
+        type=int,
+        default=None,
+        help="the chat on --switch-to linked to the same employee; required with it",
+    )
     parser.add_argument("--scenario", default="onboarding_plant")
     parser.add_argument("--token", default=os.environ.get("TELEGRAM_BOT_TOKEN", ""))
     parser.add_argument(
@@ -725,17 +886,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    secrets = {
-        "telegram": ("TELEGRAM_WEBHOOK_SECRET", os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")),
-        "vk": ("VK_WEBHOOK_SECRET", os.environ.get("VK_WEBHOOK_SECRET", "")),
-    }
-    variable, secret = secrets[args.channel]
+    variables = {"telegram": "TELEGRAM_WEBHOOK_SECRET", "vk": "VK_WEBHOOK_SECRET"}
+    secrets = {channel: os.environ.get(name, "") for channel, name in variables.items()}
     database_url = os.environ.get("DATABASE_URL", "")
-    if not secret or not database_url:
-        parser.error(f"{variable} and DATABASE_URL must be set")
-    if args.channel == "vk" and not args.group_id:
+    if not database_url:
+        parser.error("DATABASE_URL must be set")
+    needed = {args.channel} | ({args.switch_to} if args.switch_to else set())
+    for channel in sorted(needed):
+        if not secrets[channel]:
+            parser.error(f"{variables[channel]} must be set for {channel}")
+    if args.switch_to and args.switch_chat_id is None:
+        parser.error("--switch-chat-id must be set with --switch-to")
+    if "vk" in needed and not args.group_id:
         parser.error("--group-id (or VK_GROUP_ID) must be set for vk")
-    return asyncio.run(smoke(args, secret, database_url))
+    return asyncio.run(smoke(args, secrets, database_url))
 
 
 if __name__ == "__main__":

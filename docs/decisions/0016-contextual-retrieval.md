@@ -59,6 +59,25 @@ make eval-retrieval                          # recall@5, mrr, leak_rate on the s
 The comparison is only honest if both runs use the same embedder and the same golden set. Changing
 the embedder and the context in one step measures nothing: the delta cannot be attributed.
 
+## Measured 2026-10-24
+
+The experiment was finally run at commit `65fc273` on the 137-case set, one ingest each way, same
+embedder (`qwen/qwen3-embedding-8b`, dim 1024), same reranker (`nvidia/nemotron-3.5-rerank-8b:free`),
+same provider conditions within the same hour:
+
+| arm | `recall_at_5` | `mrr` | artifact |
+|---|---|---|---|
+| plain index | 0.984 | 0.944 | `docs/measurements/2026-10-24-eval-retrieval-arm-plain.md` |
+| `contextual:v1` | 1.000 | 0.919 | `docs/measurements/2026-10-24-eval-retrieval-arm-contextual-on.md` |
+
+Paired against the contextual arm, the plain index loses `recall` −0.015 with an interval of
+[−0.036, +0.000] and gains `rr` +0.023 with [−0.005, +0.052], `p(delta <= 0) = 0.059`.
+
+That is a real trade and not a win: the prefix puts two more documents into the top five and pushes
+the first correct document down on average. The recall interval touches zero, the ranking interval
+touches zero, and two cases decide the first number. The status stays **proposed**: shipping it
+would trade a measurable ranking loss for a recall gain the corpus cannot yet prove.
+
 ## Consequences
 
 - `kb_chunks.context` exists in every deployment and defaults to `''`; an index built without the

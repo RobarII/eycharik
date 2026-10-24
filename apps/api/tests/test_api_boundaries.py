@@ -12,10 +12,14 @@ from pathlib import Path
 API = Path(__file__).resolve().parents[1] / "onboarding" / "api"
 ROUTES = ("admin.py", "webhook.py", "auth.py")
 FORBIDDEN_ATTRS = {
+    "blobs",
+    "database",
     "embedder",
+    "extraction_cache",
     "extractor",
     "knowledge",
     "llm",
+    "queries",
     "queue",
     "service",
 }
@@ -31,17 +35,19 @@ def _trees() -> dict[str, ast.Module]:
     return {name: ast.parse((API / name).read_text(encoding="utf-8")) for name in ROUTES}
 
 
+def _reaches_the_container(node: ast.expr) -> bool:
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return isinstance(node, ast.Name) and node.id == "container"
+
+
 def test_routes_do_not_reach_into_a_model_or_a_writer() -> None:
     offenders: list[str] = []
     for name, tree in _trees().items():
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute) or node.attr not in FORBIDDEN_ATTRS:
                 continue
-            receiver = node.value
-            owned = (isinstance(receiver, ast.Name) and receiver.id == "container") or (
-                isinstance(receiver, ast.Attribute) and receiver.attr == "container"
-            )
-            if owned:
+            if _reaches_the_container(node.value):
                 offenders.append(f"{name}:{node.lineno}: .{node.attr}")
     assert not offenders, offenders
 

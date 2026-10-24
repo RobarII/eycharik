@@ -147,11 +147,11 @@ async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's 
     q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> RunList:
     catalog = request.app.state.container.catalog
-    queries = request.app.state.container.admin.queries
+    admin = request.app.state.container.admin
     recruiter_id = _scope(principal)
     department = _department(principal)
     active = {"active": True, "completed": False, "all": None}[status_filter]
-    records, has_more = await queries.runs_page(
+    records, has_more = await admin.runs_page(
         recruiter_id=recruiter_id,
         department=department,
         limit=limit,
@@ -162,7 +162,7 @@ async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's 
     return RunList(
         items=[_summary(record, catalog) for record in records],
         next_cursor=_next_run_cursor(records, has_more),
-        total=await queries.runs_total(
+        total=await admin.runs_total(
             recruiter_id=recruiter_id, department=department, active=active, search=q
         ),
     )
@@ -170,8 +170,8 @@ async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's 
 
 @router.get("/runs/{run_id}", response_model=RunDetail)
 async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDetail:
-    queries = request.app.state.container.admin.queries
-    record = await queries.run(
+    admin = request.app.state.container.admin
+    record = await admin.run(
         run_id, recruiter_id=_scope(principal), department=_department(principal)
     )
     if record is None:
@@ -186,8 +186,8 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
     else:
         step_message = step.message
 
-    events = await queries.events(record.employee_id)
-    questions = await queries.questions(
+    events = await admin.events(record.employee_id)
+    questions = await admin.questions(
         recruiter_id=_scope(principal),
         department=_department(principal),
         answered=None,
@@ -218,12 +218,12 @@ async def list_questions(  # noqa: PLR0917 - the query parameters are the endpoi
     assignee: Annotated[Literal["me", "unassigned", "any"], Query()] = "any",
 ) -> QuestionList:
     answered = {"unanswered": False, "answered": True, "all": None}[status]
-    queries = request.app.state.container.admin.queries
+    admin = request.app.state.container.admin
     recruiter_id = _scope(principal)
     department = _department(principal)
     mine = principal.subject if assignee == "me" else None
     unassigned = assignee == "unassigned"
-    records, has_more = await queries.questions_page(
+    records, has_more = await admin.questions_page(
         recruiter_id=recruiter_id,
         department=department,
         answered=answered,
@@ -235,7 +235,7 @@ async def list_questions(  # noqa: PLR0917 - the query parameters are the endpoi
     return QuestionList(
         items=[_question(record) for record in records],
         next_cursor=_next_question_cursor(records, has_more),
-        total=await queries.questions_total(
+        total=await admin.questions_total(
             recruiter_id=recruiter_id,
             department=department,
             answered=answered,
@@ -453,7 +453,7 @@ def _question(record: QuestionRecord) -> Question:
 @router.get("/analytics/overview", response_model=AnalyticsOverview)
 async def analytics_overview(request: Request, principal: Admin) -> AnalyticsOverview:
     since = request.app.state.container.clock.now() - timedelta(days=7)
-    record = await request.app.state.container.admin.queries.overview(
+    record = await request.app.state.container.admin.overview(
         recruiter_id=_scope(principal), department=_department(principal), since=since
     )
     return AnalyticsOverview(
@@ -475,7 +475,7 @@ async def weekly_digest(
     days: Annotated[int, Query(ge=1, le=31)] = 7,
 ) -> DigestList:
     since = request.app.state.container.clock.now() - timedelta(days=days)
-    records = await request.app.state.container.admin.queries.digest(
+    records = await request.app.state.container.admin.digest(
         recruiter_id=_scope(principal), department=_department(principal), since=since
     )
     return DigestList(
@@ -506,7 +506,7 @@ async def knowledge_documents(
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
 ) -> KnowledgeList:
     """Active documents. An ``hr_only`` document is not fetched for a non-HR caller at all."""
-    records = await request.app.state.container.admin.queries.knowledge(
+    records = await request.app.state.container.admin.knowledge(
         limit=limit, include_hr_only=principal.is_hr
     )
     return KnowledgeList(

@@ -7,7 +7,9 @@ ranker or the prompt.
 from __future__ import annotations
 
 import logging
+import typing
 from collections.abc import Sequence
+from typing import Any
 
 from sqlalchemy import ColumnElement, Select, Text, cast, delete, func, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, insert
@@ -16,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from onboarding.app.db.models import EMBEDDING_DIM, ChunkRow, DocumentRow, IndexStateRow
 from onboarding.app.db.session import Database
 from onboarding.core.models import Chunk, ChunkId, DocId, ScoredChunk
-from onboarding.core.ranking import reciprocal_rank_fusion
+from onboarding.core.ranking import LEXICAL_WEIGHT, reciprocal_rank_fusion
 from onboarding.ports import (
     Embedder,
     KnowledgeDocumentRecord,
@@ -65,9 +67,11 @@ class PostgresKnowledgeBase:
             semantic = await _semantic_ids(session, query, vector, self._overfetch)
             lexical = await _lexical_ids(session, query, self._overfetch)
             rankings = [semantic, lexical]
+            weights = [1.0, LEXICAL_WEIGHT]
             if self._bm25_enabled and self._bm25_available:
                 rankings.append(await _bm25_ids(session, query, self._overfetch))
-            fused = reciprocal_rank_fusion(rankings, limit=query.limit)
+                weights.append(1.0)
+            fused = reciprocal_rank_fusion(rankings, weights=weights, limit=query.limit)
             if not fused:
                 return ()
             rows = {
@@ -81,7 +85,6 @@ class PostgresKnowledgeBase:
             for chunk_id, score in fused
             if chunk_id in rows
         )
-
 
     async def _check_index(self, session: AsyncSession) -> None:
         """Refuse to search vectors that another model produced.
@@ -183,7 +186,9 @@ async def _semantic_ids(
     rows = await session.scalars(
         _filtered(query)
         .with_only_columns(ChunkRow.id)
-        .order_by(ChunkRow.embedding.cosine_distance(list(vector)))
+        # The id breaks equidistant ties, so a repeated run over one index returns one order. The
+        # embedder itself is not deterministic, which is measured, not fixed here.
+        .order_by(ChunkRow.embedding.cosine_distance(list(vector)), ChunkRow.id)
         .limit(limit)
     )
     return tuple(ChunkId(row) for row in rows)
@@ -197,9 +202,7 @@ async def _has_bm25(session: AsyncSession) -> bool:
     return bool(found)
 
 
-async def _bm25_ids(
-    session: AsyncSession, query: SearchQuery, limit: int
-) -> tuple[ChunkId, ...]:
+async def _bm25_ids(session: AsyncSession, query: SearchQuery, limit: int) -> tuple[ChunkId, ...]:
     score = func.pdb.score(ChunkRow.id).label("score")
     rows = await session.execute(
         _filtered(query)
@@ -211,16 +214,52 @@ async def _bm25_ids(
     return tuple(ChunkId(row.id) for row in rows)
 
 
+def _lexical_query(text: str) -> ColumnElement[Any]:
+    """One tsquery per question, with the lexemes joined by OR.
+
+    ``plainto_tsquery`` joins every lexeme with AND, and that is fatal for questions: «Сколько
+    дней отпуска положено в первый год?» became ``'скольк' & 'дне' & 'отпуск' & 'полож' &
+    'перв' & 'год'``, which no chunk satisfies. Measured on the golden set against the shipped
+    corpus, the AND form returned an empty list for 112 of 137 questions, so the fusion ranked on
+    the vector list alone and the lexical half of ADR 0003 did not exist in production.
+
+    The union keeps the candidates and ``ts_rank_cd`` still orders them by coverage and proximity.
+    Its tiebreak is the chunk id, so a repeated query over one index returns one order.
+    """
+    terms = func.plainto_tsquery("russian", text)
+    return func.to_tsquery("russian", func.replace(terms.cast(Text), "&", "|"))
+
+
+def _coverage(text: str) -> ColumnElement[int]:
+    """How many of the question's lexemes a chunk contains.
+
+    The OR query alone is too loose: a chunk that happens to contain «сколько» matches, and that
+    is how a lexical list makes the fused order worse instead of better. Measured at the fusion
+    level on the golden set (identical semantic lists, only the lexical list changing), an
+    ungated OR list moved recall@5 0.993 -> 0.978 and MRR 0.864 -> 0.809 at equal weight. The
+    gate asks a chunk to cover ``min(3, n)`` question lexemes: three is enough evidence that the
+    match is about the question and not about one stopword, and a two-word question («условия
+    ДМС») must cover both words, because with fewer the gate would pass on anything.
+    """
+    question = func.tsvector_to_array(func.to_tsvector("russian", text))
+    word = func.unnest(func.tsvector_to_array(ChunkRow.ts)).column_valued("word")
+    matches = select(func.count()).where(word == func.any_(question))
+    return typing.cast("ColumnElement[int]", matches.scalar_subquery())
+
+
 async def _lexical_ids(
     session: AsyncSession, query: SearchQuery, limit: int
 ) -> tuple[ChunkId, ...]:
-    ts_query = func.plainto_tsquery("russian", query.text)
+    ts_query = _lexical_query(query.text)
     rank = func.ts_rank_cd(ChunkRow.ts, ts_query)
+    required = func.least(
+        3, func.cardinality(func.tsvector_to_array(func.to_tsvector("russian", query.text)))
+    )
     rows = await session.scalars(
         _filtered(query)
         .with_only_columns(ChunkRow.id)
-        .where(ChunkRow.ts.op("@@")(ts_query))
-        .order_by(rank.desc())
+        .where(ChunkRow.ts.op("@@")(ts_query), _coverage(query.text) >= required)
+        .order_by(rank.desc(), ChunkRow.id)
         .limit(limit)
     )
     return tuple(ChunkId(row) for row in rows)

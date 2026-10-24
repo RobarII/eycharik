@@ -10,7 +10,7 @@ last_verified: 2026-10-24
 # Оценка 2026-10-24 — пройдена
 
 - команда: `python -m onboarding.evals --retrieval-only --write --label lexical-gated-05 --compare docs/measurements/2026-10-24-eval-retrieval-lexical-before.jsonl --note probe db with qwen3 vectors; lexical OR list gated to min(3,n) covered lexemes at weight 0.5`
-- коммит: `3f9d207`
+- коммит: `090b5fd` + правка лексической ветки в рабочем дереве
 - модель: `n/a`
 - окружение: `local`
 - провайдер эмбеддингов: `openai`

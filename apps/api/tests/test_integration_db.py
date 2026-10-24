@@ -30,10 +30,16 @@ from onboarding.app.copy import load_copy
 from onboarding.app.db.blobs import PostgresBlobStore
 from onboarding.app.db.directory import SqlDirectory
 from onboarding.app.db.extractions import PostgresExtractionCache
-from onboarding.app.db.kb import PostgresKnowledgeBase, PostgresKnowledgeWriter
+from onboarding.app.db.kb import (
+    PostgresKnowledgeBase,
+    PostgresKnowledgeWriter,
+    _lexical_ids,
+    _lexical_query,
+)
 from onboarding.app.db.models import (
     AuditRow,
     ChannelIdentityRow,
+    ChunkRow,
     EmployeeRow,
     ExtractionRow,
     FileRow,
@@ -396,6 +402,74 @@ async def test_knowledge_round_trip(database: Database) -> None:
     assert results
     assert any(result.chunk.doc_id == "hr/leave-policy" for result in results)
     assert all(result.chunk.id for result in results)
+
+
+async def test_lexical_branch_survives_a_question_phrased_as_a_question(
+    database: Database,
+) -> None:
+    """The lexical list must not be empty for a question an employee would actually ask.
+
+    ``plainto_tsquery`` joins every lexeme with AND, so «Сколько дней отпуска положено в первый
+    год?» demanded one chunk containing «скольк», «полож» and «год» as well. The shipped corpus
+    satisfied it for 25 of 137 golden questions; for the rest the fusion ranked on the vector list
+    alone and the lexical half of ADR 0003 did not exist in production.
+    """
+    await ingest(
+        directory=ROOT / "knowledge",
+        schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+        writer=PostgresKnowledgeWriter(database),
+        embedder=HashingEmbedder(dim=1024),
+    )
+    query = SearchQuery(
+        text="Сколько дней отпуска положено в первый год?",
+        audience=("all", "dept:it"),
+        on_date=date(2026, 10, 23),
+        limit=30,
+    )
+
+    async with database.session() as session:
+        ids = await _lexical_ids(session, query, 30)
+
+    assert ids, "the lexical branch returned nothing for a natural question"
+    assert any(str(chunk_id).startswith("hr/leave-policy#") for chunk_id in ids)
+
+
+async def test_the_lexical_branch_does_not_answer_with_one_shared_word(
+    database: Database,
+) -> None:
+    """One matching word is not evidence, and a list built on it displaces better answers.
+
+    Ungated, the OR query returned the whole corpus for «Сколько дней отпуска положено в первый
+    год?» — every document that mentions a day or a year — and at equal fusion weight that
+    ordering cost 0.015 recall. The gate asks for ``min(3, n)`` of the question's lexemes.
+    """
+    await ingest(
+        directory=ROOT / "knowledge",
+        schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+        writer=PostgresKnowledgeWriter(database),
+        embedder=HashingEmbedder(dim=1024),
+    )
+    query = SearchQuery(
+        text="Сколько дней отпуска положено в первый год?",
+        audience=("all", "dept:it"),
+        on_date=date(2026, 10, 23),
+        limit=30,
+    )
+
+    async with database.session() as session:
+        ids = await _lexical_ids(session, query, 30)
+        loose = (
+            (
+                await session.execute(
+                    select(ChunkRow.id).where(ChunkRow.ts.op("@@")(_lexical_query(query.text)))
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert len(ids) < len(loose), "the gate did not narrow the ungated OR list"
+    assert str(ids[0]).startswith("hr/leave-policy#"), "the best-covered chunk must rank first"
 
 
 async def test_question_queue_carries_the_employee_and_respects_scope(

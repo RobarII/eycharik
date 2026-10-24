@@ -43,11 +43,37 @@ def test_smaller_k_weights_the_top_ranks_more() -> None:
     assert low_k > high_k
 
 
+def test_a_half_weighted_list_cannot_outvote_the_first_list() -> None:
+    # The lexical list's best chunk scores lower than the vector list's best chunk, even alone.
+    fused = dict(reciprocal_rank_fusion([ids("vector"), ids("lexical")], weights=(1.0, 0.5)))
+
+    assert fused[ChunkId("vector")] > fused[ChunkId("lexical")]
+
+
+def test_half_weight_still_promotes_a_chunk_that_both_lists_found() -> None:
+    # Present at rank 3 in the vector list and rank 1 in the lexical list: 1/63 + 0.5/61 beats
+    # 1/61, so agreement between retrievers is worth more than either alone.
+    fused = reciprocal_rank_fusion([ids("a", "b", "shared"), ids("shared")], weights=(1.0, 0.5))
+
+    assert [chunk for chunk, _ in fused][:2] == [ChunkId("shared"), ChunkId("a")]
+
+
+def test_equal_weights_are_the_default() -> None:
+    weighted = reciprocal_rank_fusion([ids("a"), ids("b")], weights=(1.0, 1.0))
+    default = reciprocal_rank_fusion([ids("a"), ids("b")])
+
+    assert weighted == default
+
+
 def test_rejects_invalid_parameters() -> None:
     with pytest.raises(ValueError, match="k"):
         reciprocal_rank_fusion([], k=0)
     with pytest.raises(ValueError, match="limit"):
         reciprocal_rank_fusion([], limit=-1)
+    with pytest.raises(ValueError, match="same length"):
+        reciprocal_rank_fusion([ids("a")], weights=(1.0, 0.5))
+    with pytest.raises(ValueError, match="positive"):
+        reciprocal_rank_fusion([ids("a")], weights=(0.0,))
 
 
 def test_dedupe_preserves_order() -> None:

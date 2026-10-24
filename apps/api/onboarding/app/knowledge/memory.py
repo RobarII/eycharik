@@ -18,6 +18,11 @@ from onboarding.core.ranking import reciprocal_rank_fusion
 from onboarding.ports import Embedder, SearchQuery
 
 _TOKEN = re.compile(r"[a-zа-яё0-9]+")
+# Equal weights here, unlike the Postgres backend. That backend fuses a semantic embedder with
+# token overlap, and the measured weight halves the overlap because it is the weaker of the two.
+# This one is usually built with ``HashingEmbedder``, a bag of the same tokens the lexical branch
+# counts, so the two lists are equally informative and halving one would only lose its evidence.
+_LEXICAL_WEIGHT = 1.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,9 +50,7 @@ class InMemoryKnowledgeBase:
         chunks: list[Chunk] = []
         owners: list[Document] = []
         for document in documents:
-            for chunk in split_document(
-                document, max_chars=max_chars, overlap_chars=overlap_chars
-            ):
+            for chunk in split_document(document, max_chars=max_chars, overlap_chars=overlap_chars):
                 chunks.append(chunk)
                 owners.append(document)
         vectors = await embedder.embed([chunk.text for chunk in chunks])
@@ -88,7 +91,8 @@ class InMemoryKnowledgeBase:
             [
                 [entry.chunk.id for entry in semantic[: query.limit]],
                 [entry.chunk.id for entry in lexical[: query.limit]],
-            ]
+            ],
+            weights=(1.0, _LEXICAL_WEIGHT),
         )
         by_id = {entry.chunk.id: entry for entry in allowed}
         return tuple(

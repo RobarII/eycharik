@@ -6,6 +6,7 @@ Retrieval and validation are deterministic. The model proposes; the code dispose
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import date
 from time import perf_counter
@@ -145,6 +146,9 @@ class Answerer:
         on_date: date,
         retrieved: tuple[ScoredChunk, ...],
     ) -> AnswerOutcome:
+        # What the model is shown and what the verdict is checked against must be one set: a
+        # citation is grounded only when it points at a fragment this question put in the prompt.
+        shown = retrieved[: self._settings.rerank_limit]
         prompt = self._prompts.load(PROMPT_NAME, PROMPT_VERSION)
         rendered = prompt.render(
             {
@@ -153,7 +157,7 @@ class Answerer:
                 "department": profile.department,
                 "onboarding_day": str(profile.onboarding_day(on_date)),
                 "question": question,
-                "context": _render_context(retrieved[: self._settings.rerank_limit]),
+                "context": _render_context(shown),
             }
         )
 
@@ -191,7 +195,7 @@ class Answerer:
 
         verdict = judge(
             draft,
-            {chunk.chunk.id for chunk in retrieved},
+            {chunk.chunk.id for chunk in shown},
             min_confidence=self._settings.answer_min_confidence,
         )
         await self._audit.record(
@@ -284,10 +288,26 @@ class Answerer:
         )
 
 
+_FENCE_TAG = re.compile(r"</?\s*doc\b", re.IGNORECASE)
+
+
+def _escape(text: str) -> str:
+    """Neutralize a document tag that arrived inside the corpus.
+
+    The fence below is a prompt boundary, and chunk text is input: a recruiter uploads markdown
+    (ADR 0022), a PDF is extracted (ADR 0015), and either can contain ``</doc>``. Left alone, that
+    closes the fragment early and lets the rest of the text pose as a second document or as an
+    instruction to the model. Rule 4 of the prompt says such text is data; this is what makes the
+    rule hold when the text fights back.
+    """
+    return _FENCE_TAG.sub(lambda match: "&lt;" + match.group(0)[1:], text)
+
+
 def _render_context(chunks: tuple[ScoredChunk, ...]) -> str:
     return (
         "\n".join(
-            f'<doc id="{chunk.chunk.id}" source="{chunk.chunk.doc_id}">{chunk.chunk.text}</doc>'
+            f'<doc id="{chunk.chunk.id}" source="{chunk.chunk.doc_id}">'
+            f"{_escape(chunk.chunk.text)}</doc>"
             for chunk in chunks
         )
         or "<doc/>"

@@ -54,20 +54,7 @@ class RemoteEmbedder:
         if not texts:
             return ()
         response = await self._post_with_retry(list(texts))
-        payload = response.json()
-        data = payload.get("data") if isinstance(payload, dict) else None
-        if not isinstance(data, list) or len(data) != len(texts):
-            raise KnowledgeUnavailableError("embedding response has a wrong number of vectors")
-        vectors: list[tuple[float, ...]] = []
-        for item in sorted(data, key=lambda entry: int(entry["index"])):
-            raw = item.get("embedding")
-            if not isinstance(raw, list) or len(raw) != self._dim:
-                raise KnowledgeUnavailableError(
-                    f"expected {self._dim}-dimensional embeddings, got "
-                    f"{len(raw) if isinstance(raw, list) else 'none'}"
-                )
-            vectors.append(tuple(float(value) for value in raw))
-        return tuple(vectors)
+        return parse_embeddings(response.json(), count=len(texts), dim=self._dim)
 
     def _body(self, texts: list[str]) -> dict[str, object]:
         body: dict[str, object] = {"model": self._model, "input": texts}
@@ -154,3 +141,37 @@ def _bearer(key: SecretStr) -> Callable[[], Awaitable[str]]:
         return f"Bearer {key.get_secret_value()}"
 
     return authorization
+
+
+def parse_embeddings(payload: object, *, count: int, dim: int) -> tuple[tuple[float, ...], ...]:
+    """Vectors in request order, or one typed failure.
+
+    The same rule as ``parse_rerank``: a provider that answers something else is an outage, not a
+    ``KeyError`` raised three frames inside the worker where the retry policy cannot see it. An
+    index is required because the envelope promises one; a response without it is reordered by
+    guess otherwise, and a silently permuted batch writes the wrong vector next to the wrong chunk.
+    """
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list) or len(data) != count:
+        raise KnowledgeUnavailableError("embedding response has a wrong number of vectors")
+    ordered: dict[int, tuple[float, ...]] = {}
+    for item in data:
+        if not isinstance(item, dict):
+            raise KnowledgeUnavailableError("embedding item is not an object")
+        index = item.get("index")
+        if isinstance(index, bool) or not isinstance(index, int):
+            raise KnowledgeUnavailableError("embedding item has no integer index")
+        if not 0 <= index < count:
+            raise KnowledgeUnavailableError(f"embedding index {index} is out of range")
+        raw = item.get("embedding")
+        if not isinstance(raw, list) or len(raw) != dim:
+            raise KnowledgeUnavailableError(
+                f"expected {dim}-dimensional embeddings, got "
+                f"{len(raw) if isinstance(raw, list) else 'none'}"
+            )
+        if any(isinstance(value, bool) or not isinstance(value, int | float) for value in raw):
+            raise KnowledgeUnavailableError("embedding vector holds a non-numeric value")
+        if index in ordered:
+            raise KnowledgeUnavailableError(f"embedding index {index} is repeated")
+        ordered[index] = tuple(float(value) for value in raw)
+    return tuple(ordered[index] for index in sorted(ordered))

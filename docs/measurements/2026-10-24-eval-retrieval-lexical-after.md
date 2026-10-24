@@ -10,7 +10,7 @@ last_verified: 2026-10-24
 # Оценка 2026-10-24 — пройдена
 
 - команда: `python -m onboarding.evals --retrieval-only --write --label lexical-after --compare docs/measurements/2026-10-24-eval-retrieval-lexical-before.jsonl --note probe db with qwen3 vectors; lexical branch now ORs the question lexemes`
-- коммит: `3f9d207`
+- коммит: `090b5fd` + правка лексической ветки в рабочем дереве
 - модель: `n/a`
 - окружение: `local`
 - провайдер эмбеддингов: `openai`

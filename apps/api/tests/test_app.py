@@ -114,6 +114,7 @@ def test_expired_admin_token_is_rejected() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "token expired"
+    assert response.json()["code"] == "token_expired"
 
 
 def test_repeated_bad_tokens_are_throttled() -> None:
@@ -281,6 +282,7 @@ def test_expired_token_opens_no_session() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "token expired"
+    assert response.json()["code"] == "token_expired"
 
 
 def test_signing_out_clears_the_cookie_without_a_valid_token() -> None:
@@ -338,3 +340,57 @@ def test_assignment_rejects_a_name_the_server_cannot_authenticate() -> None:
 
     assert answer.status_code == 422
     assert answer.json()["detail"] == "assignee is not an admin"
+
+
+def test_an_error_carries_a_code_and_the_request_id() -> None:
+    with session_client() as http:
+        response = http.get(
+            "/admin/api/v1/me", headers={"Authorization": "Bearer nope", "X-Request-ID": "trace-7"}
+        )
+
+    body = response.json()
+    assert response.status_code == 401
+    assert body["code"] == "token_unknown"
+    assert body["detail"] == "unknown token"
+    assert body["request_id"] == "trace-7"
+    assert response.headers["X-Request-ID"] == "trace-7"
+
+
+def test_the_request_id_header_is_not_trusted_verbatim() -> None:
+    with session_client() as http:
+        response = http.get("/healthz", headers={"X-Request-ID": "not a token"})
+
+    assert response.status_code == 200
+    assert response.headers["X-Request-ID"] != "not a token"
+
+
+def test_validation_errors_name_the_field() -> None:
+    with session_client() as http:
+        response = http.post("/admin/api/v1/session", json={})
+
+    body = response.json()
+    assert response.status_code == 422
+    assert body["code"] == "validation_failed"
+    assert body["detail"].startswith("body.token:")
+    assert body["errors"][0]["loc"] == ["body", "token"]
+
+
+def test_an_unknown_path_answers_in_the_same_shape() -> None:
+    with session_client() as http:
+        response = http.get("/admin/api/v1/there-is-no-such-route")
+
+    body = response.json()
+    assert response.status_code == 404
+    assert body["code"] == "not_found"
+    assert body["request_id"]
+
+
+def test_a_webhook_failure_names_its_own_code() -> None:
+    with client() as http:
+        response = http.post(
+            "/webhook/max",
+            json={"update_type": "message_created"},
+            headers={"X-Max-Bot-Api-Secret": "wrong"},
+        )
+
+    assert response.json()["code"] == "bad_webhook_secret"

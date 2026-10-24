@@ -28,24 +28,38 @@ export class Unauthorized extends Error {
 /** A refused request that is not an expired session. `status` drives the message. */
 export class ApiError extends Error {
   readonly status: number;
+  /** The server's stable code (`unknown_assignee`, `conflict`, …); `null` for an older server. */
+  readonly code: string | null;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
   }
 }
 
-async function detail(response: Response): Promise<string | null> {
-  const body = (await response.json().catch(() => null)) as { detail?: unknown } | null;
-  return typeof body?.detail === "string" ? body.detail : null;
+interface Failure {
+  detail: string | null;
+  code: string | null;
+}
+
+async function failure(response: Response): Promise<Failure> {
+  const body = (await response.json().catch(() => null)) as
+    | { detail?: unknown; code?: unknown }
+    | null;
+  return {
+    detail: typeof body?.detail === "string" ? body.detail : null,
+    code: typeof body?.code === "string" ? body.code : null,
+  };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, { credentials: "same-origin", ...init });
   if (response.status === 401) throw new Unauthorized();
   if (!response.ok) {
-    throw new ApiError(response.status, (await detail(response)) ?? `Ошибка ${response.status}`);
+    const { detail, code } = await failure(response);
+    throw new ApiError(response.status, detail ?? `Ошибка ${response.status}`, code);
   }
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;

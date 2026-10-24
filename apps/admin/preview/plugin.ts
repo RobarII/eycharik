@@ -74,7 +74,7 @@ async function handle(
     const body = (await readJson(request)) as { token?: unknown } | null;
     const candidate = typeof body?.token === "string" ? body.token.trim() : "";
     if (!demo.TOKENS[candidate]) {
-      send(response, 401, { detail: "unknown token" });
+      send(response, 401, { detail: "unknown token", code: "token_unknown" });
       return;
     }
     response.statusCode = 204;
@@ -98,7 +98,7 @@ async function handle(
 
   const role = demo.TOKENS[presented];
   if (!role) {
-    send(response, 401, { detail: "unauthorized" });
+    send(response, 401, { detail: "unauthorized", code: "unauthorized" });
     return;
   }
 
@@ -123,7 +123,7 @@ async function handle(
   if (request.method === "GET" && runMatch?.[1]) {
     const detail = demo.runDetail(role, decodeURIComponent(runMatch[1]));
     if (!detail) {
-      send(response, 404, { detail: "run not found" });
+      send(response, 404, { detail: "run not found", code: "not_found" });
       return;
     }
     send(response, 200, detail);
@@ -133,7 +133,7 @@ async function handle(
   if (request.method === "GET" && path === "/admin/api/questions") {
     const status = url.searchParams.get("status") ?? "unanswered";
     if (!["unanswered", "answered", "all"].includes(status)) {
-      send(response, 422, { detail: "status must be unanswered, answered or all" });
+      send(response, 422, { detail: "status must be unanswered, answered or all", code: "validation_failed" });
       return;
     }
     const owner = url.searchParams.get("assignee") ?? "any";
@@ -166,7 +166,7 @@ async function handle(
 
   if (request.method === "DELETE" && path.startsWith("/admin/api/employees/")) {
     if (role !== "hr_admin") {
-      send(response, 403, { detail: "only hr_admin may offboard an employee" });
+      send(response, 403, { detail: "only hr_admin may offboard an employee", code: "forbidden" });
       return;
     }
     send(response, 200, {
@@ -181,7 +181,7 @@ async function handle(
 
   if (request.method === "POST" && path === "/admin/api/knowledge/files") {
     if (role !== "hr_admin") {
-      send(response, 403, { detail: "only hr_admin may change the knowledge base" });
+      send(response, 403, { detail: "only hr_admin may change the knowledge base", code: "forbidden" });
       return;
     }
     polls.clear();
@@ -209,13 +209,13 @@ async function handle(
 
   if (request.method === "POST" && path === "/admin/api/knowledge") {
     if (role !== "hr_admin") {
-      send(response, 403, { detail: "only hr_admin may change the knowledge base" });
+      send(response, 403, { detail: "only hr_admin may change the knowledge base", code: "forbidden" });
       return;
     }
     const body = (await readJson(request)) as { text?: unknown } | null;
     const text = typeof body?.text === "string" ? body.text : "";
     if (text.length < 20) {
-      send(response, 422, { detail: "upload: text is required" });
+      send(response, 422, { detail: "upload: text is required", code: "knowledge_rejected" });
       return;
     }
     const result = demo.upload(text);
@@ -223,7 +223,7 @@ async function handle(
     return;
   }
 
-  send(response, 405, { detail: "method not allowed" });
+  send(response, 405, { detail: "method not allowed", code: "method_not_allowed" });
 }
 
 /** How many times the demo has polled each hash, so a fake extraction can finish. */

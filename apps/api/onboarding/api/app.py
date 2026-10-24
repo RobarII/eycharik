@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -24,6 +25,7 @@ from onboarding.app.settings import Settings
 
 log = logging.getLogger(__name__)
 _QUIET_PATHS = frozenset({"/healthz", "/readyz", "/metrics"})
+_REQUEST_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -58,7 +60,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def observe(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        request_id = request.headers.get("X-Request-ID") or uuid4().hex
+        supplied = request.headers.get(errors.REQUEST_ID_HEADER, "").strip()
+        # A caller may join its trace id to ours; anything that is not a plain token is replaced,
+        # so a header cannot become a log injection or an unbounded metric label.
+        request_id = supplied if _REQUEST_ID.fullmatch(supplied) else uuid4().hex
+        request.state.request_id = request_id
         started = perf_counter()
         try:
             response = await call_next(request)

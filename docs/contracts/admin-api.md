@@ -382,8 +382,64 @@ record per profile, and this endpoint reports the latest one.
 
 ## Errors
 
-FastAPI's default shape: `{"detail": "..."}` with `401`, `403`, `404`, or `422` for a bad query.
-The cabinet shows the detail text and never guesses from the status code alone.
+Every failure answers the same object, whatever produced it:
+
+```json
+{
+  "detail": "assignee is not an admin",
+  "code": "unknown_assignee",
+  "request_id": "8f0c2f7d1a4b4f6e9c3d2a1b0e5f6a7c"
+}
+```
+
+`detail` is a sentence for a human and may change wording without notice. `code` is the stable
+name an integration branches on. `request_id` is the same id the request logged and the
+`X-Request-ID` header carries, so a support ticket names one log line without quoting a token.
+A caller may send its own `X-Request-ID`; the server echoes it only if it matches
+`[A-Za-z0-9._:-]{1,128}` and generates one otherwise.
+
+| `code` | Status | Meaning |
+|---|---|---|
+| `bad_request` | 400 | the request cannot be read at all |
+| `unauthorized` | 401 | a secret is required, and none of the codes below fits |
+| `token_missing` | 401 | no `Authorization` header and no session cookie |
+| `token_unknown` | 401 | the presented secret belongs to no configured admin |
+| `token_expired` | 401 | the secret was issued for a window that has closed |
+| `bad_webhook_secret` | 401 | the messenger secret did not match |
+| `forbidden` | 403 | the role may not do this |
+| `not_found` | 404 | no such route or resource in the caller's scope |
+| `question_not_found` | 404 | the question is closed, deleted, or outside the scope |
+| `employee_not_found` | 404 | no employee with that id |
+| `unknown_channel` | 404 | the deployment does not serve that messenger |
+| `method_not_allowed` | 405 | the route exists, the verb does not |
+| `conflict` | 409 | the resource changed under the caller |
+| `question_already_resolved` | 409 | another recruiter closed the question first |
+| `payload_too_large` | 413 | body or upload over the limit |
+| `upload_too_large` | 413 | the file is over `EXTRACTION_MAX_UPLOAD_BYTES` |
+| `unsupported_media_type` | 415 | not a PDF or a PPTX |
+| `validation_failed` | 422 | a field is missing or malformed; `errors` lists each one |
+| `unprocessable` | 422 | the request is well-formed but cannot be applied |
+| `unknown_assignee` | 422 | the requested owner holds no admin token |
+| `knowledge_rejected` | 422 | the frontmatter violates `doc.schema.json` |
+| `rate_limited` | 429 | too many failed authentications from one peer |
+| `internal` | 500 | the server crashed; the text never echoes the exception |
+| `unavailable` | 503 | a dependency the request needs is down |
+| `channel_unavailable` | 503 | that messenger has no credentials |
+
+`validation_failed` adds an `errors` list, one entry per problem, in the shape FastAPI uses
+(`loc`, `message`, `type`), and its `detail` names the first field so a log line is readable:
+
+```json
+{
+  "detail": "body.token: Field required",
+  "code": "validation_failed",
+  "errors": [{"loc": ["body", "token"], "message": "Field required", "type": "missing"}],
+  "request_id": "…"
+}
+```
+
+A new code is an additive change. A code that disappears or changes meaning is a `v2` change
+(ADR 0024). The cabinet shows the `detail` text and never guesses from the status code alone.
 
 ## Rules
 

@@ -113,20 +113,20 @@ async def authenticate(request: Request, presented: str | None) -> AdminPrincipa
 
     if not presented:
         auth_failures.fail(peer)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token or session required")
+        raise _unauthorized("token_missing", "bearer token or session required")
 
     container = request.app.state.container
     for token, spec in container.settings.admin_principals.items():
         if hmac.compare_digest(presented, token):
             if spec.expires_at is not None and container.clock.now() >= spec.expires_at:
                 auth_failures.fail(peer)
-                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token expired")
+                raise _unauthorized("token_expired", "token expired")
             auth_failures.succeed(peer)
             return AdminPrincipal(
                 role=spec.role, subject=spec.subject, expires_at=spec.expires_at
             )
     auth_failures.fail(peer)
-    raise HTTPException(status.HTTP_401_UNAUTHORIZED, "unknown token")
+    raise _unauthorized("token_unknown", "unknown token")
 
 
 async def current_admin(
@@ -140,6 +140,13 @@ async def current_admin(
     if not presented:
         presented = request.cookies.get(SESSION_COOKIE)
     return await authenticate(request, presented)
+
+
+def _unauthorized(code: str, message: str) -> HTTPException:
+    """401 with a code the cabinet can act on: a missing token and an expired one differ."""
+    return HTTPException(
+        status.HTTP_401_UNAUTHORIZED, {"code": code, "message": message}
+    )
 
 
 def require_hr(principal: AdminPrincipal) -> None:

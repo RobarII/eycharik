@@ -42,6 +42,14 @@ PUBLIC_URL="${PUBLIC_URL:-https://bot.state3407.space}"
 COMPOSE=(docker compose --project-directory "$ROOT" -f "$COMPOSE_FILE" -f "$PROD_FILE" --env-file "$ENV_FILE")
 export TAG="sha-$SHA"
 
+# Compose reads TAG from the env file as well, so update it before the first pull. The old code
+# wrote it after pulling and asked the registry for a bare commit tag that release never publishes.
+if grep -q '^TAG=' "$ENV_FILE"; then
+    sed -i "s/^TAG=.*/TAG=sha-$SHA/" "$ENV_FILE"
+else
+    printf 'TAG=sha-%s\n' "$SHA" >>"$ENV_FILE"
+fi
+
 # Set once the database schema may already be newer than `PREV`; the rollback refuses while it is 1.
 SCHEMA_TOUCHED=0
 DUMP=""

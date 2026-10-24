@@ -54,7 +54,8 @@ async function handle(
   next: () => void,
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
-  const path = url.pathname;
+  // The cabinet talks to `/admin/api/v1`; this demo server keeps one set of handlers.
+  const path = url.pathname.replace(/^\/admin\/api\/v1(?=\/|$)/, "/admin/api");
 
   if (path === "/healthz" || path === "/readyz") {
     send(response, 200, { status: "ok" });

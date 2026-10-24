@@ -50,7 +50,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     errors.install(app)
     app.include_router(webhook.router)
-    app.include_router(admin.router)
+    app.include_router(admin.router, prefix=admin.API_PREFIX)
+    # Kept for a client that has not switched yet; hidden from the schema so it is not a promise.
+    app.include_router(admin.router, prefix=admin.LEGACY_PREFIX, include_in_schema=False)
 
     @app.middleware("http")
     async def observe(

@@ -76,13 +76,23 @@ def _documented_routes() -> set[tuple[str, str]]:
     routes: set[tuple[str, str]] = set()
     for method, cell in ROUTE_ROW.findall(contract):
         for target in BACKTICK.findall(cell):
-            routes.add((method, target.split("?")[0]))
+            routes.add((method, _canonical(target.split("?")[0])))
     return routes
+
+
+def _canonical(path: str) -> str:
+    """Drop the cabinet's version prefix so the alias and the contract compare as one surface."""
+    for prefix in ("/admin/api/v1", "/admin/api"):
+        if path == prefix:
+            return "/"
+        if path.startswith(prefix + "/"):
+            return path[len(prefix) :]
+    return path
 
 
 def _app_routes() -> set[tuple[str, str]]:
     app = create_app(Settings(_env_file=None))
-    return set(_walk(app.routes))
+    return {(method, _canonical(path)) for method, path in _walk(app.routes)}
 
 
 def _walk(routes: Iterable[Any]) -> list[tuple[str, str]]:

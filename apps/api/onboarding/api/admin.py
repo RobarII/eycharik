@@ -63,7 +63,12 @@ from onboarding.api.schemas import (
 from onboarding.app.admin.records import QuestionCursor, QuestionRecord, RunCursor, RunRecord
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
 
-router = APIRouter(prefix="/admin/api", tags=["admin"])
+# The cabinet talks to a versioned surface. The unversioned prefix keeps answering for a client
+# that has not shipped the new path yet, and is not part of the published schema (ADR 0024).
+API_PREFIX = "/admin/api/v1"
+LEGACY_PREFIX = "/admin/api"
+
+router = APIRouter(tags=["admin"])
 
 log = logging.getLogger("onboarding.api.admin")
 

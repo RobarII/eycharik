@@ -41,7 +41,7 @@ def test_webhook_rejects_a_wrong_secret() -> None:
 
 def test_admin_requires_a_token() -> None:
     with client() as http:
-        response = http.get("/admin/api/runs")
+        response = http.get("/admin/api/v1/runs")
 
     assert response.status_code == 401
 
@@ -49,10 +49,21 @@ def test_admin_requires_a_token() -> None:
 def test_admin_rejects_an_unknown_token() -> None:
     with client() as http:
         response = http.get(
-            "/admin/api/runs", headers={"Authorization": "Bearer nope"}
+            "/admin/api/v1/runs", headers={"Authorization": "Bearer nope"}
         )
 
     assert response.status_code == 401
+
+
+def test_the_unversioned_prefix_still_answers() -> None:
+    """A client that has not shipped the new path keeps working; the alias is not in the schema."""
+    with client() as http:
+        legacy = http.get("/admin/api/me", headers={"Authorization": "Bearer token"})
+        schema = http.get("/openapi.json").json()
+
+    assert legacy.status_code == 200
+    assert "/admin/api/v1/me" in schema["paths"]
+    assert "/admin/api/me" not in schema["paths"]
 
 
 def test_metrics_endpoint_exposes_http_series() -> None:
@@ -98,7 +109,7 @@ def expired_client() -> TestClient:
 def test_expired_admin_token_is_rejected() -> None:
     with expired_client() as http:
         response = http.get(
-            "/admin/api/runs", headers={"Authorization": "Bearer old"}
+            "/admin/api/v1/runs", headers={"Authorization": "Bearer old"}
         )
 
     assert response.status_code == 401
@@ -109,11 +120,11 @@ def test_repeated_bad_tokens_are_throttled() -> None:
     with client() as http:
         for _ in range(10):
             assert (
-                http.get("/admin/api/runs", headers={"Authorization": "Bearer nope"}).status_code
+                http.get("/admin/api/v1/runs", headers={"Authorization": "Bearer nope"}).status_code
                 == 401
             )
         blocked = http.get(
-            "/admin/api/runs", headers={"Authorization": "Bearer nope"}
+            "/admin/api/v1/runs", headers={"Authorization": "Bearer nope"}
         )
 
     assert blocked.status_code == 429
@@ -174,7 +185,7 @@ def test_me_describes_the_recruiter_scope_and_capabilities() -> None:
         )
     )
     with TestClient(app) as http:
-        response = http.get("/admin/api/me", headers={"Authorization": "Bearer rec"})
+        response = http.get("/admin/api/v1/me", headers={"Authorization": "Bearer rec"})
 
     assert response.status_code == 200
     body = response.json()
@@ -196,7 +207,7 @@ def test_me_scopes_a_manager_by_department_and_grants_no_writes() -> None:
         )
     )
     with TestClient(app) as http:
-        body = http.get("/admin/api/me", headers={"Authorization": "Bearer mgr"}).json()
+        body = http.get("/admin/api/v1/me", headers={"Authorization": "Bearer mgr"}).json()
 
     assert body["scope"] == {"recruiter_id": None, "department": "ИТ"}
     assert "knowledge.write" not in body["capabilities"]
@@ -211,7 +222,7 @@ def test_me_reports_the_full_hr_capability_set_and_expiry() -> None:
         )
     )
     with TestClient(app) as http:
-        response = http.get("/admin/api/me", headers={"Authorization": "Bearer hr"})
+        response = http.get("/admin/api/v1/me", headers={"Authorization": "Bearer hr"})
 
     body = response.json()
     assert body["role"] == "hr_admin"
@@ -222,7 +233,7 @@ def test_me_reports_the_full_hr_capability_set_and_expiry() -> None:
 
 def test_me_requires_a_token() -> None:
     with client() as http:
-        assert http.get("/admin/api/me").status_code == 401
+        assert http.get("/admin/api/v1/me").status_code == 401
 
 
 def session_client(raw: str = "rec:recruiter:rec-1") -> TestClient:
@@ -234,7 +245,7 @@ def session_client(raw: str = "rec:recruiter:rec-1") -> TestClient:
 
 def test_session_trades_a_token_for_an_httponly_cookie() -> None:
     with session_client() as http:
-        response = http.post("/admin/api/session", json={"token": "rec"})
+        response = http.post("/admin/api/v1/session", json={"token": "rec"})
 
     assert response.status_code == 204
     cookie = response.headers["set-cookie"]
@@ -248,9 +259,9 @@ def test_session_trades_a_token_for_an_httponly_cookie() -> None:
 
 def test_the_cookie_alone_authenticates() -> None:
     with session_client() as http:
-        http.post("/admin/api/session", json={"token": "rec"})
+        http.post("/admin/api/v1/session", json={"token": "rec"})
         http.headers.pop("Authorization", None)
-        response = http.get("/admin/api/me")
+        response = http.get("/admin/api/v1/me")
 
     assert response.status_code == 200
     assert response.json()["subject"] == "rec-1"
@@ -258,7 +269,7 @@ def test_the_cookie_alone_authenticates() -> None:
 
 def test_a_bad_token_opens_no_session() -> None:
     with session_client() as http:
-        response = http.post("/admin/api/session", json={"token": "nope"})
+        response = http.post("/admin/api/v1/session", json={"token": "nope"})
 
     assert response.status_code == 401
     assert "set-cookie" not in response.headers
@@ -266,7 +277,7 @@ def test_a_bad_token_opens_no_session() -> None:
 
 def test_expired_token_opens_no_session() -> None:
     with session_client("old:hr_admin:hr-1:2020-01-01") as http:
-        response = http.post("/admin/api/session", json={"token": "old"})
+        response = http.post("/admin/api/v1/session", json={"token": "old"})
 
     assert response.status_code == 401
     assert response.json()["detail"] == "token expired"
@@ -274,7 +285,7 @@ def test_expired_token_opens_no_session() -> None:
 
 def test_signing_out_clears_the_cookie_without_a_valid_token() -> None:
     with session_client() as http:
-        response = http.delete("/admin/api/session")
+        response = http.delete("/admin/api/v1/session")
 
     assert response.status_code == 204
     assert 'onboarding_session=""' in response.headers["set-cookie"]
@@ -283,7 +294,7 @@ def test_signing_out_clears_the_cookie_without_a_valid_token() -> None:
 
 def test_api_responses_forbid_sniffing_and_caching_of_identity() -> None:
     with session_client() as http:
-        response = http.get("/admin/api/me", headers={"Authorization": "Bearer rec"})
+        response = http.get("/admin/api/v1/me", headers={"Authorization": "Bearer rec"})
 
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["Referrer-Policy"] == "no-referrer"
@@ -299,10 +310,10 @@ def test_a_malformed_cursor_is_a_bad_request_not_a_partial_page() -> None:
     )
     with TestClient(app) as http:
         runs = http.get(
-            "/admin/api/runs?cursor=not-a-cursor", headers={"Authorization": "Bearer rec"}
+            "/admin/api/v1/runs?cursor=not-a-cursor", headers={"Authorization": "Bearer rec"}
         )
         questions = http.get(
-            "/admin/api/questions?cursor=not-a-cursor", headers={"Authorization": "Bearer rec"}
+            "/admin/api/v1/questions?cursor=not-a-cursor", headers={"Authorization": "Bearer rec"}
         )
 
     assert runs.status_code == 400
@@ -320,7 +331,7 @@ def test_assignment_rejects_a_name_the_server_cannot_authenticate() -> None:
     )
     with TestClient(app) as http:
         answer = http.patch(
-            "/admin/api/questions/1/assignee",
+            "/admin/api/v1/questions/1/assignee",
             json={"assignee": "nobody"},
             headers={"Authorization": "Bearer rec"},
         )

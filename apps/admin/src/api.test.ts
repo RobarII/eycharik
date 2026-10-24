@@ -36,7 +36,7 @@ describe("session", () => {
     await openSession("secret");
 
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(path).toBe("/admin/api/session");
+    expect(path).toBe("/admin/api/v1/session");
     expect(init.method).toBe("POST");
     expect(init.body).toBe(JSON.stringify({ token: "secret" }));
     expect(init.credentials).toBe("same-origin");
@@ -49,7 +49,7 @@ describe("session", () => {
     await closeSession();
 
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(path).toBe("/admin/api/session");
+    expect(path).toBe("/admin/api/v1/session");
     expect(init.method).toBe("DELETE");
   });
 });
@@ -97,7 +97,7 @@ describe("requests", () => {
 
     expect(resolved.answered).toBe(true);
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(path).toBe("/admin/api/questions/7/resolve");
+    expect(path).toBe("/admin/api/v1/questions/7/resolve");
     expect(init.body).toBe(JSON.stringify({ text: "reply" }));
   });
 
@@ -116,7 +116,7 @@ describe("requests", () => {
 
     expect(result.runs_closed).toBe(1);
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(path).toBe("/admin/api/employees/1001");
+    expect(path).toBe("/admin/api/v1/employees/1001");
     expect(init.method).toBe("DELETE");
   });
 

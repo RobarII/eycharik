@@ -66,15 +66,15 @@ function post<T>(path: string, body: unknown): Promise<T> {
  * the script cannot read. See `docs/decisions/0018`.
  */
 export function openSession(token: string): Promise<void> {
-  return post<void>("/admin/api/session", { token });
+  return post<void>("/admin/api/v1/session", { token });
 }
 
 export function closeSession(): Promise<void> {
-  return request<void>("/admin/api/session", { method: "DELETE" });
+  return request<void>("/admin/api/v1/session", { method: "DELETE" });
 }
 
 export function fetchMe(): Promise<AdminIdentity> {
-  return request<AdminIdentity>("/admin/api/me");
+  return request<AdminIdentity>("/admin/api/v1/me");
 }
 
 export type RunStatus = "active" | "completed" | "all";
@@ -91,11 +91,11 @@ export function fetchRuns(query: RunQuery = {}): Promise<Page<RunSummary>> {
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.status) params.set("status", query.status);
   if (query.q) params.set("q", query.q);
-  return request(`/admin/api/runs?${params.toString()}`);
+  return request(`/admin/api/v1/runs?${params.toString()}`);
 }
 
 export function fetchRun(runId: string): Promise<RunDetail> {
-  return request(`/admin/api/runs/${encodeURIComponent(runId)}`);
+  return request(`/admin/api/v1/runs/${encodeURIComponent(runId)}`);
 }
 
 /** `me` and `unassigned` are resolved by the server: the page never filters an assignee in the browser. */
@@ -115,23 +115,23 @@ export function fetchQuestions(query: QuestionQuery): Promise<Page<Question>> {
   });
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.assignee && query.assignee !== "any") params.set("assignee", query.assignee);
-  return request(`/admin/api/questions?${params.toString()}`);
+  return request(`/admin/api/v1/questions?${params.toString()}`);
 }
 
 export function fetchOverview(): Promise<AnalyticsOverview> {
-  return request("/admin/api/analytics/overview");
+  return request("/admin/api/v1/analytics/overview");
 }
 
 export function fetchDigest(days = 7): Promise<DigestResponse> {
-  return request(`/admin/api/digest/weekly?days=${days}`);
+  return request(`/admin/api/v1/digest/weekly?days=${days}`);
 }
 
 export function fetchKnowledge(): Promise<ListResponse<KnowledgeDocument>> {
-  return request("/admin/api/knowledge");
+  return request("/admin/api/v1/knowledge");
 }
 
 export function uploadKnowledge(text: string): Promise<KnowledgeFileQueued> {
-  return post<KnowledgeFileQueued>("/admin/api/knowledge", { text });
+  return post<KnowledgeFileQueued>("/admin/api/v1/knowledge", { text });
 }
 
 export interface FileMetadata {
@@ -150,19 +150,19 @@ export function uploadKnowledgeFile(
   const body = new FormData();
   body.append("file", file);
   body.append("metadata", JSON.stringify({ ...metadata, type: "knowledge", status: "active" }));
-  return request<KnowledgeFileQueued>("/admin/api/knowledge/files", {
+  return request<KnowledgeFileQueued>("/admin/api/v1/knowledge/files", {
     method: "POST",
     body,
   });
 }
 
 export function fetchExtraction(contentHash: string): Promise<KnowledgeExtraction> {
-  return request(`/admin/api/knowledge/files/${encodeURIComponent(contentHash)}`);
+  return request(`/admin/api/v1/knowledge/files/${encodeURIComponent(contentHash)}`);
 }
 
 /** `null` clears the owner. Any role that may answer may also claim. */
 export function assignQuestion(id: number, assignee: string | null): Promise<AssignedQuestion> {
-  return request(`/admin/api/questions/${id}/assignee`, {
+  return request(`/admin/api/v1/questions/${id}/assignee`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ assignee }),
@@ -170,11 +170,11 @@ export function assignQuestion(id: number, assignee: string | null): Promise<Ass
 }
 
 export function resolveQuestion(id: number, text: string): Promise<ResolvedQuestion> {
-  return post<ResolvedQuestion>(`/admin/api/questions/${id}/resolve`, { text });
+  return post<ResolvedQuestion>(`/admin/api/v1/questions/${id}/resolve`, { text });
 }
 
 export function offboardEmployee(employeeId: string): Promise<OffboardedEmployee> {
-  return request(`/admin/api/employees/${encodeURIComponent(employeeId)}`, {
+  return request(`/admin/api/v1/employees/${encodeURIComponent(employeeId)}`, {
     method: "DELETE",
   });
 }

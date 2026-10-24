@@ -2,10 +2,20 @@
 
 The recruiter cabinet reads this API. The bot never calls it.
 
+## Base path
+
+Every route lives under `/admin/api/v1`. The prefix is the version of the wire format: an
+incompatible change is a new prefix with both answering for one release, never a silent edit of
+this one (ADR 0024).
+
+The unversioned `/admin/api` alias answers the same routes for a client that has not shipped the
+new path yet. It is deliberately absent from `/openapi.json`: it is a compatibility window, not a
+second contract, and it is removed once the cabinet has moved.
+
 ## Authentication
 
 `Authorization: Bearer <token>`. Tokens are configured in `ADMIN_TOKENS` as
-`token:role:subject[:YYYY-MM-DD]` entries:
+`token:role:subject[:YYYY-MM-DD][:scope]` entries:
 
 ```
 ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-manager-token:manager:ИТ,dev-hr-token:hr_admin:hr-1:2030-12-31
@@ -13,7 +23,9 @@ ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-manager-token:manager:ИТ,
 
 The optional fourth field is the last valid day; the token expires at `00:00` UTC of the next day.
 Omitting it is allowed for a local demo, not for a deployment. A token entry with a duplicate token
-or a malformed date refuses to start the process.
+or a malformed date refuses to start the process. The optional fifth field narrows the scope
+explicitly (`recruiter=rec-1`, `department=ИТ`); ADR 0024 records why it exists and what a missing
+field falls back to.
 
 | Role | Scope |
 |---|---|
@@ -46,22 +58,22 @@ cookie exists at all.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/admin/api/me` | the caller's role, scope, capabilities and token expiry |
-| `POST` | `/admin/api/session` | trade a bearer token for an HttpOnly session cookie |
-| `DELETE` | `/admin/api/session` | clear the session cookie |
-| `GET` | `/admin/api/runs?limit=50&cursor=&status=all&q=` | runs, newest activity first, paged; `status` is `active`, `completed` or `all`, `q` searches name, role, department and employee id |
-| `GET` | `/admin/api/runs/{run_id}` | one run: step, step text, audit events, recent questions |
-| `GET` | `/admin/api/questions?status=unanswered&limit=50&cursor=&assignee=any` | questions by status: `unanswered`, `answered`, `all`, paged; `assignee` is `any`, `me` or `unassigned` |
-| `PATCH` | `/admin/api/questions/{question_id}/assignee` | claim an open question, hand it to another admin, or clear the owner |
-| `POST` | `/admin/api/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
-| `POST` | `/admin/api/identities` | HR links one messenger account (channel + external id) to an employee; nothing else lets a stranger in |
-| `DELETE` | `/admin/api/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
-| `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
-| `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
-| `GET` | `/admin/api/knowledge?limit=100` | active knowledge documents, newest first; `hr_only` is hidden from every non-HR role |
-| `POST` | `/admin/api/knowledge` | HR uploads one markdown document; stored by content hash and queued for indexing |
-| `POST` | `/admin/api/knowledge/files` | HR uploads a PDF or a deck; stored by content hash and queued for extraction |
-| `GET` | `/admin/api/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |
+| `GET` | `/admin/api/v1/me` | the caller's role, scope, capabilities and token expiry |
+| `POST` | `/admin/api/v1/session` | trade a bearer token for an HttpOnly session cookie |
+| `DELETE` | `/admin/api/v1/session` | clear the session cookie |
+| `GET` | `/admin/api/v1/runs?limit=50&cursor=&status=all&q=` | runs, newest activity first, paged; `status` is `active`, `completed` or `all`, `q` searches name, role, department and employee id |
+| `GET` | `/admin/api/v1/runs/{run_id}` | one run: step, step text, audit events, recent questions |
+| `GET` | `/admin/api/v1/questions?status=unanswered&limit=50&cursor=&assignee=any` | questions by status: `unanswered`, `answered`, `all`, paged; `assignee` is `any`, `me` or `unassigned` |
+| `PATCH` | `/admin/api/v1/questions/{question_id}/assignee` | claim an open question, hand it to another admin, or clear the owner |
+| `POST` | `/admin/api/v1/questions/{question_id}/resolve` | answer an escalated question in MAX and close it |
+| `POST` | `/admin/api/v1/identities` | HR links one messenger account (channel + external id) to an employee; nothing else lets a stranger in |
+| `DELETE` | `/admin/api/v1/employees/{employee_id}` | HR offboards an employee: stops the run, deletes the transcript and the queued messages |
+| `GET` | `/admin/api/v1/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
+| `GET` | `/admin/api/v1/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
+| `GET` | `/admin/api/v1/knowledge?limit=100` | active knowledge documents, newest first; `hr_only` is hidden from every non-HR role |
+| `POST` | `/admin/api/v1/knowledge` | HR uploads one markdown document; stored by content hash and queued for indexing |
+| `POST` | `/admin/api/v1/knowledge/files` | HR uploads a PDF or a deck; stored by content hash and queued for extraction |
+| `GET` | `/admin/api/v1/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |
 | `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
 
 ## Paging

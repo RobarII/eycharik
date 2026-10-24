@@ -169,12 +169,14 @@
 - [Оценка 2026-10-24: 155 кейсов на стеке qwen3 + deepseek](measurements/2026-10-24-eval-full-qwen-stack-v2.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: 155 кейсов на стеке qwen3 + deepseek, промпт v8](measurements/2026-10-24-eval-full-qwen-stack-v3.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: итоговые числа на 158 кейсах](measurements/2026-10-24-eval-regrade-qwen-stack-final.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: дельта переранжирования bge-reranker-v2-m3 на Metal](measurements/2026-10-24-eval-rerank-bge-reranker-v2-m3-local-metal.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: прогон поиск acl matrix](measurements/2026-10-24-eval-retrieval-acl-matrix.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-bm25-off](measurements/2026-10-24-eval-retrieval-arm-bm25-off.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-bm25-on](measurements/2026-10-24-eval-retrieval-arm-bm25-on.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-contextual-on](measurements/2026-10-24-eval-retrieval-arm-contextual-on.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-plain](measurements/2026-10-24-eval-retrieval-arm-plain.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-qwen3-rerank-8b](measurements/2026-10-24-eval-retrieval-arm-qwen3-rerank-8b.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: поиск на bge-m3 локально на Metal](measurements/2026-10-24-eval-retrieval-bge-m3-local-metal.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: лексическая ветка OR с весом 0.5](measurements/2026-10-24-eval-retrieval-lexical-after-weighted.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: лексическая ветка с OR](measurements/2026-10-24-eval-retrieval-lexical-after.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: лексическая ветка как есть](measurements/2026-10-24-eval-retrieval-lexical-before.md) — проверен 2026-10-24

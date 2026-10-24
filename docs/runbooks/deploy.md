@@ -28,7 +28,7 @@ last_verified: 2026-10-25
 - У изменения схемы есть миграция в `apps/api/onboarding/migrations/versions/`.
 - На коммите есть успешный чек `gate` — тот самый job из `.github/workflows/ci.yml`. Ручной деплой
   проверяет его через API и без него отказывается идти.
-- Релизный workflow выпустил `ghcr.io/<owner>/moshackathon-api` и `-admin` под `sha-<sha>`, а тег
+- Релизный workflow выпустил `ghcr.io/<owner>/eycharik-api` и `-admin` под `sha-<sha>`, а тег
   `vX.Y.Z` указывает на тот же диджест. Деплой тоже проверяет, что оба образа тянутся.
 - `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_PATH` — переменные репозитория;
   `DEPLOY_SSH_KEY` и `DEPLOY_KNOWN_HOSTS` — секреты репозитория или окружения `production`.

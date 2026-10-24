@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/rag-answer.schema.json",
+  "$id": "https://eycharik.local/contracts/rag-answer.schema.json",
   "title": "Ответ",
   "type": "object",
   "additionalProperties": false,

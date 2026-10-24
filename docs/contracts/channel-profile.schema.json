@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/channel-profile.schema.json",
+  "$id": "https://eycharik.local/contracts/channel-profile.schema.json",
   "title": "ChannelProfile",
   "description": "Что может передать один мессенджер. Профиль — данные (apps/api/channel-profiles/<channel>.yaml); код не ветвится по имени канала, чтобы решить про лимит.",
   "type": "object",

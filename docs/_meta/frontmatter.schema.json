@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/p4ulbr4dl3y/moshackathon/docs/_meta/frontmatter.schema.json",
+  "$id": "https://github.com/p4ulbr4dl3y/eycharik/docs/_meta/frontmatter.schema.json",
   "title": "Frontmatter документа",
   "description": "Обязательные поля каждого файла docs/**/*.md. Индекс docs/README.md собирается из них, поэтому пропуск поля ломает сборку.",
   "type": "object",

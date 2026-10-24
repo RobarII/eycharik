@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/extraction-profile.schema.json",
+  "$id": "https://eycharik.local/contracts/extraction-profile.schema.json",
   "title": "ExtractionProfile",
   "description": "Как читать один файл. Файлы лежат в apps/api/model-profiles/extract/<name>.yaml и выбираются через EXTRACTION_PROFILE. Профиль проверяется на старте: сломанный останавливает процесс, как и сломанный сценарий.",
   "type": "object",

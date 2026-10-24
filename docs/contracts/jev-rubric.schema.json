@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/jev-rubric.schema.json",
+  "$id": "https://eycharik.local/contracts/jev-rubric.schema.json",
   "title": "JevRubric",
   "description": "Вопросы, которые уходят в TypeSafe Jev, как версионированный артефакт промпта: docs/prompts/<name>/v<version>.yaml. Jev — не чат-модель, поэтому рубрика и есть промпт. Формулировки русские, как и ответы на опрос, которые они размечают. Схема держит форму; адаптер держит смысл (вопрос sentiment обязан быть выбором по enum Sentiment, а каждый вопрос tag_ обязан назвать SignalTag).",
   "type": "object",

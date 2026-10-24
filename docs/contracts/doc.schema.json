@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/doc.schema.json",
+  "$id": "https://eycharik.local/contracts/doc.schema.json",
   "title": "KnowledgeDocumentFrontmatter",
   "type": "object",
   "additionalProperties": false,

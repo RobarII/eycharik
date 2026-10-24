@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/scenario.schema.json",
+  "$id": "https://eycharik.local/contracts/scenario.schema.json",
   "title": "Сценарий",
   "type": "object",
   "additionalProperties": false,

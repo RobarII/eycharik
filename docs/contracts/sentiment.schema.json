@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/sentiment.schema.json",
+  "$id": "https://eycharik.local/contracts/sentiment.schema.json",
   "title": "SentimentSignal",
   "description": "Один вердикт классификатора по одному свободному ответу на опрос. Модель возвращает этот объект; воркер проверяет его до записи или эскалации.",
   "type": "object",

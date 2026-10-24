@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moshackathon.local/contracts/model-profile.schema.json",
+  "$id": "https://eycharik.local/contracts/model-profile.schema.json",
   "title": "ModelProfile",
   "description": "Одна модель, описанная данными. Файлы лежат в apps/api/model-profiles/<role>/<name>.yaml и выбираются через LLM_PROFILE, EMBED_PROFILE и RERANK_PROFILE. Роль решает, какие поля есть: поле, не подходящее роли, отклоняется, а не игнорируется.",
   "oneOf": [

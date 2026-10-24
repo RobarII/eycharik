@@ -36,6 +36,7 @@ from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import AnswerOutcome
 from onboarding.app.worker.service import OnboardingService
+from onboarding.core.chunking import DEFAULT_MAX_CHARS, DEFAULT_OVERLAP_CHARS
 from onboarding.core.extraction import accept
 from onboarding.core.models import (
     Accepted,
@@ -74,8 +75,8 @@ def main(argv: list[str] | None = None) -> int:
 
     ingest_parser = sub.add_parser("ingest", help="index the knowledge corpus")
     ingest_parser.add_argument("--dir", type=Path, default=None)
-    ingest_parser.add_argument("--max-chars", type=int, default=1200)
-    ingest_parser.add_argument("--overlap-chars", type=int, default=200)
+    ingest_parser.add_argument("--max-chars", type=int, default=DEFAULT_MAX_CHARS)
+    ingest_parser.add_argument("--overlap-chars", type=int, default=DEFAULT_OVERLAP_CHARS)
 
     seed_parser = sub.add_parser("seed", help="load employees from a JSON file")
     seed_parser.add_argument("--file", type=Path, required=True)

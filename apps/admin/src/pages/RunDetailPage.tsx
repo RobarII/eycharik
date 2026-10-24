@@ -17,7 +17,7 @@ import {
 } from "../format";
 import { useUnauthorized } from "../useUnauthorized";
 import { useSession } from "../session";
-import { SCENARIO_LABELS } from "../config";
+import { CHANNEL_LABELS, SCENARIO_LABELS } from "../config";
 
 export function RunDetailPage({
   runId,
@@ -109,8 +109,17 @@ export function RunDetailPage({
                   <dd>{query.data.tone === "informal" ? "На «ты»" : "На «вы»"}</dd>
                 </div>
                 <div>
-                  <dt>Сотрудник в MAX</dt>
-                  <dd>{query.data.employee_id}</dd>
+                  <dt>Аккаунт в мессенджере</dt>
+                  <dd>
+                    {query.data.channels.length > 0
+                      ? query.data.channels
+                          .map(
+                            (link) =>
+                              `${CHANNEL_LABELS[link.channel] ?? link.channel} · ${link.external_id}`,
+                          )
+                          .join(", ")
+                      : "не привязан"}
+                  </dd>
                 </div>
               </dl>
               {query.data.step_message ? (

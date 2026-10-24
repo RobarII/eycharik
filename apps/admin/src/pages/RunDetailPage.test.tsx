@@ -27,6 +27,7 @@ const run: RunDetail = {
   scenario: "onboarding_plant",
   scenario_version: 2,
   tone: "formal",
+  channels: [{ channel: "max", external_id: "4242", linked_at: "2026-10-20T08:55:00Z" }],
   events: [
     {
       at: "2026-10-20T09:05:00Z",
@@ -70,6 +71,20 @@ describe("RunDetailPage", () => {
 
     expect(await screen.findByText("Знакомство → Документы")).toBeInTheDocument();
     expect(screen.getByText(/Завод \(ГТП\) · v2/)).toBeInTheDocument();
+  });
+
+  it("names the messenger account, not the HR id", async () => {
+    renderPage(["runs.read"]);
+
+    expect(await screen.findByText("MAX · 4242")).toBeInTheDocument();
+    expect(screen.queryByText("3001")).not.toBeInTheDocument();
+  });
+
+  it("says so when nobody is linked yet", async () => {
+    vi.mocked(fetchRun).mockResolvedValue({ ...run, channels: [] });
+    renderPage(["runs.read"]);
+
+    expect(await screen.findByText("не привязан")).toBeInTheDocument();
   });
 
   it("does not offer offboarding to a recruiter", async () => {

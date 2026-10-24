@@ -48,11 +48,18 @@ export interface ResolvedQuestion {
   resolved_by: string;
 }
 
+export interface MessengerLink {
+  channel: string;
+  external_id: string;
+  linked_at: string;
+}
+
 export interface RunDetail extends RunSummary {
   step_message: string | null;
   scenario: string;
   scenario_version: number;
   tone: "formal" | "informal";
+  channels: MessengerLink[];
   events: AuditEvent[];
   questions: Question[];
 }

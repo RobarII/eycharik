@@ -44,6 +44,7 @@ from onboarding.ports import OutboundMessage
 pytestmark = pytest.mark.integration
 
 SECRET = "e2e-secret"
+ADMIN_TOKEN = "admin-token"
 TOKEN = "bot-token"
 CHAT = 7000001
 EMPLOYEE = "1001"
@@ -57,7 +58,7 @@ def database_url() -> str:
     return url
 
 
-def settings() -> Settings:
+def settings(**overrides: Any) -> Settings:
     return Settings(
         _env_file=None,
         database_url=database_url(),
@@ -67,6 +68,7 @@ def settings() -> Settings:
         max_base_url="https://max.test",
         llm_provider="extractive",
         embed_provider="hashing",
+        **overrides,
     )
 
 
@@ -297,6 +299,42 @@ async def test_a_bot_start_becomes_a_delivered_welcome(database: Database) -> No
         assert fake.uploads == 2
     finally:
         await container.aclose()
+
+
+async def test_run_detail_names_the_messenger_account(database: Database) -> None:
+    # The card must print the messenger account; the HR id is not an address in MAX.
+    fake = FakeMax()
+    config = settings(admin_tokens_raw=f"{ADMIN_TOKEN}:hr_admin:hr-1")
+    app = create_app(config)
+    container = build_container(config)
+    container.senders[Channel.MAX] = max_client(fake)
+    try:
+        async with app.router.lifespan_context(app):
+            assert await post(app, start_payload()) == 200
+        await pump(container)
+        async with database.session() as session:
+            run_id = await session.scalar(select(RunRow.id))
+        assert run_id is not None
+        async with app.router.lifespan_context(app):
+            transport = httpx.ASGITransport(app=app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.get(
+                    f"/admin/api/v1/runs/{run_id}",
+                    headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+                )
+    finally:
+        await container.aclose()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["employee_id"] == EMPLOYEE
+    assert payload["channels"] == [
+        {
+            "channel": "max",
+            "external_id": str(CHAT),
+            "linked_at": payload["channels"][0]["linked_at"],
+        }
+    ]
 
 
 async def test_a_failed_send_is_retried_by_the_dispatcher(database: Database) -> None:

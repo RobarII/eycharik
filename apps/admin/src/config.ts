@@ -22,6 +22,13 @@ export const ROLE_LABELS: Record<string, string> = {
   hr_admin: "HR-администратор",
 };
 
+/** Channel ids come from `Channel` in the API; an unknown one prints as-is. */
+export const CHANNEL_LABELS: Record<string, string> = {
+  max: "MAX",
+  telegram: "Telegram",
+  vk: "ВКонтакте",
+};
+
 /** How often each screen re-reads the API. One place, so the numbers cannot drift apart. */
 export const REFRESH = {
   overview: 30_000,

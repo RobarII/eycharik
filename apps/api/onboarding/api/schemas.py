@@ -281,6 +281,7 @@ class RunDetail(RunSummary):
     scenario: str
     scenario_version: int
     tone: str
+    channels: list[EmployeeChannel]
     events: list[AuditEvent]
     questions: list[Question]
 

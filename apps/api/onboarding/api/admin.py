@@ -209,6 +209,7 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
         step_message = step.message
 
     events = await admin.events(record.employee_id)
+    channels = await admin.identities(record.employee_id)
     questions = await admin.questions(
         recruiter_id=_scope(principal),
         department=_department(principal),
@@ -222,6 +223,7 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
         scenario=record.scenario_id,
         scenario_version=record.scenario_version,
         tone=record.tone,
+        channels=_channel_links(channels),
         events=[
             AuditEvent(name=event.name, at=event.at, fields=event.fields) for event in events
         ],
@@ -600,15 +602,19 @@ def _employee(record: EmployeeRecord, channels: tuple[IdentityRecord, ...]) -> E
         status=record.status,
         left_at=record.left_at,
         created_at=record.created_at,
-        channels=[
-            EmployeeChannel(
-                channel=channel.channel,
-                external_id=channel.external_id,
-                linked_at=channel.linked_at,
-            )
-            for channel in channels
-        ],
+        channels=_channel_links(channels),
     )
+
+
+def _channel_links(channels: tuple[IdentityRecord, ...]) -> list[EmployeeChannel]:
+    return [
+        EmployeeChannel(
+            channel=channel.channel,
+            external_id=channel.external_id,
+            linked_at=channel.linked_at,
+        )
+        for channel in channels
+    ]
 
 
 def _require_hr(principal: AdminPrincipal, action: str) -> None:

@@ -82,10 +82,11 @@ python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).de
 OpenRouter; GigaChat использует один ключ на обе роли. Образ `api` уже ставит Russian Trusted CA и
 указывает `MAX_CA_BUNDLE` на объединённый системный бандл.
 
-Пример окружения выбирает OpenCode Go для ответов и OpenRouter Qwen3 для эмбеддингов. Оба эндпоинта
-отвечают с демо-хоста, и ни одна модель на нём не работает. Блок GigaChat закомментирован для
-пилота на российском хосте по 152-ФЗ; см.
-[ADR 0025](../decisions/0025-demo-models-on-opencode-and-openrouter.md).
+Пример окружения выбирает российский контур: GigaChat для ответов и Sber Embeddings для векторов
+([ADR 0030](../decisions/0030-model-class-and-contour.md)). Демо-стек OpenCode Go и OpenRouter
+закомментирован: он несёт только синтетику и в прод с персональными данными не выкатывается
+([ADR 0025](../decisions/0025-demo-models-on-opencode-and-openrouter.md)). `CLASSIFY_API_KEY` остаётся
+пустым: путь `decisions` идёт в TypeSafe за границу, поэтому классификатор работает промптом.
 
 Один раз добавьте ключ хоста в секрет CI:
 

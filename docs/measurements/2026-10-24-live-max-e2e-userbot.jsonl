@@ -1,0 +1,9 @@
+{"case": "reboot", "input": "/reboot", "commit": "5f20846", "environment": "production", "event_key": "max:mid.00000000109f4a3d01a16fb67cde639c", "step": "welcome", "outbound": "delivered", "pass": true}
+{"case": "tone_button", "input": "MSG_SEND_CALLBACK tone_you", "commit": "5f20846", "environment": "production", "step_before": "welcome", "step_after": "documents_checklist", "tone_before": "formal", "tone_after": "informal", "pass": true}
+{"case": "documents_answer", "input": "Документы уже отдал рекрутёру", "commit": "5f20846", "environment": "production", "step_before": "documents_checklist", "step_after": "day_before", "pass": true}
+{"case": "knowledge_question", "input": "За сколько дней нужно подать заявление на отпуск?", "commit": "5f20846", "environment": "production", "reason": "answered", "citations": ["hr/leave-policy#0"], "latency_ms": 10676, "pass": true}
+{"case": "off_topic_question", "input": "Сколько стоит биткоин сегодня?", "commit": "5f20846", "environment": "production", "reason": "no_sources", "answered": false, "pass": true}
+{"case": "text_on_button_step", "input": "Давай на «ты»", "commit": "5f20846", "environment": "production", "reason": "out_of_scope", "step_unchanged": true, "pass": true}
+{"case": "document_with_question", "input": "test-doc.jpg + А когда выплачивают зарплату?", "commit": "5f20846", "environment": "production", "file_status": "failed", "file_error": "FileFetchError: untrusted_host", "size": 0, "question_logged": false, "pass": false}
+{"case": "document_repeats_stage", "input": "test-doc.jpg", "commit": "5f20846", "environment": "production", "duplicate_messages": [258, 261], "pass": false}
+{"case": "media_cdn_after_fix", "input": "payload.url host fd.oneme.ru", "commit": "ba8f858", "environment": "local", "bytes": 336, "signature": "ffd8ffe0", "pass": true}

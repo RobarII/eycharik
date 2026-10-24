@@ -85,6 +85,7 @@ class QuestionRecord:
     resolved_at: datetime | None
     resolved_by: str | None
     assignee: str | None
+    declined: bool = False
 
 
 @dataclass(frozen=True, slots=True)

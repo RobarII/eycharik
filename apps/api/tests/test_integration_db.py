@@ -749,6 +749,57 @@ async def test_admin_resolves_a_question_and_queues_the_reply(database: Database
         assert "text" not in audit.fields
 
 
+async def test_admin_declines_a_question_without_a_reply(database: Database) -> None:
+    question_id = await seed_question(database, "ыыы")
+    app = admin_app()
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as http,
+    ):
+        response = await http.post(
+            f"/admin/api/questions/{question_id}/decline",
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["id"] == question_id
+        assert body["declined"] is True
+        assert body["answered"] is True
+        assert body["resolved_by"] == "rec-1"
+
+        second = await http.post(
+            f"/admin/api/questions/{question_id}/decline",
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert second.status_code == 409
+
+        foreign = await http.post(
+            f"/admin/api/questions/{question_id}/decline",
+            headers={"Authorization": "Bearer other"},
+        )
+        assert foreign.status_code == 404
+
+        answered = await http.get(
+            "/admin/api/questions?status=answered",
+            headers={"Authorization": "Bearer rec"},
+        )
+        assert answered.status_code == 200, answered.text
+        card = next(item for item in answered.json()["items"] if item["id"] == question_id)
+        assert card["declined"] is True
+
+    async with database.session() as session:
+        question = await session.get(QuestionRow, question_id)
+        assert question is not None
+        assert question.answered
+        assert question.declined
+        assert question.resolution is None
+        assert await session.scalar(select(func.count()).select_from(MessageRow)) == 0
+        audit = await session.scalar(select(AuditRow).where(AuditRow.name == "question_declined"))
+        assert audit is not None
+        assert audit.fields["question_id"] == question_id
+        assert audit.fields["by"] == "rec-1"
+
+
 async def test_manager_scope_and_expired_token(database: Database) -> None:
     question_id = await seed_question(database)
     app = admin_app()

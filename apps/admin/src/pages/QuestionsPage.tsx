@@ -2,7 +2,13 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import type { UseMutationResult } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { assignQuestion, fetchQuestions, fetchRuns, resolveQuestion } from "../api";
+import {
+  assignQuestion,
+  declineQuestion,
+  fetchQuestions,
+  fetchRuns,
+  resolveQuestion,
+} from "../api";
 import { ArrowUpRightIcon } from "../components/Icons";
 import { AnswerPill, ReasonPill } from "../components/Pills";
 import { EmptyState, ErrorNote, SkeletonRows } from "../components/States";
@@ -85,9 +91,21 @@ export function QuestionsPage({
       if (isConflict(error)) void queryClient.invalidateQueries({ queryKey: ["questions"] });
     },
   });
+  const decline = useMutation({
+    mutationFn: (id: number) => declineQuestion(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["questions"] });
+      await queryClient.invalidateQueries({ queryKey: ["overview"] });
+      await queryClient.invalidateQueries({ queryKey: ["runs"] });
+    },
+    onError: (error) => {
+      if (isConflict(error)) void queryClient.invalidateQueries({ queryKey: ["questions"] });
+    },
+  });
   useUnauthorized(query.error, onUnauthorized);
   useUnauthorized(resolve.error, onUnauthorized);
   useUnauthorized(assign.error, onUnauthorized);
+  useUnauthorized(decline.error, onUnauthorized);
 
   const byEmployee = new Map<string, RunSummary>(
     (runs.data?.items ?? []).map((run) => [run.employee_id, run]),
@@ -103,7 +121,8 @@ export function QuestionsPage({
           <h1>Вопросы сотрудников</h1>
           <p className="muted">
             Всё, что бот не смог закрыть сам. Ответьте здесь — сообщение уйдёт сотруднику в MAX, а
-            вопрос закроется.
+            вопрос закроется. Если вопрос не требует ответа, закройте его кнопкой «Отказаться
+            отвечать»: сотруднику ничего не отправится.
           </p>
         </div>
         <div className="page-count" aria-live="polite">
@@ -167,6 +186,7 @@ export function QuestionsPage({
               run={byEmployee.get(question.employee_id)}
               onOpenRun={onOpenRun}
               resolve={resolve}
+              decline={decline}
               assign={assign}
               canResolve={can("questions.resolve")}
               canAssign={can("questions.assign")}
@@ -198,6 +218,8 @@ type ResolveMutation = UseMutationResult<
   { id: number; text: string }
 >;
 
+type DeclineMutation = UseMutationResult<ResolvedQuestion, Error, number>;
+
 type AssignMutation = UseMutationResult<
   AssignedQuestion,
   Error,
@@ -209,6 +231,7 @@ function QuestionCard({
   run,
   onOpenRun,
   resolve,
+  decline,
   assign,
   canResolve,
   canAssign,
@@ -218,6 +241,7 @@ function QuestionCard({
   run: RunSummary | undefined;
   onOpenRun: (runId: string) => void;
   resolve: ResolveMutation;
+  decline: DeclineMutation;
   assign: AssignMutation;
   canResolve: boolean;
   canAssign: boolean;
@@ -244,7 +268,7 @@ function QuestionCard({
               {question.assignee === me ? "Ваш вопрос" : question.assignee}
             </span>
           ) : null}
-          <AnswerPill answered={question.answered} />
+          <AnswerPill answered={question.answered} declined={question.declined ?? false} />
         </div>
       </div>
       <p className="question-text">{question.text}</p>
@@ -267,7 +291,7 @@ function QuestionCard({
       ) : null}
       {question.answered && question.resolved_at ? (
         <p className="muted small">
-          Закрыт {formatDateTime(question.resolved_at)}
+          {question.declined ? "Отклонён" : "Закрыт"} {formatDateTime(question.resolved_at)}
           {question.resolved_by ? ` · ${question.resolved_by}` : ""}
         </p>
       ) : null}
@@ -294,7 +318,7 @@ function QuestionCard({
         </div>
       ) : null}
       {!question.answered && canResolve ? (
-        <ReplyForm question={question} resolve={resolve} />
+        <ReplyForm question={question} resolve={resolve} decline={decline} />
       ) : null}
       {!question.answered && !canResolve ? (
         <p className="muted small">
@@ -308,20 +332,39 @@ function QuestionCard({
 function ReplyForm({
   question,
   resolve,
+  decline,
 }: {
   question: Question;
   resolve: ResolveMutation;
+  decline: DeclineMutation;
 }) {
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const submitting = resolve.isPending && resolve.variables?.id === question.id;
+  const declining = decline.isPending && decline.variables === question.id;
 
   if (!open) {
     return (
       <div className="resolve">
-        <button type="button" className="button button-primary" onClick={() => setOpen(true)}>
-          Ответить в MAX
-        </button>
+        <div className="resolve-actions">
+          <button type="button" className="button button-primary" onClick={() => setOpen(true)}>
+            Ответить в MAX
+          </button>
+          <button
+            type="button"
+            className="button button-quiet"
+            title="Закрыть вопрос без ответа. Сотруднику ничего не отправится."
+            disabled={declining}
+            onClick={() => decline.mutate(question.id)}
+          >
+            {declining ? "Отклоняю…" : "Отказаться отвечать"}
+          </button>
+        </div>
+        {decline.error && decline.variables === question.id && decline.error.name !== "Unauthorized" ? (
+          <span className="error-text" role="alert">
+            {decline.error.message}
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -368,9 +411,23 @@ function ReplyForm({
         >
           Отмена
         </button>
+        <button
+          type="button"
+          className="link-button"
+          title="Закрыть вопрос без ответа. Сотруднику ничего не отправится."
+          disabled={declining}
+          onClick={() => decline.mutate(question.id)}
+        >
+          {declining ? "Отклоняю…" : "Отказаться отвечать"}
+        </button>
         {resolve.error && resolve.variables?.id === question.id && resolve.error.name !== "Unauthorized" ? (
           <span className="error-text" role="alert">
             {resolve.error.message}
+          </span>
+        ) : null}
+        {decline.error && decline.variables === question.id && decline.error.name !== "Unauthorized" ? (
+          <span className="error-text" role="alert">
+            {decline.error.message}
           </span>
         ) : null}
       </div>

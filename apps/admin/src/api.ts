@@ -216,6 +216,11 @@ export function resolveQuestion(id: number, text: string): Promise<ResolvedQuest
   return post<ResolvedQuestion>(`/admin/api/v1/questions/${id}/resolve`, { text });
 }
 
+/** Close a question without a reply: no outbox row, nothing reaches the employee. */
+export function declineQuestion(id: number): Promise<ResolvedQuestion> {
+  return post<ResolvedQuestion>(`/admin/api/v1/questions/${id}/decline`, {});
+}
+
 export function offboardEmployee(employeeId: string): Promise<OffboardedEmployee> {
   return request(`/admin/api/v1/employees/${encodeURIComponent(employeeId)}`, {
     method: "DELETE",

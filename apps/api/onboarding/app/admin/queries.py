@@ -495,6 +495,7 @@ class AdminQueries:
                     resolved_at=question.resolved_at,
                     resolved_by=question.resolved_by,
                     assignee=question.assignee,
+                    declined=question.declined,
                 )
                 for question, name in all_rows[:limit]
             )

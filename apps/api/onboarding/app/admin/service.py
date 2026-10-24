@@ -330,6 +330,21 @@ class AdminService:
             department=department,
         )
 
+    async def decline_question(
+        self,
+        question_id: int,
+        *,
+        actor: str,
+        recruiter_id: str | None,
+        department: str | None,
+    ) -> Resolution:
+        return await self._resolver.decline(
+            question_id,
+            actor=actor,
+            recruiter_id=recruiter_id,
+            department=department,
+        )
+
     async def assign_question(
         self,
         question_id: int,

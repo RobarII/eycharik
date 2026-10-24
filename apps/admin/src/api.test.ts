@@ -4,6 +4,7 @@ import {
   ApiError,
   Unauthorized,
   closeSession,
+  declineQuestion,
   fetchMe,
   offboardEmployee,
   openSession,
@@ -99,6 +100,27 @@ describe("requests", () => {
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/admin/api/v1/questions/7/resolve");
     expect(init.body).toBe(JSON.stringify({ text: "reply" }));
+  });
+
+  it("declines a question without a reply body", async () => {
+    fetchMock.mockResolvedValue(
+      reply({
+        id: 7,
+        employee_id: "1001",
+        answered: true,
+        declined: true,
+        resolved_at: "2026-10-24T10:00:00Z",
+        resolved_by: "rec-1",
+      }),
+    );
+
+    const declined = await declineQuestion(7);
+
+    expect(declined.declined).toBe(true);
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe("/admin/api/v1/questions/7/decline");
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe("{}");
   });
 
   it("offboards through a DELETE on the employee", async () => {

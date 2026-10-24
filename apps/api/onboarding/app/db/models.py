@@ -192,6 +192,7 @@ class QuestionRow(Base):
     chat_id: Mapped[int] = mapped_column(BigInteger)
     text: Mapped[str] = mapped_column(Text)
     answered: Mapped[bool] = mapped_column(Boolean)
+    declined: Mapped[bool] = mapped_column(Boolean, server_default=sql_text("false"))
     reason: Mapped[str] = mapped_column(String(32))
     citations: Mapped[list[str]] = mapped_column(JSONB, server_default=sql_text("'[]'::jsonb"))
     latency_ms: Mapped[int | None] = mapped_column(Integer)

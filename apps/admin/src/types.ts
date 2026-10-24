@@ -25,6 +25,8 @@ export interface Question {
   employee_name: string;
   text: string;
   answered: boolean;
+  /** Closed by HR without a reply; the employee received nothing. */
+  declined?: boolean;
   reason: string;
   citations: string[];
   asked_at: string;
@@ -44,6 +46,7 @@ export interface ResolvedQuestion {
   id: number;
   employee_id: string;
   answered: true;
+  declined?: boolean;
   resolved_at: string;
   resolved_by: string;
 }

@@ -89,18 +89,26 @@ def parse_update(payload: Mapping[str, Any], *, received_at: datetime) -> Inboun
     body = _mapping(message.get("body"))
     sender = _mapping(message.get("sender"))
     recipient = _mapping(message.get("recipient"))
+    callback = _mapping(payload.get("callback"))
     chat_id = _int(payload.get("chat_id")) or _int(recipient.get("chat_id"))
     if chat_id is None:
         return None
 
     at = _timestamp(payload.get("timestamp")) or received_at
+    # A callback carries the presser in ``callback.user``; the outer ``user`` is absent and
+    # ``message.sender`` is the bot that owns the keyboard, so neither may be used for it.
     user_id = _int(_mapping(payload.get("user")).get("user_id"))
     if user_id is None:
+        user_id = _int(_mapping(callback.get("user")).get("user_id"))
+    if user_id is None and update_type != "message_callback":
         user_id = _int(sender.get("user_id"))
 
     mid = body.get("mid")
+    press_id = callback.get("callback_id")
     event_id = (
-        str(mid)
+        str(press_id)
+        if update_type == "message_callback" and isinstance(press_id, str) and press_id
+        else str(mid)
         if isinstance(mid, str) and mid
         else _synthetic_id(update_type, payload, chat_id)
     )

@@ -111,3 +111,46 @@ def test_bot_started_becomes_an_employee_created_event() -> None:
     assert inbound.chat_id == 4242
     assert inbound.user_id == 77
     assert inbound.event.kind.value == "employee_created"
+
+
+# Captured from the live platform on 2026-10-24: a callback has no outer chat_id or user, the
+# presser sits in callback.user, and message.sender is the bot that owns the keyboard.
+REAL_CALLBACK = {
+    "callback": {
+        "timestamp": 1_792_832_437_454,
+        "callback_id": "callback-abc",
+        "user": {"user_id": 502_781_191, "name": "Егор Суровцев"},
+        "payload": "tone_you",
+    },
+    "timestamp": 1_792_832_437_454,
+    "message": {
+        "recipient": {"chat_type": "dialog", "chat_id": 278_874_685, "user_id": 502_781_191},
+        "sender": {"user_id": 224_960_314, "is_bot": True, "name": "Эйчарик"},
+        "body": {"mid": "mid-bot-1", "text": "Как вам удобнее общаться?"},
+    },
+    "user_locale": "en",
+    "update_type": "message_callback",
+}
+
+
+def test_parses_a_real_callback_with_the_presser_not_the_bot() -> None:
+    update = parse_update(REAL_CALLBACK, received_at=RECEIVED)
+
+    assert update is not None
+    assert update.user_id == 502_781_191
+    assert update.chat_id == ChatId(278_874_685)
+    assert update.event.kind is EventKind.BUTTON_PRESSED
+    assert update.event.button_id == "tone_you"
+    assert update.event_id == "callback-abc"
+
+
+def test_each_press_of_the_same_keyboard_is_a_distinct_event() -> None:
+    first = parse_update(REAL_CALLBACK, received_at=RECEIVED)
+    second = parse_update(
+        {**REAL_CALLBACK, "callback": {**REAL_CALLBACK["callback"], "callback_id": "callback-def"}},
+        received_at=RECEIVED,
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first.event_id != second.event_id

@@ -50,6 +50,23 @@ def test_overlap_repeats_the_tail() -> None:
     assert any(chunks[0].text.split(". ")[-1].strip(".") in tail for tail in tails)
 
 
+def test_a_repeated_paragraph_is_not_dropped() -> None:
+    """Regression: equal chunk texts were deduplicated, so the tail never reached a chunk."""
+    paragraph = "Согласование отпуска — руководитель."
+    repeated = Document(
+        id=DocId("hr/repeated"),
+        title="Повтор",
+        text="\n\n".join([paragraph] * 3),
+        audience=("all",),
+        valid_from=date(2026, 1, 1),
+    )
+
+    chunks = split_document(repeated, max_chars=70, overlap_chars=20)
+    joined = "".join(chunk.text for chunk in chunks)
+
+    assert joined.count(paragraph) >= 3
+
+
 def test_empty_document_has_no_chunks() -> None:
     empty = Document(
         id=DocId("empty"),

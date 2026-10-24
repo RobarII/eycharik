@@ -153,6 +153,7 @@
 - [Оценка 2026-10-24: noise-r1](measurements/2026-10-24-eval-retrieval-noise-r1.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: noise-r2](measurements/2026-10-24-eval-retrieval-noise-r2.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: noise-r3](measurements/2026-10-24-eval-retrieval-noise-r3.md) — проверен 2026-10-24
+- [Проверка 2026-10-24: готовность к продакшену](measurements/2026-10-24-production-readiness.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: смоук канала VK](measurements/2026-10-24-vk-channel-smoke.md) — проверен 2026-10-24
 - [Оценка 2026-10-25: бюджет токенов](measurements/2026-10-25-token-budget.md) — проверен 2026-10-24
 

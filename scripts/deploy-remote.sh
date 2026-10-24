@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Deploy one immutable commit on the server. Run as the unprivileged deploy user from the repo
 # checkout; the host nginx config is managed by scripts/bootstrap-vps.sh, not by this script.
+#
+# The order matters, and the one rule is: a migration that fails is never "rolled back" by putting
+# old images on top of a new schema. Before the first migration we take a dump, and if the migration
+# itself fails we stop and point at that dump instead of pretending the rollback worked.
 set -Eeuo pipefail
 IFS=$'\n\t'
 
@@ -8,6 +12,8 @@ ROOT="${DEPLOY_ROOT:-/opt/onboarding}"
 COMPOSE_FILE="docker-compose.yml"
 PROD_FILE="docker-compose.prod.yml"
 ENV_FILE=".env.prod"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/onboarding}"
+SMOKE_PASSES="${SMOKE_PASSES:-3}"
 
 usage() {
     printf 'usage: %s <40-character-commit-sha>\n' "${0##*/}" >&2
@@ -36,7 +42,18 @@ PUBLIC_URL="${PUBLIC_URL:-https://bot.state3407.space}"
 COMPOSE=(docker compose --project-directory "$ROOT" -f "$COMPOSE_FILE" -f "$PROD_FILE" --env-file "$ENV_FILE")
 export TAG="$SHA"
 
+# Set once the database schema may already be newer than `PREV`; the rollback refuses while it is 1.
+SCHEMA_TOUCHED=0
+DUMP=""
+
 log() { printf 'deploy: %s\n' "$*"; }
+
+notify() {
+    [ -n "${DEPLOY_NOTIFY_URL:-}" ] || return 0
+    curl -fsS -m 5 -X POST -H 'Content-Type: application/json' \
+        -d "$(printf '{"text":"deploy %s: %s"}' "$SHA" "$1")" \
+        "$DEPLOY_NOTIFY_URL" >/dev/null 2>&1 || true
+}
 
 wait_healthy() {
     local service="$1" tries="${2:-30}" cid status i
@@ -54,6 +71,16 @@ wait_healthy() {
 
 rollback() {
     trap - ERR
+    if [ "$SCHEMA_TOUCHED" = "1" ]; then
+        cat >&2 <<EOF
+deploy: not rolling the images back. The schema already saw a migration, and old code on a new
+deploy: schema fails in ways a rollback hides. The database is still on the new schema:
+deploy:   dump taken before the migration: ${DUMP:-none}
+deploy:   repair forward with a fix commit, or restore the dump on purpose:
+deploy:     CONFIRM_RESTORE=yes ./scripts/restore.sh ${DUMP:-<dump>}
+EOF
+        return 0
+    fi
     if [ -z "$PREV" ] || [ "$PREV" = "$SHA" ]; then
         echo "deploy: no previous release to roll back to" >&2
         return 0
@@ -70,6 +97,7 @@ on_error() {
     trap - ERR
     echo "deploy: failed with exit $code" >&2
     rollback
+    notify "failed with exit $code"
     exit "$code"
 }
 trap on_error ERR
@@ -85,7 +113,16 @@ log "starting postgres"
 "${COMPOSE[@]}" up -d postgres
 wait_healthy postgres 60 || { echo "deploy: postgres did not become healthy" >&2; exit 1; }
 
+# The dump is taken while the old api and worker are still writing, so it is not a quiescent
+# snapshot. It exists to answer one question: what did the database look like one migration ago.
+# A real backup is scripts/backup.sh and its timer; this one only serves the failure path.
+install -d -m 700 "$BACKUP_DIR"
+DUMP="$BACKUP_DIR/pre-deploy-$(date -u +%Y%m%dT%H%M%SZ)-$SHA.dump"
+log "dumping the database before migrating to $DUMP"
+./scripts/backup.sh --file "$DUMP"
+
 log "applying migrations"
+SCHEMA_TOUCHED=1
 "${COMPOSE[@]}" run --rm migrate
 
 log "starting worker and api"
@@ -100,8 +137,11 @@ log "starting admin"
 
 wait_healthy admin 30 || { echo "deploy: admin did not become healthy" >&2; exit 1; }
 
-log "smoke testing $PUBLIC_URL"
-./scripts/smoke.sh "$PUBLIC_URL"
+log "smoke testing $PUBLIC_URL ($SMOKE_PASSES passes)"
+for ((pass = 1; pass <= SMOKE_PASSES; pass++)); do
+    ./scripts/smoke.sh "$PUBLIC_URL"
+    [ "$pass" -lt "$SMOKE_PASSES" ] && sleep 10
+done
 
 # Keep the compose environment in step with the running tag so an operator's `docker compose`
 # command does not silently target the previous release.
@@ -114,4 +154,5 @@ fi
 printf '%s\n' "$SHA" > .deployed_sha.tmp
 mv .deployed_sha.tmp .deployed_sha
 log "deployed $SHA"
+notify "deployed"
 "${COMPOSE[@]}" ps

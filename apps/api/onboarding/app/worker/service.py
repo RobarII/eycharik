@@ -80,11 +80,13 @@ class OnboardingService:
     async def start(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
         stored = await self._runs.find_active_by_employee(employee_id)
         if stored is not None:
+            # A start never resets progress: it asks the same question again, so a person who lost
+            # the message (or cleared the chat) can get the keyboard back. A start from another
+            # messenger also moves the address, because the run follows the person (ADR 0019).
             if stored.address == address:
-                await self._audit.record("run_already_active", employee_id=str(employee_id))
-                return ServiceResult(handled=False)
-            # A start in another messenger is a request to continue there, not a reset: the run
-            # keeps its progress, moves its address, and re-asks whatever the person is on.
+                await self._audit.record(
+                    "run_restarted", employee_id=str(employee_id), step=stored.state.step_id
+                )
             return await self._resume(stored, address)
 
         profile = await self._directory.profile(employee_id)
@@ -123,15 +125,16 @@ class OnboardingService:
                 active=True,
             )
         )
-        await self._audit.record(
-            "channel_changed",
-            employee_id=str(employee_id),
-            previous_channel=stored.address.channel.value,
-            previous_chat_id=int(stored.address.chat_id),
-            channel=address.channel.value,
-            chat_id=int(address.chat_id),
-            resumed=True,
-        )
+        if stored.address != address:
+            await self._audit.record(
+                "channel_changed",
+                employee_id=str(employee_id),
+                previous_channel=stored.address.channel.value,
+                previous_chat_id=int(stored.address.chat_id),
+                channel=address.channel.value,
+                chat_id=int(address.chat_id),
+                resumed=True,
+            )
         await self._act(transition.actions, address, employee_id, now.date(), question=None)
         return ServiceResult(handled=True)
 

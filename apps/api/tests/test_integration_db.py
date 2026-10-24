@@ -220,14 +220,18 @@ async def test_survey_progress_survives_a_save_and_load(database: Database) -> N
     assert loaded.state.pending_reason == "manager"
 
 
-async def test_second_start_is_rejected_by_the_partial_index(database: Database) -> None:
-    service = build_service(database, messaging=RecordingMessaging(), knowledge=FakeKnowledgeBase())
+async def test_a_second_start_reuses_the_active_run(database: Database) -> None:
+    messaging = RecordingMessaging()
+    service = build_service(database, messaging=messaging, knowledge=FakeKnowledgeBase())
 
     first = await service.start(EMPLOYEE, MAX)
     second = await service.start(EMPLOYEE, MAX)
 
+    # The partial index still forbids two active runs; the second start replays the current step
+    # instead of creating a run, so exactly one message is added on top of the initial pair.
     assert first.handled
-    assert not second.handled
+    assert second.handled
+    assert len(messaging.sent) == 3
 
 
 async def test_event_deduper_accepts_one_delivery(database: Database) -> None:

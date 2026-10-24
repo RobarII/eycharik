@@ -50,6 +50,7 @@ export const eventLabels: Record<string, string> = {
   answer_rejected: "Ответ отклонён",
   answer_unavailable: "Модель недоступна",
   run_already_active: "Повторный старт",
+  run_restarted: "Повторный старт",
   event_without_run: "Событие без сценария",
   webhook_without_sender: "Событие без отправителя",
   answer_skipped: "Ответ пропущен",

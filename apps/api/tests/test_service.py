@@ -100,16 +100,22 @@ async def test_start_uses_the_scenario_named_by_the_directory() -> None:
     assert audit.events[0][1]["scenario"] == "onboarding_plant"
 
 
-async def test_start_is_idempotent() -> None:
-    service, _, messaging, audit, _ = build()
+async def test_a_second_start_re_asks_the_current_step() -> None:
+    service, runs, messaging, audit, _ = build()
 
     await service.start(EMPLOYEE, ADDRESS)
     sent_before = len(messaging.sent)
     result = await service.start(EMPLOYEE, ADDRESS)
 
-    assert not result.handled
-    assert len(messaging.sent) == sent_before
-    assert "run_already_active" in audit.names()
+    # A person who cleared the chat gets the keyboard back; progress is never reset.
+    assert result.handled
+    assert len(messaging.sent) == sent_before + 1
+    assert messaging.sent[-1].text == messaging.sent[0].text
+    assert messaging.sent[-1].keyboard == messaging.sent[0].keyboard
+    assert len(runs.runs) == 1
+    assert next(iter(runs.runs.values())).state.step_id == "welcome"
+    assert "run_restarted" in audit.names()
+    assert "run_started" in audit.names()
 
 
 async def test_button_advances_the_run() -> None:

@@ -11,11 +11,12 @@ import typing
 from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, Text, cast, delete, func, select, text
-from sqlalchemy.dialects.postgresql import ARRAY, insert
+from sqlalchemy import ColumnElement, Select, Text, delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from onboarding.app.db.models import EMBEDDING_DIM, ChunkRow, DocumentRow, IndexStateRow
+from onboarding.app.db.predicates import acl_clause
 from onboarding.app.db.session import Database
 from onboarding.core.models import Chunk, ChunkId, DocId, ScoredChunk
 from onboarding.core.ranking import LEXICAL_WEIGHT, reciprocal_rank_fusion
@@ -266,12 +267,8 @@ async def _lexical_ids(
 
 
 def _filters(query: SearchQuery) -> tuple[ColumnElement[bool], ...]:
-    return (
-        DocumentRow.status == "active",
-        DocumentRow.audience.op("?|")(cast(list(query.audience), ARRAY(Text))),
-        (DocumentRow.valid_from.is_(None)) | (DocumentRow.valid_from <= query.on_date),
-        (DocumentRow.valid_to.is_(None)) | (DocumentRow.valid_to >= query.on_date),
-    )
+    """The filter is one clause built from the one rule, not a second copy of it."""
+    return (acl_clause(query.audience, query.on_date),)
 
 
 def _filtered(query: SearchQuery) -> Select[ChunkRow]:

@@ -28,6 +28,7 @@ from pathlib import Path
 from onboarding.app.container import build_container
 from onboarding.app.knowledge.ingest import load_corpus
 from onboarding.app.settings import Settings
+from onboarding.core.access import Subject, holds, permits, predicates
 from onboarding.evals.runner import (
     Case,
     Report,
@@ -57,19 +58,26 @@ class CorpusDocument:
     valid_from: date | None = None
     valid_to: date | None = None
 
-    def valid_on(self, on_date: date) -> bool:
-        if self.valid_from is not None and on_date < self.valid_from:
-            return False
-        return self.valid_to is None or on_date <= self.valid_to
-
 
 def principal_audiences(viewer: str) -> tuple[str, ...]:
     return ("all",) if viewer == "all" else ("all", viewer)
 
 
 def visible(viewer: str, audience: Sequence[str]) -> bool:
-    """The predicate under test, written the way the SQL clause reads: an array overlap."""
-    return bool(set(principal_audiences(viewer)) & set(audience))
+    """The audience half of the rule in ``core.access``, for callers that carry no date."""
+    return permits(audience, principal_audiences(viewer))
+
+
+def allowed(viewer: str, document: CorpusDocument, on_date: date) -> bool:
+    """The whole rule: audience, status and validity, evaluated by the module that owns it."""
+    return holds(
+        predicates(principal_audiences(viewer), on_date),
+        Subject(
+            audience=tuple(document.audience),
+            valid_from=document.valid_from,
+            valid_to=document.valid_to,
+        ),
+    )
 
 
 def build_cases(documents: Sequence[CorpusDocument], on_date: date) -> tuple[Case, ...]:
@@ -82,18 +90,16 @@ def build_cases(documents: Sequence[CorpusDocument], on_date: date) -> tuple[Cas
     cases: list[Case] = []
     for viewer in VIEWERS:
         for document in documents:
-            allowed = visible(viewer, document.audience) and document.valid_on(on_date)
+            admitted = allowed(viewer, document, on_date)
             forbidden = tuple(
-                other.doc_id
-                for other in documents
-                if not (visible(viewer, other.audience) and other.valid_on(on_date))
+                other.doc_id for other in documents if not allowed(viewer, other, on_date)
             )
             cases.append(
                 Case(
                     id=f"acl-{viewer.replace(':', '-')}-{document.doc_id.replace('/', '-')}",
                     question=document.question or document.title,
                     audience=viewer,
-                    expect_docs=(document.doc_id,) if allowed else (),
+                    expect_docs=(document.doc_id,) if admitted else (),
                     expect_contains=(),
                     expect_escalation=False,
                     expect_reason=None,

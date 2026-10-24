@@ -40,6 +40,7 @@ from onboarding.app.db.models import (
     AuditRow,
     ChannelIdentityRow,
     ChunkRow,
+    DocumentRow,
     EmployeeRow,
     ExtractionRow,
     FileRow,
@@ -50,6 +51,7 @@ from onboarding.app.db.models import (
     RunRow,
 )
 from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
+from onboarding.app.db.predicates import acl_clause
 from onboarding.app.db.queue import JobQueue
 from onboarding.app.db.repos import (
     DatabaseAuditLog,
@@ -74,12 +76,15 @@ from onboarding.app.worker.actions import ActionContext, ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.jobs import JobRunner
 from onboarding.app.worker.service import OnboardingService
+from onboarding.core.access import holds, predicates, subject_of
 from onboarding.core.models import (
     Action,
     ActionKind,
     Address,
     Channel,
     ChatId,
+    DocId,
+    Document,
     EmployeeId,
     Event,
     EventKind,
@@ -1727,3 +1732,76 @@ async def test_offboarding_deletes_the_documents(database: Database) -> None:
     assert result.files_deleted == 1
     async with database.session() as session:
         assert await session.scalar(select(func.count()).select_from(InboundFileRow)) == 0
+
+
+async def test_acl_rule_agrees_with_sql(database: Database) -> None:
+    """The SQL clause admits exactly the rows the rule admits, for every audience shape.
+
+    The rule used to live twice: ``core.access.permits`` refused ``[all, hr_only]`` to everyone but
+    HR while the ``WHERE`` clause was an array overlap and admitted it to anyone holding ``all``.
+    The schema now forbids that shape, and this test is why the second barrier can be trusted: the
+    forbidden shape stays in the corpus of the test, and both paths agree that it is closed.
+    """
+    on_date = date(2026, 10, 24)
+    shapes: list[tuple[tuple[str, ...], str, date | None, date | None]] = [
+        (("all",), "active", None, None),
+        (("hr_only",), "active", None, None),
+        (("dept:it",), "active", None, None),
+        (("dept:sales",), "active", None, None),
+        (("dept:it", "dept:sales"), "active", None, None),
+        (("all", "hr_only"), "active", None, None),
+        (("all",), "draft", None, None),
+        (("all", "dept:it"), "active", date(2024, 1, 1), date(2025, 1, 1)),
+        (("all", "dept:it"), "active", date(2024, 1, 1), None),
+    ]
+    documents = {}
+    async with database.session() as session:
+        for index, (audience, status, valid_from, valid_to) in enumerate(shapes):
+            doc_id = f"acl/probe-{index}"
+            row = DocumentRow(
+                id=doc_id,
+                title=f"Probe {index}",
+                type="knowledge",
+                status=status,
+                owner="hr",
+                audience=list(audience),
+                valid_from=valid_from,
+                valid_to=valid_to,
+                checksum="0" * 64,
+                body="body",
+            )
+            session.add(row)
+            documents[doc_id] = row
+    viewers = (
+        (),
+        ("all",),
+        ("all", "hr_only"),
+        ("all", "dept:it"),
+        ("all", "dept:sales"),
+        ("all", "dept:production"),
+    )
+    async with database.session() as session:
+        for viewer in viewers:
+            rows = await session.scalars(
+                select(DocumentRow.id).where(acl_clause(viewer, on_date))
+            )
+            admitted = set(rows)
+            expected = {
+                doc_id
+                for doc_id, row in documents.items()
+                if holds(
+                    predicates(viewer, on_date),
+                    subject_of(
+                        Document(
+                            id=DocId(doc_id),
+                            title=row.title,
+                            text="body",
+                            audience=tuple(row.audience),
+                            valid_from=row.valid_from or date(1970, 1, 1),
+                            valid_to=row.valid_to,
+                        ),
+                        status=row.status,
+                    ),
+                )
+            }
+            assert admitted == expected, viewer

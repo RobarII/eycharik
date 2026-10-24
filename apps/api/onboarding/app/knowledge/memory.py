@@ -11,7 +11,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from onboarding.core.access import is_valid, permits
+from onboarding.core.access import holds, predicates, subject_of
 from onboarding.core.chunking import split_document
 from onboarding.core.models import Chunk, Document, ScoredChunk
 from onboarding.core.ranking import reciprocal_rank_fusion
@@ -71,8 +71,10 @@ class InMemoryKnowledgeBase:
         allowed = [
             entry
             for entry in self._entries
-            if permits(entry.document.audience, query.audience)
-            and is_valid(entry.document, query.on_date)
+            if holds(
+                predicates(query.audience, query.on_date),
+                subject_of(entry.document),
+            )
         ]
         if not allowed:
             return ()

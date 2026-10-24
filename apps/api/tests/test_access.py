@@ -33,8 +33,26 @@ def test_hr_only_is_never_inherited_from_all() -> None:
     assert permits(["hr_only"], ["hr_only"])
 
 
+def test_hr_only_survives_a_shared_audience() -> None:
+    """``[all, hr_only]`` is forbidden by the contract, and the rule still refuses to widen it.
+
+    The schema rejects the shape at ingest; this asserts the second barrier, because a row indexed
+    before the schema change must not become readable by everyone.
+    """
+    assert not permits(["all", "hr_only"], ["all"])
+    assert not permits(["all", "hr_only"], ["all", "dept:it"])
+    assert permits(["all", "hr_only"], ["all", "hr_only"])
+
+
+def test_a_shared_document_needs_no_grant_from_the_viewer() -> None:
+    """``all`` means everyone, so a viewer carrying no scope of its own still sees it."""
+    assert permits(["all"], [])
+    assert not permits(["dept:it"], [])
+
+
 def test_empty_audience_is_closed() -> None:
     assert not permits([], ["all"])
+    assert not permits([], ["all", "hr_only", "dept:it"])
 
 
 def test_validity_window() -> None:

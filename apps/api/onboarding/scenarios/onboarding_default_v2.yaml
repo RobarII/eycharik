@@ -65,7 +65,20 @@ steps:
           text: Есть вопросы
     routes:
       ready: first_day
-      not_ready: first_day
+      not_ready: day_before_questions
+    timeout:
+      after_hours: 24
+      action: remind
+
+  - id: day_before_questions
+    kind: wait
+    title: Вопросы перед первым днём
+    message: >-
+      Напишите вопрос, который остался перед первым днём. Я отвечу по базе знаний или передам
+      его HR. Когда будете готовы продолжить, отправьте «готово» или /nextStage.
+    expects: message
+    routes:
+      default: first_day
     timeout:
       after_hours: 24
       action: remind

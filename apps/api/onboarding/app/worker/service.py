@@ -25,6 +25,7 @@ from onboarding.core.models import (
     RiskSignal,
     RunId,
     Scenario,
+    ScheduledEntry,
     StepState,
     SurveyAnswer,
     Transition,
@@ -117,6 +118,10 @@ class OnboardingService:
             version=scenario.version,
         )
         await self._act(transition.actions, address, employee_id, now.date(), question=None)
+        if transition.scheduled is not None:
+            await self._ack_scheduled(
+                scenario, transition.scheduled, address, employee_id, now.date()
+            )
         return ServiceResult(handled=True)
 
     async def _resume(self, stored: StoredRun, address: Address) -> ServiceResult:
@@ -148,6 +153,10 @@ class OnboardingService:
                 resumed=True,
             )
         await self._act(transition.actions, address, employee_id, now.date(), question=None)
+        if transition.scheduled is not None:
+            await self._ack_scheduled(
+                scenario, transition.scheduled, address, employee_id, now.date()
+            )
         return ServiceResult(handled=True)
 
     async def handle(  # noqa: PLR0911 - explicit command branches are easier to audit
@@ -208,14 +217,22 @@ class OnboardingService:
             )
             return ServiceResult(handled=True)
         if stored.scheduled is not None:
-            # The user wrote before the stage was shown. Do not apply that text to a send step:
-            # ``advance`` would reject it and the job would be retried forever. Commands above
-            # still work, so /nextStage and /reboot remain the escape hatches.
+            # The user wrote or pressed while the next stage is waiting for its due time. Reply with
+            # the stage and due date instead of silently swallowing the event: a dead-sounding bot
+            # is indistinguishable from a broken one.
             await self._audit.record(
                 "event_while_scheduled",
                 employee_id=str(employee_id),
                 step=stored.scheduled.step_id,
                 event=event.kind.value,
+            )
+            await self._ack_scheduled(
+                scenario,
+                stored.scheduled,
+                address,
+                employee_id,
+                now.date(),
+                waiting=True,
             )
             return ServiceResult(handled=True)
 
@@ -268,6 +285,10 @@ class OnboardingService:
             effective.at.date(),
             question=event.text,
         )
+        if scheduled is not None:
+            await self._ack_scheduled(
+                scenario, scheduled, address, employee_id, effective.at.date()
+            )
         return ServiceResult(handled=True, escalated=escalated, completed=completed)
 
     async def reboot(self, employee_id: EmployeeId, address: Address) -> ServiceResult:
@@ -332,6 +353,10 @@ class OnboardingService:
             now.date(),
             question=None,
         )
+        if transition.scheduled is not None:
+            await self._ack_scheduled(
+                scenario, transition.scheduled, address, employee_id, now.date()
+            )
         return ServiceResult(handled=True, completed=completed)
 
     async def resume_scheduled(self, run_id: RunId, step_id: str) -> ServiceResult:
@@ -373,7 +398,47 @@ class OnboardingService:
             now.date(),
             question=None,
         )
+        if transition.scheduled is not None:
+            await self._ack_scheduled(
+                scenario,
+                transition.scheduled,
+                stored.address,
+                stored.state.employee_id,
+                now.date(),
+            )
         return ServiceResult(handled=True, completed=completed)
+
+    async def _ack_scheduled(
+        self,
+        scenario: Scenario,
+        scheduled: ScheduledEntry,
+        address: Address,
+        employee_id: EmployeeId,
+        on_date: date,
+        *,
+        waiting: bool = False,
+    ) -> None:
+        """Tell the person that the next stage is scheduled, not lost."""
+        step = scenario.step(scheduled.step_id)
+        stage = step.title or step.id
+        due = (
+            scheduled.due_at
+            if scheduled.due_at.tzinfo is not None
+            else scheduled.due_at.replace(tzinfo=UTC)
+        )
+        when = due.astimezone(UTC).strftime("%d.%m.%Y %H:%M UTC")
+        text = (
+            self._executor.stage_waiting_text(stage, when)
+            if waiting
+            else self._executor.stage_scheduled_text(stage, when)
+        )
+        await self._act(
+            (Action(kind=ActionKind.SEND, text=text),),
+            address,
+            employee_id,
+            on_date,
+            question=None,
+        )
 
     async def _assess_survey(
         self,

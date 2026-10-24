@@ -550,7 +550,8 @@ async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
     stored = next(iter(runs.runs.values()))
     assert stored.state.step_id == "day_before"
     assert stored.scheduled is not None
-    assert len(messaging.sent) == before
+    assert len(messaging.sent) == before + 1
+    assert messaging.sent[-1].text.startswith("Принял. Следующий этап")
 
     run_id = stored.state.run_id
     result = await service.resume_scheduled(run_id, "day_before")
@@ -558,6 +559,62 @@ async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
     assert result.handled
     assert messaging.sent[-1].text.startswith("Завтра")
     assert next(iter(runs.runs.values())).scheduled is None
+
+
+async def test_a_message_while_scheduled_gets_a_stage_status() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    before = len(messaging.sent)
+    stored = next(iter(runs.runs.values()))
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Ты работаешь?"),
+    )
+
+    assert result.handled
+    assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
+    assert len(messaging.sent) == before + 1
+    assert messaging.sent[-1].text.startswith("Сейчас ещё не время следующего этапа")
+
+
+async def test_not_ready_offers_a_question_step() -> None:
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+    await service.resume_scheduled(stored.state.run_id, "day_before")
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="not_ready"),
+    )
+
+    current = next(iter(runs.runs.values()))
+    assert result.handled
+    assert current.state.step_id == "day_before_questions"
+    assert messaging.sent[-1].text.startswith("Напишите вопрос")
 
 
 async def test_a_problem_report_does_not_skip_the_timeline() -> None:

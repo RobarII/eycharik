@@ -253,6 +253,7 @@ Postgres держит состояние, векторы, очередь, `outbo
 | `apps/api/onboarding/app/knowledge/extract/` | читатели (pdfium, python-pptx), гейт качества, распознаватель, композит маршрутизации, загрузчик профиля, сборка markdown |
 | `apps/api/onboarding/scenarios/` | версионированный YAML сценариев |
 | `apps/api/onboarding/cli.py` | команды `ingest`, `extract`, `seed`, `demo`, `subscribe`, `check` |
+| `apps/api/onboarding/evals/` | стенд оценки: кейсы, метрики, отчёт и `artifact.py` (коммит и пара файлов на прогон); прогон принимает порт `KnowledgeBase`, поэтому матрица ACL считается на фейке без базы |
 | `apps/admin/` | кабинет рекрутёра (React + TypeScript) |
 | `knowledge/` | корпус, один Markdown-файл на документ |
 

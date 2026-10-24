@@ -5,6 +5,10 @@ import { defineConfig, devices } from "@playwright/test";
  * cabinet boots, logs in, pages, and takes a write.
  *
  * `vite --mode preview` serves the real bundle and a fixture `/admin/api` (see `preview/plugin.ts`).
+ *
+ * These specs assert against that fixture: exact names, exact counters, mutations that answer
+ * synchronously. The same assertions against a real database would be a different test, so the run
+ * through nginx, the API and Postgres lives in `playwright.stack.config.ts`.
  */
 export default defineConfig({
   testDir: "./e2e",

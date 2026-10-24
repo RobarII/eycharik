@@ -3,7 +3,7 @@
 # Read-only. It starts nothing, deletes nothing, and prints what is missing.
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || { echo "cannot enter the repository root" >&2; exit 1; }
 
 status=0
 ok() { printf '  ok   %s\n' "$1"; }

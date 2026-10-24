@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
+.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e admin-e2e-stack security prod-config prod-up smoke deploy-remote backup restore
 
 COVERAGE_MIN ?= 85
 
@@ -16,6 +16,17 @@ check: lint types arch test docs admin-check
 
 doctor:                            # read-only preflight: tools, ports, state
 	./scripts/doctor.sh
+
+security:                          # supply chain: python, npm, workflows, shell, dockerfiles, secrets
+	$(PY) --with pip-audit pip-audit --skip-editable
+	cd apps/admin && npm audit --omit=dev --audit-level=high
+	docker run --rm -v "$$PWD:/repo" -w /repo rhysd/actionlint:1.7.7
+	docker run --rm -v "$$PWD:/mnt" -w /mnt --entrypoint shellcheck \
+		koalaman/shellcheck:v0.10.0 --severity=warning scripts/*.sh
+	docker run --rm -v "$$PWD:/mnt" -w /mnt hadolint/hadolint:v2.12.0 \
+		hadolint Dockerfile apps/admin/Dockerfile
+	docker run --rm -v "$$PWD:/repo" -w /repo zricethezav/gitleaks:v8.28.0 \
+		detect --redact --no-banner
 
 verify:                            # the gate: what CI runs, in one command
 	@test -n "$$ONBOARDING_TEST_DATABASE" || { \
@@ -188,5 +199,8 @@ admin-check:
 	cd apps/admin && npm run typecheck
 	cd apps/admin && npm run test
 
-admin-e2e:
+admin-e2e:                         # the fixture: an in-memory api, no database
 	cd apps/admin && npm run e2e
+
+admin-e2e-stack:                   # the real cabinet: nginx, api, postgres; needs a running stack
+	cd apps/admin && E2E_BASE_URL=$${E2E_BASE_URL:-http://127.0.0.1:3000} npm run e2e:stack

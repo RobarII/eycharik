@@ -34,9 +34,10 @@ def split_document(
     chunks: list[Chunk] = []
     buffer: list[str] = []
     size = 0
+    fresh = False
 
     def flush() -> None:
-        nonlocal buffer, size
+        nonlocal buffer, size, fresh
         text = "\n".join(buffer).strip()
         if text:
             index = len(chunks)
@@ -50,16 +51,18 @@ def split_document(
             )
         buffer = _tail(buffer, overlap_chars)
         size = sum(len(unit) + 1 for unit in buffer)
+        fresh = False
 
     for unit in units:
         if size + len(unit) > max_chars and buffer:
             flush()
         buffer.append(unit)
         size += len(unit) + 1
+        fresh = True
 
-    if buffer:
+    if buffer and fresh:
         text = "\n".join(buffer).strip()
-        if text and (not chunks or text != chunks[-1].text):
+        if text:
             index = len(chunks)
             chunks.append(
                 Chunk(

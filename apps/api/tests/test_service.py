@@ -272,6 +272,32 @@ async def test_an_answer_from_another_messenger_moves_the_run() -> None:
     assert "channel_changed" in audit.names()
 
 
+async def test_answers_from_two_messengers_are_two_answers() -> None:
+    """A repeated sentence is an answer, not a duplicate (ADR 0023).
+
+    Dedupe is keyed on the messenger's delivery id, so two apps sending the same text are two
+    updates. The alternative — a content window — cannot tell them apart from a short answer
+    repeated at two consecutive steps, and a dropped survey answer is silent data loss.
+    """
+    service, runs, _, audit, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    elsewhere = Address(channel=Channel.TELEGRAM, chat_id=ChatId(555))
+
+    first = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="ок")
+    )
+    second = await service.handle(
+        EMPLOYEE, elsewhere, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="ок")
+    )
+
+    stored = next(iter(runs.runs.values()))
+    assert first.handled
+    assert second.handled
+    assert [name for name, _ in audit.events].count("step_transition") == 2
+    assert "channel_changed" in audit.names()
+    assert stored.address == elsewhere
+
+
 async def test_a_naive_delivery_timestamp_does_not_crash() -> None:
     service, runs, _, _, _ = build()
     await service.start(EMPLOYEE, ADDRESS)

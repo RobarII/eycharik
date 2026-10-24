@@ -18,9 +18,14 @@ describe("parseRoute", () => {
     expect(route.params.get("tab")).toBe("timeline");
   });
 
-  it("falls back to the overview for an unknown section", () => {
-    expect(parseRoute("#/nonsense").name).toBe("overview");
+  it("says so when the address names no section", () => {
+    expect(parseRoute("#/nonsense").name).toBe("notFound");
+    expect(parseRoute("#/runs/extra").name).toBe("notFound");
+  });
+
+  it("treats the bare hash as the front door", () => {
     expect(parseRoute("").name).toBe("overview");
+    expect(parseRoute("#/").name).toBe("overview");
   });
 
   it("treats a run without an id as the list", () => {

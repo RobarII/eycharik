@@ -16,6 +16,11 @@ import {
 import type { AdminIdentity } from "./types";
 import { App } from "./App";
 
+vi.mock("./version", () => ({
+  BUILD_ID: "test-build",
+  useReleaseCheck: () => ({ stale: false, reload: vi.fn() }),
+}));
+
 vi.mock("./api", async () => {
   const actual = await vi.importActual<typeof import("./api")>("./api");
   return {
@@ -105,6 +110,34 @@ describe("App", () => {
     await screen.findByRole("button", { name: /Обзор/ });
     expect(screen.queryByRole("button", { name: /Знания/ })).not.toBeInTheDocument();
     expect(screen.getByText("Руководитель подразделения")).toBeInTheDocument();
+  });
+
+  it("names the screen in the tab title", async () => {
+    vi.mocked(fetchMe).mockResolvedValue(identity(["runs.read"]));
+
+    renderApp();
+
+    await screen.findByRole("button", { name: /Обзор/ });
+    expect(document.title).toBe("Обзор — ПОЛИПЛАСТИК");
+  });
+
+  it("shows a not-found screen instead of the overview for a dead link", async () => {
+    vi.mocked(fetchMe).mockResolvedValue(identity(["runs.read"]));
+    window.location.hash = "#/nonsense";
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Такой страницы нет" })).toBeInTheDocument();
+    expect(document.title).toBe("Страница не найдена — ПОЛИПЛАСТИК");
+  });
+
+  it("says a section is closed instead of rendering it blank", async () => {
+    vi.mocked(fetchMe).mockResolvedValue(identity(["runs.read"]));
+    window.location.hash = "#/risk";
+
+    renderApp();
+
+    expect(await screen.findByText("Риски: нет доступа")).toBeInTheDocument();
   });
 
   it("drops the session when the API says it expired", async () => {

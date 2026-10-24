@@ -8,8 +8,9 @@ interface BoundaryState {
  * A crashed screen shows a way out instead of a white page.
  *
  * React unmounts the whole tree after a render error, so without this a single bad field turns the
- * cabinet blank and the recruiter loses the tab. The boundary keeps the shell alive: it offers a
- * reload, and in development it also prints the stack.
+ * cabinet blank and the recruiter loses the tab. The shell mounts one around the screen and keys it
+ * by route, so a crashed screen leaves the navigation usable and a navigation resets it. The error
+ * text stays on screen because that is what the person reporting it can copy.
  */
 export class Boundary extends Component<{ children: ReactNode }, BoundaryState> {
   override state: BoundaryState = { error: null };

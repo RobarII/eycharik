@@ -25,6 +25,11 @@ describe("the cabinet's nginx server", () => {
     expect(nginx).toContain("max-age=31536000, immutable");
   });
 
+  it("keeps the build id out of any cache, or a stale tab would never learn it is stale", () => {
+    expect(nginx).toContain("location = /version.json");
+    expect(nginx).toMatch(/location = \/version\.json \{[^}]*Cache-Control "no-store"/s);
+  });
+
   it("sends the API through to the service by name", () => {
     expect(nginx).toContain("proxy_pass http://api:8000;");
   });

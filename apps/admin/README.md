@@ -37,6 +37,29 @@ The default route is `#/overview`. The gate is shown before any route when the s
 missing or expired. Filters live in the query string (`#/questions?status=answered`), so a screen is
 a link someone can send.
 
+An address that names no section renders the not-found screen (`#/nonsense`), never the overview: a
+stale bookmark must not look like a working link. A section the role cannot read says so instead of
+rendering an empty main. Every navigation sets `document.title` and moves focus to `main`, because a
+hash change does not reload the page and a screen reader would otherwise stay on the old link.
+
+## Release and the open tab
+
+`index.html` and `/version.json` are served `no-store`; `/assets/*` is content-addressed and cached
+for a year. A deploy therefore never breaks an open tab, but the tab keeps running the old code.
+
+- `vite.config.ts` bakes `VITE_BUILD_ID` (default: `git rev-parse --short HEAD`) into the bundle as
+  `__BUILD_ID__` and emits `version.json` with the same value.
+- The shell polls `/version.json` every five minutes while the tab is focused and shows a banner
+  when the server reports a different build; the banner only offers a reload.
+- The build id is printed in the sidebar footer, so an incident report names the code that produced
+  it. `/version.json` is HTML-free JSON and inherits the same security headers as `index.html`.
+- A lost network shows a banner instead of a frozen screen; queries refetch on reconnect and on
+  focus.
+
+There is no client-side error telemetry: a 5xx shows a Russian sentence and the crash boundary keeps
+the shell alive, but nothing leaves the browser. Wiring that up needs an endpoint in the admin API
+contract first.
+
 ## Authentication and tokens
 
 The gate posts the token once and gets an HttpOnly cookie back
@@ -289,7 +312,9 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 | Path | Responsibility |
 |---|---|
 | `src/App.tsx` | Shell, session bootstrap, capability-filtered navigation, global refresh |
-| `src/route.ts` | Hash router: parse, build, and the URL as screen state |
+| `src/route.ts` | Hash router: parse, build, and the URL as screen state; unknown paths become `notFound` |
+| `src/version.ts` | Build id, `/version.json` check, stale-build banner state |
+| `src/useOnline.ts` | Browser online/offline signal for the banner |
 | `src/session.ts` | Session context and `can(capability)` |
 | `src/errors.ts` | Status codes to Russian, conflict detection |
 | `src/config.ts` | Tenant name, scenario labels, refresh intervals |
@@ -297,7 +322,7 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 | `src/types.ts` | API response types; mirrors the contract |
 | `src/format.ts` | Dates, Russian plurals, reason/event/step/tag labels, initials |
 | `src/styles.css` | `@import`s the files below in cascade order |
-| `src/styles/base.css` | Tokens, reset, focus, shell, sidebar, top bar |
+| `src/styles/base.css` | Tokens, reset, focus, shell, sidebar, top bar, tab-level banner |
 | `src/styles/gate.css` | The token gate |
 | `src/styles/layout.css` | Page scaffolding, controls, cards |
 | `src/styles/dashboard.css` | KPI, cohort charts, digest, pills |
@@ -305,7 +330,8 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 | `src/styles/responsive.css` | Breakpoints, reduced motion, print — always last |
 | `src/components/Icons.tsx` | Inline SVG icon set and logo mark |
 | `src/components/TokenGate.tsx` | Login by token |
-| `src/components/Boundary.tsx` | Keeps a crashed screen from becoming a white page |
+| `src/components/Boundary.tsx` | Keeps a crashed screen from becoming a white page; remounted per route so the shell survives |
+| `src/components/UpdateBanner.tsx` | Offline and stale-build strip above the shell |
 | `src/components/Pills.tsx` | Status, answer, reason pills |
 | `src/components/Progress.tsx` | Step progress |
 | `src/components/States.tsx` | Empty, error, skeleton |
@@ -315,6 +341,7 @@ on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-
 | `src/pages/QuestionsPage.tsx` | Question queue |
 | `src/pages/RiskPage.tsx` | Risk counters and weekly digest |
 | `src/pages/KnowledgePage.tsx` | Knowledge upload and list |
+| `src/pages/NotFoundPage.tsx` | An address the cabinet cannot read |
 | `preview/` | Dev-only API and fixtures; never in a production build |
 
 ## Limits and next mutations

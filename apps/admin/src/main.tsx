@@ -11,6 +11,8 @@ const client = new QueryClient({
     queries: {
       retry: (count, error) => !(error instanceof Error && error.name === "Unauthorized") && count < 2,
       refetchOnWindowFocus: true,
+      // A laptop that slept in a meeting should not show yesterday's queue when it wakes.
+      refetchOnReconnect: true,
     },
   },
 });

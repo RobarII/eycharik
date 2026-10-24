@@ -16,6 +16,7 @@ const SCREENS: ReadonlyArray<{ name: string; hash: string }> = [
   { name: "risk", hash: "#/risk" },
   { name: "knowledge", hash: "#/knowledge" },
   { name: "run detail", hash: "#/run/9c8b7a65-4321-4f0e-9d8c-7b6a5f4e3d2c" },
+  { name: "not found", hash: "#/nonsense" },
 ];
 
 test("the gate is accessible", async ({ page }) => {

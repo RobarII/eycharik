@@ -6,8 +6,18 @@ import { useCallback, useEffect, useState } from "react";
  * A queue nobody can link to is a queue nobody shares, so filters live in the hash: `#/questions?
  * status=answered` opens the same list in another browser. Navigation pushes a history entry;
  * a filter change replaces the current one, so the back button never walks through keystrokes.
+ *
+ * An address the cabinet does not know becomes `notFound`, never a silent overview: a stale link
+ * must say so instead of showing the first screen as if the link worked.
  */
-export type RouteName = "overview" | "runs" | "run" | "questions" | "risk" | "knowledge";
+export type RouteName =
+  | "overview"
+  | "runs"
+  | "run"
+  | "questions"
+  | "risk"
+  | "knowledge"
+  | "notFound";
 
 export interface Route {
   name: RouteName;
@@ -15,7 +25,7 @@ export interface Route {
   params: URLSearchParams;
 }
 
-const SECTIONS: readonly Exclude<RouteName, "run">[] = [
+const SECTIONS: readonly Exclude<RouteName, "run" | "notFound">[] = [
   "overview",
   "runs",
   "questions",
@@ -31,8 +41,10 @@ export function parseRoute(hash: string): Route {
     const id = path.slice("run/".length);
     return id ? { name: "run", id, params } : { name: "runs", params };
   }
-  const name = SECTIONS.find((section) => section === path) ?? "overview";
-  return { name, params };
+  // An empty hash is the front door; anything else must name a section we can draw.
+  if (!path) return { name: "overview", params };
+  const name = SECTIONS.find((section) => section === path);
+  return name ? { name, params } : { name: "notFound", params };
 }
 
 export function routeHash(route: Route): string {

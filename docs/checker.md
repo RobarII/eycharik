@@ -4,7 +4,7 @@ summary: Что запустить проверяющему, какой выво
 kind: правило
 owner: p4ulbr4dl3y
 status: принято
-last_verified: 2026-10-24
+last_verified: 2026-10-25
 ---
 
 # Проверка за десять минут
@@ -55,11 +55,12 @@ make doctor
 ## 1. Гейт: `make verify`
 
 Один вход, ровно то, что гоняет CI, плюс проверка кабинета. Нужна база: либо compose-сервис
-`postgres`, либо контейнер с pgvector.
+`postgres`, либо контейнер с pgvector. Гейту нужна своя база, не демо-база.
 
 ```bash
 docker compose up -d postgres
-export ONBOARDING_TEST_DATABASE=postgresql+asyncpg://onboarding:onboarding@localhost:55432/onboarding
+docker compose exec -T postgres createdb -U onboarding onboarding_test
+export ONBOARDING_TEST_DATABASE=postgresql+asyncpg://onboarding:onboarding@localhost:55432/onboarding_test
 DATABASE_URL="$ONBOARDING_TEST_DATABASE" make migrate
 make verify
 ```
@@ -81,6 +82,13 @@ admin: lint, typecheck и vitest зелёные
 
 Без `ONBOARDING_TEST_DATABASE` команда остановится и попросит базу. Это намеренно: интеграционный
 тир без базы ничего не доказывает, а зелёный без него — неправда.
+
+Две вещи в гейт не входят намеренно:
+
+| Что | Команда | Почему отдельно |
+|---|---|---|
+| Секреты, уязвимые зависимости, синтаксис workflow, shell и Dockerfile | `make security` | требует сети, а гейт обязан работать офлайн |
+| Кабинет против настоящего стека | `make admin-e2e-stack` | нужен поднятый compose, а не только база |
 
 ## 2. Демо: `make demo` или `make review`
 
@@ -173,7 +181,8 @@ make demo-live
 | Качество и цена не выдуманы | `docs/measurements/current.md`; `make eval` с ключом |
 | Демо-числа совпадают с документацией | `make review`; `scripts/verify_demo.sh` |
 | 152-ФЗ: что закрыто, а что нет | `docs/runbooks/152fz-checklist.md` |
-| Код проходит гейт, а не только доки | `make verify`; CI гоняет тот же вход |
+| Код проходит гейт, а не только доки | `make verify`; CI гоняет те же `make doctor` и `make verify` |
+| Пайплайн не стреляет в прод на merge | прод трогает только релиз тега: `.github/workflows/deploy.yml`, [ADR 0028](decisions/0028-one-image-per-commit.md) |
 
 ## Если что-то не так
 

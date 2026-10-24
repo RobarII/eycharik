@@ -70,6 +70,7 @@
 make install                       # uv sync, создаёт .venv
 make check                         # ruff, mypy, pytest, docs, admin
 make verify                        # гейт: check + интеграционный тир + покрытие (нужна база)
+make security                      # supply chain: pip-audit, npm audit, actionlint, shellcheck, hadolint, gitleaks
 make verify-demo                   # стек, демо-набор и сверка чисел через admin API
 make review                        # один вход для проверяющего: doctor + verify-demo
 make eval                          # поиск, генерация, эскалация на golden set

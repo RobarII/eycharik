@@ -118,6 +118,8 @@ make install       # create the virtual environment
 make check         # ruff, mypy, import contracts, unit tests, docs links, admin
 make verify        # the gate: check plus integration tier, coverage floor and the cabinet
 make verify-demo   # end-to-end: stack, seed, and the numbers through the admin API
+make security      # pip-audit, npm audit, actionlint, shellcheck, hadolint, gitleaks
+make admin-e2e-stack  # the cabinet against the running stack, not the fixture
 make doctor        # read-only preflight: tools, ports, state
 make demo          # compose up, seed, print the door and the token
 make demo-live     # the same with real models from .env.live (free tier works)

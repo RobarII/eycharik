@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from onboarding.core.access import is_valid, permits
 from onboarding.core.chunking import split_document
 from onboarding.core.models import Chunk, Document, ScoredChunk
+from onboarding.core.query import expand_query
 from onboarding.core.ranking import reciprocal_rank_fusion
 from onboarding.ports import Embedder, SearchQuery
 
@@ -74,8 +75,9 @@ class InMemoryKnowledgeBase:
         if not allowed:
             return ()
 
-        query_tokens = _tokens(query.text)
-        query_vector = (await self._embedder.embed([query.text]))[0]
+        search_text = expand_query(query.text)
+        query_tokens = _tokens(search_text)
+        query_vector = (await self._embedder.embed([search_text]))[0]
         lexical = sorted(
             allowed,
             key=lambda entry: (-_overlap(entry.tokens, query_tokens), str(entry.chunk.id)),

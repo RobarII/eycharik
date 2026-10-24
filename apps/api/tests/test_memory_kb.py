@@ -91,3 +91,20 @@ async def test_limit_is_respected(kb: InMemoryKnowledgeBase) -> None:
     )
 
     assert len(results) <= 2
+
+
+async def test_a_formal_gift_paraphrase_finds_the_gift_policy(
+    kb: InMemoryKnowledgeBase,
+) -> None:
+    """The user's wording is not the document's wording; retrieval has to bridge that gap."""
+    results = await kb.search(
+        SearchQuery(
+            text="Каковы допустимые рамки бюджета на корпоративные презенты?",
+            audience=("all",),
+            on_date=date(2026, 5, 1),
+            limit=5,
+        )
+    )
+
+    assert results
+    assert any(result.chunk.doc_id == "company/anti-corruption" for result in results)

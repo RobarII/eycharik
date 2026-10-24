@@ -105,6 +105,40 @@ cases:
     expect_contains: ["3 000 рублей"]
     expect_escalation: false
 
+  # One fact, several ways an employee may ask it. A single wording passing is not enough:
+  # retrieval must not turn a covered question into an HR escalation when the nouns change.
+  - id: gift-limit-formal
+    question: "Каковы допустимые рамки бюджета на корпоративные презенты?"
+    audience: all
+    stratum: fact
+    expect_docs: [company/anti-corruption]
+    expect_contains: ["3 000 рублей"]
+    expect_escalation: false
+
+  - id: gift-limit-colloquial
+    question: "Сколько денег на подарки тратятся?"
+    audience: all
+    stratum: fact
+    expect_docs: [company/anti-corruption]
+    expect_contains: ["3 000 рублей"]
+    expect_escalation: false
+
+  - id: gift-limit-over-limit
+    question: "Я могу 5000 рублей на подарок отдать?"
+    audience: all
+    stratum: fact
+    expect_docs: [company/anti-corruption]
+    expect_contains: ["3 000 рублей"]
+    expect_escalation: false
+
+  - id: gift-limit-work-present
+    question: "Какая цена должна быть у подарка по работе?"
+    audience: all
+    stratum: fact
+    expect_docs: [company/anti-corruption]
+    expect_contains: ["3 000 рублей"]
+    expect_escalation: false
+
   - id: report-bribery
     question: "Кому сообщить о попытке подкупа?"
     audience: all

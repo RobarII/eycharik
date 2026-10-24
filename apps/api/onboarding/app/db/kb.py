@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import replace
 
 from sqlalchemy import ColumnElement, Select, Text, cast, delete, func, select, text
 from sqlalchemy.dialects.postgresql import ARRAY, insert
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from onboarding.app.db.models import EMBEDDING_DIM, ChunkRow, DocumentRow, IndexStateRow
 from onboarding.app.db.session import Database
 from onboarding.core.models import Chunk, ChunkId, DocId, ScoredChunk
+from onboarding.core.query import expand_query
 from onboarding.core.ranking import reciprocal_rank_fusion
 from onboarding.ports import (
     Embedder,
@@ -50,8 +52,9 @@ class PostgresKnowledgeBase:
     async def search(self, query: SearchQuery) -> tuple[ScoredChunk, ...]:
         if not query.text.strip():
             return ()
+        expanded = replace(query, text=expand_query(query.text))
         try:
-            vector = list((await self._embedder.embed((query.text,)))[0])
+            vector = list((await self._embedder.embed((expanded.text,)))[0])
         except Exception as error:
             raise KnowledgeUnavailableError(f"embedding failed: {error}") from error
         async with self._database.session() as session:
@@ -62,11 +65,11 @@ class PostgresKnowledgeBase:
                     # Enabled but unavailable is a configuration mistake, not a runtime failure:
                     # the two-list fusion is still correct, so the turn must not fail.
                     log.warning("bm25_enabled_but_pg_search_is_missing")
-            semantic = await _semantic_ids(session, query, vector, self._overfetch)
-            lexical = await _lexical_ids(session, query, self._overfetch)
+            semantic = await _semantic_ids(session, expanded, vector, self._overfetch)
+            lexical = await _lexical_ids(session, expanded, self._overfetch)
             rankings = [semantic, lexical]
             if self._bm25_enabled and self._bm25_available:
-                rankings.append(await _bm25_ids(session, query, self._overfetch))
+                rankings.append(await _bm25_ids(session, expanded, self._overfetch))
             fused = reciprocal_rank_fusion(rankings, limit=query.limit)
             if not fused:
                 return ()

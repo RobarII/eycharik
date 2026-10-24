@@ -83,6 +83,20 @@ def answer_json(citation: str = "hr/leave-policy#0", confidence: float = 0.9) ->
     )
 
 
+def answer_json_without_inline_citation(
+    citation: str = "hr/leave-policy#0", confidence: float = 0.9
+) -> str:
+    return json.dumps(
+        {
+            "answer": "The answer is 28 days.",
+            "citations": [citation],
+            "confidence": confidence,
+            "escalate": False,
+            "reason": "answered",
+        }
+    )
+
+
 async def test_answers_from_a_grounded_chunk() -> None:
     answerer, llm, kb, audit = build([answer_json()], (scored_chunk(),))
 
@@ -259,3 +273,46 @@ async def test_answer_records_stage_and_outcome_metrics() -> None:
     assert 'onboarding_answer_citations_count 1' in rendered
     assert "onboarding_answer_cost_rub_total" in rendered
     assert 'onboarding_llm_tokens_total{direction="input"}' in rendered
+
+
+async def test_a_citation_missing_from_the_answer_text_is_appended() -> None:
+    answerer, _, _, _ = build(
+        [answer_json_without_inline_citation()],
+        (scored_chunk(),),
+    )
+
+    outcome = await answerer.answer("leave", profile(), ON_DATE)
+
+    assert not outcome.escalated
+    assert outcome.text == "The answer is 28 days. [hr/leave-policy#0]"
+
+
+async def test_an_inline_citation_is_not_duplicated() -> None:
+    answerer, _, _, _ = build([answer_json()], (scored_chunk(),))
+
+    outcome = await answerer.answer("leave", profile(), ON_DATE)
+
+    assert outcome.text.count("[hr/leave-policy#0]") == 1
+
+
+async def test_reranker_receives_the_expanded_search_query() -> None:
+    reranker = ReversingReranker()
+    chunks = (
+        scored_chunk("company/anti-corruption#0"),
+        scored_chunk("hr/expenses#0"),
+    )
+    answerer, _, _, _ = build(
+        [answer_json("company/anti-corruption#0")],
+        chunks,
+        reranker=reranker,
+    )
+
+    await answerer.answer(
+        "Каковы допустимые рамки бюджета на корпоративные презенты?",
+        profile(),
+        ON_DATE,
+    )
+
+    assert reranker.calls
+    assert "деловой подарок" in reranker.calls[0][0]
+    assert "представительские расходы" in reranker.calls[0][0]

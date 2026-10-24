@@ -170,8 +170,10 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
                     type="button"
                     className="knowledge-open"
                     onClick={() => setSelectedId(item.id)}
-                    aria-label={`Открыть документ ${item.title}`}
                   >
+                    {/* The action as a hidden prefix rather than an `aria-label`: the name stays a
+                        superset of the visible title and metadata, which narrow layouts wrap. */}
+                    <span className="visually-hidden">Открыть документ </span>
                     <span className="knowledge-main">
                       <strong>{item.title}</strong>
                       <span className="digest-meta">

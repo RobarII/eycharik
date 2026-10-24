@@ -96,7 +96,7 @@ describe("KnowledgePage", () => {
 
     renderPage(["knowledge.read", "knowledge.write"]);
     await userEvent.click(
-      await screen.findByRole("button", { name: "Открыть документ Отпуска и отгулы" }),
+      await screen.findByRole("button", { name: /^Открыть документ Отпуска и отгулы/ }),
     );
 
     const dialog = await screen.findByRole("dialog");

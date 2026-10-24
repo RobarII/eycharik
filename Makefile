@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo demo-data demo-data-del fmt docs docs-index admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
+.PHONY: install check verify verify-demo doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
 
 COVERAGE_MIN ?= 85
 
@@ -13,6 +13,30 @@ install:
 	cd apps/admin && npm ci
 
 check: lint types arch test docs admin-check
+
+doctor:                            # read-only preflight: tools, ports, state
+	./scripts/doctor.sh
+
+verify:                            # the gate: what CI runs, in one command
+	@test -n "$$ONBOARDING_TEST_DATABASE" || { \
+		echo "ONBOARDING_TEST_DATABASE is required: it names a separate database, not the demo one" >&2; \
+		echo "hint:" >&2; \
+		echo "  docker compose up -d postgres" >&2; \
+		echo "  docker compose exec -T postgres createdb -U onboarding onboarding_test" >&2; \
+		echo "  DATABASE_URL=postgresql+asyncpg://onboarding:onboarding@localhost:55432/onboarding_test uv run alembic upgrade head" >&2; \
+		echo "  export ONBOARDING_TEST_DATABASE=postgresql+asyncpg://onboarding:onboarding@localhost:55432/onboarding_test" >&2; \
+		exit 2; \
+	}
+	$(PY) ruff check .
+	$(PY) mypy
+	$(PY) lint-imports
+	$(PY) python scripts/docs_index.py --check
+	$(PY) python scripts/check_docs.py
+	$(PY) pytest -m "not eval" --cov=onboarding --cov-fail-under=$(COVERAGE_MIN)
+	cd apps/admin && npm run lint && npm run typecheck && npm run test
+
+verify-demo:                       # end-to-end proof: stack, seed, admin API numbers
+	./scripts/verify_demo.sh
 
 lint:
 	$(PY) ruff check .
@@ -30,7 +54,7 @@ arch:                              # import cycles, layer order, and "api never 
 test:
 	$(PY) pytest
 
-test-cov:                          # PR gate: offline + postgres, one number, fails below the floor
+test-cov:                          # offline + postgres, one number, fails below the floor
 	@test -n "$$ONBOARDING_TEST_DATABASE" || { \
 		echo "ONBOARDING_TEST_DATABASE is required: start postgres and run the migrations" >&2; \
 		exit 2; \
@@ -116,7 +140,21 @@ demo-data:
 	docker compose run --rm api python -m onboarding.cli ingest
 	docker compose run --rm api python -m onboarding.cli demo --reset --yes
 
-demo: demo-data
+demo:                              # compose up, seed, print the door and the token
+	docker compose up -d --build
+	$(MAKE) --no-print-directory demo-data
+	@echo "open http://localhost:3000 and enter dev-hr-token"
+
+demo-live:                         # the same, with real models from .env.live (free tier works)
+	@test -f .env.live || { echo "cp .env.live.example .env.live and set LLM_API_KEY" >&2; exit 2; }
+	docker compose --env-file .env.live up -d --build
+	$(MAKE) --no-print-directory demo-data
+	@echo "open http://localhost:3000 and enter dev-hr-token"
+
+nuke:                              # destructive: drops the compose volume and the demo database
+	docker compose down -v --remove-orphans
+	-docker rm -f onboarding-pg
+	@echo "nuke: compose volume, containers and the local demo postgres are gone"
 
 demo-data-del:
 	docker compose up -d postgres

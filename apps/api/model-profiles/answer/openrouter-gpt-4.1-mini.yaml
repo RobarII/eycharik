@@ -1,0 +1,16 @@
+name: openrouter-gpt-4.1-mini
+role: answer
+description: "Answer model through OpenRouter, so one key covers answer, embed and rerank. Added for a reviewer without an opencode or GigaChat account."
+family: openai-chat
+model: openai/gpt-4.1-mini
+json_mode: true
+max_tokens_field: max_tokens
+temperature: 0
+max_tokens: 700
+timeout_s: 30.0
+max_retries: 1
+retry_empty_completion: true
+# Prices stay 0 until a provider invoice anchors them. Cost accounting then reports 0, never a guess.
+price_input_rub_per_1k: 0.0
+price_output_rub_per_1k: 0.0
+price_cache_read_rub_per_1k: 0.0

@@ -1,0 +1,17 @@
+name: openrouter-free
+role: answer
+description: "Zero-cost answer model for a reviewer without a budget. OpenRouter routes to a free model; the daily cap is small, so this is a demo profile, not an eval profile."
+family: openai-chat
+model: openrouter/free
+json_mode: true
+max_tokens_field: max_tokens
+temperature: 0
+max_tokens: 700
+# A free route is slower than a paid one and a 429 is normal; one retry, then escalate.
+timeout_s: 45.0
+max_retries: 1
+retry_empty_completion: true
+# Free: the provider bills nothing, so a price here would be an invented number.
+price_input_rub_per_1k: 0.0
+price_output_rub_per_1k: 0.0
+price_cache_read_rub_per_1k: 0.0

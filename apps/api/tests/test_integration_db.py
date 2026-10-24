@@ -140,7 +140,8 @@ async def database() -> AsyncIterator[Database]:
             text(
                 "TRUNCATE messages, jobs, events, questions, audit_log, runs, employees, "
                 "channel_identities, inbound_files, "
-                "kb_chunks, kb_documents, kb_files, kb_extractions RESTART IDENTITY CASCADE"
+                "kb_chunks, kb_documents, kb_files, kb_extractions, kb_index_state "
+                "RESTART IDENTITY CASCADE"
             )
         )
         session.add(

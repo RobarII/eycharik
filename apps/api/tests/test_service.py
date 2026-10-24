@@ -884,7 +884,8 @@ async def test_a_stale_button_while_scheduled_does_not_repeat_the_notice() -> No
     )
     after_stale = len([m for m in messaging.sent if m.text.startswith("Следующ")])
 
-    assert pressed_own.handled and pressed_stale.handled
+    assert pressed_own.handled
+    assert pressed_stale.handled
     assert after_own == notices + 1
     assert after_stale == after_own
     assert next(iter(runs.runs.values())).scheduled is not None

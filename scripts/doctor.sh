@@ -47,7 +47,7 @@ fi
 docker compose ps >/dev/null 2>&1 && ok "compose project is present" || note "compose project is not created yet"
 
 if [ "$status" -eq 0 ]; then
-    echo "doctor: ready. Next: make verify (gate), make demo (walk through it)."
+    echo "doctor: ready. Next: make review (one path), make verify (gate)."
 else
     echo "doctor: fix the FAIL lines above, then rerun." >&2
 fi

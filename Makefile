@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check verify verify-demo doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
+.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
 
 COVERAGE_MIN ?= 85
 
@@ -36,6 +36,10 @@ verify:                            # the gate: what CI runs, in one command
 	cd apps/admin && npm run lint && npm run typecheck && npm run test
 
 verify-demo:                       # end-to-end proof: stack, seed, admin API numbers
+	./scripts/verify_demo.sh
+
+review:                            # one reviewer path: preflight, stack, seed, counters
+	./scripts/doctor.sh
 	./scripts/verify_demo.sh
 
 lint:

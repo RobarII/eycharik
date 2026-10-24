@@ -17,8 +17,10 @@ moves to a Russian host with 2–4 GB and keeps the same compose files.
 - The release workflow produced `ghcr.io/<owner>/moshackathon-api:<sha>` and
   `ghcr.io/<owner>/moshackathon-admin:<sha>`.
 - `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_PATH` are repository variables;
-  `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` are secrets in the `production` environment.
-- The `production` environment has required reviewers.
+  `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS` are repository or `production` environment secrets.
+- The `production` environment exists. If the plan supports protection rules, add a required
+  reviewer; otherwise the human gate is pushing the release tag, and automation must never push
+  tags.
 
 ## One-time host bootstrap
 
@@ -80,8 +82,8 @@ git push origin v1.2.3
 ```
 
 It builds both images, publishes provenance and an SBOM, and pushes the commit-SHA tag. The deploy
-workflow runs after a successful release, waits for the `production` environment approval, and
-calls `scripts/deploy-remote.sh <sha>` over SSH.
+workflow runs after a successful release, waits for the `production` environment approval when the
+plan supports it, and calls `scripts/deploy-remote.sh <sha>` over SSH.
 
 The remote script, in order:
 

@@ -4,6 +4,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const nginx = readFileSync(new URL("../nginx.conf", import.meta.url), "utf8");
+const dockerfile = readFileSync(new URL("../Dockerfile", import.meta.url), "utf8");
+const release = readFileSync(
+  new URL("../../../.github/workflows/release.yml", import.meta.url),
+  "utf8",
+);
 
 describe("the cabinet's nginx server", () => {
   it("ships a content security policy that forbids inline scripts and foreign origins", () => {
@@ -33,5 +38,18 @@ describe("the cabinet's nginx server", () => {
   it("resolves the API per request so a restart does not leave a stale address", () => {
     expect(nginx).toContain("resolver 127.0.0.11 valid=10s ipv6=off;");
     expect(nginx).toContain("proxy_pass http://$api_upstream:8000$request_uri;");
+  });
+});
+
+describe("the admin image", () => {
+  it("takes the build id as a build argument, because its context has no .git", () => {
+    expect(dockerfile).toContain("ARG VITE_BUILD_ID=");
+    expect(dockerfile).toContain("ENV VITE_BUILD_ID=$VITE_BUILD_ID");
+  });
+
+  it("receives the released commit from the workflow", () => {
+    expect(release).toContain("short=$(git rev-parse --short HEAD)");
+    expect(release).toMatch(/VITE_BUILD_ID=\$\{\{ steps\.rev\.outputs\.short \}\}/);
+    expect(release).toMatch(/build-args: \$\{\{ matrix\.build-args \}\}/);
   });
 });

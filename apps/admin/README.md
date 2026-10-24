@@ -49,7 +49,9 @@ hash change does not reload the page and a screen reader would otherwise stay on
 for a year. A deploy therefore never breaks an open tab, but the tab keeps running the old code.
 
 - `vite.config.ts` bakes `VITE_BUILD_ID` (default: `git rev-parse --short HEAD`) into the bundle as
-  `__BUILD_ID__` and emits `version.json` with the same value.
+  `__BUILD_ID__` and emits `version.json` with the same value. The image context has no `.git`, so
+  `Dockerfile` takes the id as the `VITE_BUILD_ID` build argument and the release workflow passes
+  the released commit; without it every image would report `dev` and no tab could see a difference.
 - The shell polls `/version.json` every five minutes while the tab is focused and shows a banner
   when the server reports a different build; the banner only offers a reload.
 - The build id is printed in the sidebar footer, so an incident report names the code that produced

@@ -1,7 +1,11 @@
 """Accept one messenger delivery without knowing HTTP or SQL.
 
-The use case owns the sequence: channel lookup, secret check, handshake, parse, identity gate,
+The use case owns the sequence: channel lookup, handshake, secret check, parse, identity gate,
 dedupe, enqueue. The route owns one thing: call it and translate the result to a status code.
+
+The handshake comes before the secret on purpose. VK proves an address before it will deliver
+anything and does so without the secret, so a server that is only being configured has to answer
+it. What the handshake returns is the confirmation string VK itself shows in its UI, not a secret.
 """
 
 from __future__ import annotations
@@ -70,17 +74,23 @@ class AcceptInbound:
             raise UnknownChannelError(channel_name)
         if not ingress.configured:
             raise ChannelUnavailableError(channel_name)
+
+        # The handshake has to be answerable before the secret is checked: VK asks for it while the
+        # address is still being configured, and it sends no secret with that request.
+        confirmation = ingress.handshake(body)
+        if confirmation is not None:
+            return InboundResult(body=confirmation)
+
         if not ingress.verify(_lower(headers), body):
             raise BadSecretError(channel_name)
 
+        # Every supported messenger posts JSON. A body that is not JSON is a misconfiguration, and
+        # saying so is cheaper than an adapter guessing. A channel that carries the secret in the
+        # body never gets here: an unparseable body cannot prove itself and is refused above.
         try:
             json.loads(body)
         except ValueError:
             raise InvalidBodyError(channel_name) from None
-
-        confirmation = ingress.handshake(body)
-        if confirmation is not None:
-            return InboundResult(body=confirmation)
 
         inbound = ingress.parse(body, received_at=self._clock.now())
         if inbound is None:

@@ -1,5 +1,5 @@
 ---
-title: 'Оценка 2026-10-25: бюджет токенов'
+title: 'Оценка 2026-10-24: бюджет токенов'
 summary: 'Сколько токенов стоит один ответ по промпту v7 у шести моделей: у каждой свой токенизатор. Отсюда цена ответа и прогона оценки.'
 kind: измерение
 owner: p4ulbr4dl3y
@@ -7,9 +7,9 @@ status: принято
 last_verified: 2026-10-24
 ---
 
-# Оценка 2026-10-25 — пройдена
+# Оценка 2026-10-24 — пройдена
 
-- дата: `2026-10-25`
+- дата: `2026-10-24`
 - окружение: `local` macOS, `uv run --with tokenizers`, файлы токенизаторов из репозиториев моделей
 - коммит: `8ea934f`
 - команда: `uv run --with tokenizers python scripts/token_budget.py --tokenizer $HUB/models--ai-sage--GigaChat3.1-10B-A1.8B/snapshots/*/tokenizer.json --tokenizer $HUB/models--Qwen--Qwen3.5-9B/snapshots/*/tokenizer.json --tokenizer $HUB/models--t-tech--T-lite-it-2.1/snapshots/*/tokenizer.json --tokenizer $HUB/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/*/tokenizer.json --tokenizer $HUB/models--zai-org--GLM-5.3-flash/snapshots/*/tokenizer.json --tokenizer $HUB/models--openai--gpt-oss-120b/snapshots/*/tokenizer.json --rerank-tokenizer $HUB/models--BAAI--bge-reranker-v2-m3/snapshots/*/tokenizer.json --prompt docs/prompts/answer/v7.md --chunks 5 --completion-chars 700`
@@ -88,5 +88,3 @@ openai--gpt-oss-120b                                   1196    251   2451   169 
 | `GLM-5.3-flash` | 2 491 | 170 | 0.2297 |
 
 Полный прогон оценки (137 кейсов) ≈ 4 ₽ на самой дешёвой модели: расход не в оценках, а в трафике.
-
-Кейсы по одному — в артефакте `2026-10-25-token-budget.jsonl` рядом с этим файлом.

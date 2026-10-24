@@ -18,6 +18,7 @@ last_verified: 2026-10-24
 | Вопросы в эскалации и ответы | `questions` | `DATA_RETENTION_DAYS` после `asked_at` |
 | Ответы, написанные в кабинете | `questions.resolution` | как у вопроса |
 | Текст исходящих сообщений (включая ответы) | `messages` outbox | доставленные строки после `sent_at` + окно; недоставленные после `created_at` + окно; офбординг сразу удаляет все строки по чатам сотрудника |
+| Документы, присланные в чат (сканы паспорта и т. п.) | `inbound_files` | байты под AES-256-GCM; удаляются после `created_at` + окно и сразу при офбординге; без `INBOUND_FILES_KEY` не сохраняются |
 | Персональные поля в аудите (`evidence`, `quote`, `question`, `text`) | `audit_log.fields` | заменяются на null после `DATA_RETENTION_DAYS`; строка остаётся |
 | Прогоны, сигналы риска, задачи, события | `runs`, `risk_*`, `jobs`, `events` | не чистятся; в них id, не свободный текст |
 | Документы базы знаний | `kb_*` | не персональные данные; версионируются по `valid_from` / `valid_to` |
@@ -34,8 +35,10 @@ curl -X DELETE "https://$HOST/admin/api/employees/$EMPLOYEE_ID" \
   -H "Authorization: Bearer $HR_TOKEN"
 ```
 
-Ожидаемый ответ: `{"employee_id": "...", "runs_closed": 1, "questions_deleted": 3, "audit_rows_redacted": 7}`.
-Сотрудник исчезает из справочника и из всех списков по скоупу; строка остаётся с `status='left'` и `left_at`.
+Ожидаемый ответ: `{"employee_id": "...", "questions_deleted": 3, "messages_deleted": 2, "runs_closed": 1, "audit_redacted": 7, "files_deleted": 2}`.
+Сотрудник исчезает из справочника и из всех списков по скоупу; строка остаётся с `status='left'` и
+`left_at`. `files_deleted` считает присланные в чат документы: скан паспорта уходит вместе с
+перепиской, а не лежит до общего срока ([ADR 0027](../decisions/0027-inbound-documents-are-encrypted.md)).
 
 ## `outbox` — это очередь
 
@@ -48,13 +51,15 @@ curl -X DELETE "https://$HOST/admin/api/employees/$EMPLOYEE_ID" \
   годовой давности не понадобится никогда.
 
 Удаление идёт пакетами (`LIMIT` на каждый оператор), поэтому большой первый проход не держит одну
-длинную блокировку. Проход пишет `messages_deleted` в `retention_purged`.
+длинную блокировку. Проход пишет `messages_deleted`, `files_deleted` и `inbound_files_deleted` в
+`retention_purged`.
 
 ## Как идёт чистка по расписанию
 
 - Воркер: раз в час, рядом с тиком планировщика.
 - Точка входа для cron (`python -m onboarding.scheduler`): раз за тик, после разбора `outbox`.
-- Каждый проход пишет `retention_purged` в `audit_log` со счётчиками `questions` и `audit_rows`.
+- Каждый проход пишет `retention_purged` в `audit_log` со счётчиками удалённых строк и
+  обнулённых полей.
 
 Проход можно смело повторять: он удаляет по отсечке, а обнуление трогает только ещё присутствующие
 поля.
@@ -69,6 +74,10 @@ select min(asked_at) from questions;
 select count(*) from audit_log
 where created_at < now() - interval '365 days'
   and fields ?| array['evidence', 'quote', 'question', 'text'];
+
+-- chat documents past the window; should return 0
+select count(*) from inbound_files
+where created_at < now() - interval '365 days';
 
 -- outbox rows past the window; should return 0 for sent rows and 0 for undelivered rows
 select status, count(*)
@@ -97,4 +106,7 @@ limit 5;
 - Этот ранбук описывает механизм, а не юридическую достаточность окна. Сроком хранения владеет
   политика защиты данных компании; 365 дней — заглушка, которую надо подтвердить до продового
   деплоя.
+- Входящие документы — самый чувствительный класс данных здесь. Их байты шифруются ключом
+  развёртывания, а не только диском; потеря `INBOUND_FILES_KEY` означает потерю скачивания, и это
+  записано как цена решения (ADR 0027).
 - Офбординг делается сразу и необратим. Экспортируйте всё, что требует политика, до вызова `DELETE`.

@@ -3,7 +3,7 @@ title: Модель — профиль, а не путь кода
 summary: Почему диалект, конверт и цены модели уехали в YAML-профиль со схемой и как это проверяется.
 kind: решение
 owner: p4ulbr4dl3y
-status: принято
+status: заменено
 last_verified: 2026-10-24
 supersedes: [10]
 superseded_by: [21]

@@ -4,7 +4,7 @@ summary: Что показывает развёрнутый стенд, что �
 kind: прогон
 owner: p4ulbr4dl3y
 status: принято
-last_verified: 2026-10-25
+last_verified: 2026-10-24
 ---
 
 # Живой стенд и бот
@@ -60,7 +60,7 @@ curl -X POST https://bot.state3407.space/admin/api/v1/identities \
 ```bash
 curl -X POST https://bot.state3407.space/admin/api/v1/employees \
   -H "Authorization: Bearer $HR_TOKEN" -H 'Content-Type: application/json' \
-  -d '{"employee_id":"review-1","name":"Проверяющий","role":"Гость","department":"HR","started_at":"2026-10-25"}'
+  -d '{"employee_id":"review-1","name":"Проверяющий","role":"Гость","department":"HR","started_at":"2026-10-24"}'
 ```
 
 Идемпотентно: повторный `POST /identities` с той же парой отвечает `204`.

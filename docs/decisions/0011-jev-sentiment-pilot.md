@@ -3,7 +3,7 @@ title: Jev как необязательный классификатор тон
 summary: Что даёт Jev за флагом `SENTIMENT_PROVIDER=jev`, чем он измерен и чего ещё не хватает для решения.
 kind: решение
 owner: p4ulbr4dl3y
-status: предложено
+status: заменено
 last_verified: 2026-10-24
 superseded_by: [20]
 ---

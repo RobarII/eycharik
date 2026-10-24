@@ -44,7 +44,7 @@ last_verified: 2026-10-24
 | `message.text`, начинающийся с `/start` | `EMPLOYEE_CREATED` |
 | `message.text` | `MESSAGE_RECEIVED` |
 | `callback_query.data` | `BUTTON_PRESSED` |
-| `message.document` | `FILE_RECEIVED` (не реализовано, как и в MAX) |
+| `message.document` | `FILE_RECEIVED` с `file_id`; байты не скачиваются — в update нет URL, для этого нужен отдельный вызов `getFile` |
 
 `update_id` — ключ дедупликации. `message.chat.id` — чат; `from.id` — отправитель, и в группах они различаются.
 

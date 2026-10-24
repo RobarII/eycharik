@@ -42,6 +42,11 @@ LATIN_WORD = re.compile(r"\b[A-Za-z][A-Za-z'’-]{2,}\b")
 ANCHOR_HOST = re.compile(r"^(?:[a-z]+://|mailto:|/|#)")
 PATH_LIKE = re.compile(r"^(?:apps|scripts|knowledge|infra|docs|deploy)/")
 PROMPT_VERSION = re.compile(r"^v(\d+)$")
+MEASURED_QUALITY = re.compile(
+    r"\b(?:recall@5|recall_at_5)\s*(?:=|—|-)?\s*\d"
+    r"|\bp95(?:_[a-z_]+)?\s*(?:около|≈|~|=)?\s*\d+(?:[.,]\d+)?\s*(?:мс|ms|с|сек|секунд)\b",
+    re.IGNORECASE,
+)
 
 SKIP_LANGUAGE = {"docs/README.md", "docs/glossary.md"}
 MEASUREMENT_MAX_LINES = 200
@@ -71,6 +76,7 @@ def main() -> int:
     problems.extend(_adr_problems(docs))
     problems.extend(_glossary_problems())
     problems.extend(_measurement_problems())
+    problems.extend(_product_number_problems())
     problems.extend(_prompt_problems())
     problems.extend(_route_problems())
 
@@ -297,6 +303,26 @@ def _measurement_problems() -> list[str]:
                 problems.append(f"{_rel(path)}: missing line {required!r}")
         if any(line.startswith("## Cases") or line.startswith("### `") for line in lines):
             problems.append(f"{_rel(path)}: per-case dump belongs to the jsonl artifact")
+    return problems
+
+
+def _product_number_problems() -> list[str]:
+    """Product prose points at the numbers; it does not carry its own copy.
+
+    Latency and retrieval quality move with every full run. A product page that quotes them rots
+    silently, which is exactly what happened to the defence script: 16 cases and 2.2 s while the
+    current set had 137 cases and 29 s. Prices and derived arithmetic stay allowed.
+    """
+    problems: list[str] = []
+    for path in sorted((DOCS / "product").glob("*.md")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "measurements/" in line:
+                continue
+            if MEASURED_QUALITY.search(line):
+                problems.append(
+                    f"{_rel(path)}:{number}: measured quality number outside docs/measurements/ "
+                    "— link to measurements/current.md instead"
+                )
     return problems
 
 

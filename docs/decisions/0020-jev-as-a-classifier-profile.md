@@ -3,7 +3,7 @@ title: Jev как профиль классификатора
 summary: Почему Jev переехал в профиль классификатора, что это дало и что показали два прогона.
 kind: решение
 owner: p4ulbr4dl3y
-status: принято
+status: заменено
 last_verified: 2026-10-24
 supersedes: [11]
 superseded_by: [21]

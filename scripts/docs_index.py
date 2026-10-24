@@ -54,7 +54,7 @@ START_HERE: tuple[tuple[str, str], ...] = (
     ("Что вызывает кабинет", "contracts/admin-api.md"),
     ("Как выкатить и откатить", "runbooks/deploy.md"),
     ("Как измеряется качество", "evals/README.md"),
-    ("Где лежат числа", "measurements/TEMPLATE.md"),
+    ("Где лежат числа", "measurements/current.md"),
 )
 
 FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)

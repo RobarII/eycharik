@@ -10,8 +10,8 @@ Environment: ``MAX_WEBHOOK_SECRET`` (or ``TELEGRAM_WEBHOOK_SECRET``, or ``VK_WEB
 with ``VK_GROUP_ID``), ``DATABASE_URL``, and ``HTTPS_PROXY`` or ``ALL_PROXY`` when the messenger
 API is not reachable directly.
 
-MAX has no inbound files today (``docs/contracts/max-api.md`` covers outbound only), so drive a
-scenario without a file step: ``--scenario onboarding_plant``, which is also the default.
+MAX delivers inbound attachments: the parser turns one into a file event, so a file step is
+drivable. Outbound media is documented separately in ``docs/contracts/max-api.md``.
 
 Example::
 

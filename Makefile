@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check verify verify-demo doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
+.PHONY: install check verify verify-demo doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed fmt docs docs-index diagram admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
 
 COVERAGE_MIN ?= 85
 
@@ -159,6 +159,9 @@ nuke:                              # destructive: drops the compose volume and t
 demo-data-del:
 	docker compose up -d postgres
 	docker compose exec -T postgres psql -U onboarding -d onboarding -v ON_ERROR_STOP=1 < scripts/demo-data-del.sql
+
+diagram:                           # render the slide-shaped end-to-end SVG
+	$(PY) python scripts/diagram_end_to_end.py
 
 docs:
 	$(PY) python scripts/docs_index.py --check

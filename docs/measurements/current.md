@@ -21,10 +21,11 @@ README и отчёты ссылаются сюда, а не переписыва
 | Что | Значение | Коммит | Где |
 |---|---|---|---|
 | Полный набор, 137 кейсов, настоящая модель | `recall@5` 0.992, MRR 0.947, цитата 1.000, эскалация 0.942, `answer_contains` 0.902, 0.081 ₽/ответ | `ff02d8b` | [2026-10-24-eval-full-baseline-v5](2026-10-24-eval-full-baseline-v5.md) |
-| Задержка полного набора | `p95_completion` 14 093 мс, `p95_answer` 29 066 мс — **оба гейта провалены** | `ff02d8b` | там же |
+| Задержка полного набора | `p95_completion` 14 093 мс, `p95_answer` 29 066 мс — гейт задержки действует только на контуре с `personal_data: true` (ADR 0035) | `ff02d8b` | там же |
 | Лексическая ветка: AND-форма, как было в коде | пусто на 112 из 137 вопросов, `recall@5` 0.245, MRR 0.146 | `3e81cdb` | [2026-10-24-eval-retrieval-lexical-before](2026-10-24-eval-retrieval-lexical-before.md) |
 | Лексическая ветка после правки: OR, гейт `min(3,n)`, вес 0.5 | `recall@5` 0.992, MRR 0.933 — ветка возвращает кандидатов на 135 вопросах из 137 | `cf3a69c` | [2026-10-24-eval-retrieval-lexical-gated-05](2026-10-24-eval-retrieval-lexical-gated-05.md) |
-| Полный набор после правки лексики | `recall@5` 0.992, MRR 0.938, цитата 1.000, эскалация 0.964; задержка по-прежнему провалена (11 238 / 26 849 мс) | `cf3a69c` | [2026-10-24-eval-full-lexical-gated-full](2026-10-24-eval-full-lexical-gated-full.md) |
+| Полный набор на стеке qwen3-эмбеддер + qwen3-реранкер + deepseek flash | `recall@5` 0.992, MRR 0.938, `context_fragment_coverage` 0.984, цитата 1.000, эскалация 0.942, `answer_contains` 0.902, 0.080 ₽/ответ — **гейты пройдены**; `p95` 10 936 / 22 100 мс — диагностика демо-контура | `060281c` | [2026-10-24-eval-full-qwen-stack-full](2026-10-24-eval-full-qwen-stack-full.md) |
+| Полный набор после правки лексики | `recall@5` 0.992, MRR 0.938, цитата 1.000, эскалация 0.964; задержка 11 238 / 26 849 мс — диагностика на демо-контуре | `cf3a69c` | [2026-10-24-eval-full-lexical-gated-full](2026-10-24-eval-full-lexical-gated-full.md) |
 | Поиск на хешах, 137 кейсов, без ключа | `recall@5` 0.622, MRR 0.500 — диагностика, гейты не применяются | `3e81cdb` | [2026-10-24-eval-retrieval-offline-full-set](2026-10-24-eval-retrieval-offline-full-set.md) |
 | Поиск, переранжирование, 12 кейсов | `recall@5` 1.000, MRR 1.000 | `6fc76ea` | [2026-10-23-eval-full-answer-v3-gpt-4.1-mini](2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md) |
 | Ранние прогоны на 16 кейсах | все гейты 1.000, p95 2 237 мс | `8ba530d` | [2026-10-23-eval-full-case-corpus](2026-10-23-eval-full-case-corpus.md) |

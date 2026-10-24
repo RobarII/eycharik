@@ -75,6 +75,7 @@
 | [Одно правило доступа, три читателя, ноль копий](decisions/0032-one-acl-rule-in-one-place.md) | Почему ACL переехала в предикаты core.access, кто их компилирует в SQL и как matrix перестала быть третьей версией правила. | `p4ulbr4dl3y` | 2026-10-24 |
 | [Один HTTP-конверт на каждый вызов модели](decisions/0033-one-http-envelope.md) | Почему повтор, пауза, дедлайн и breaker живут в app.llm.transport, а не в каждом адаптере, и что считается настройкой роли. | `p4ulbr4dl3y` | 2026-10-24 |
 | [Активная версия промпта — это старший файл, а не константа](decisions/0034-prompt-version-is-the-newest-file.md) | Почему номер версии читается из каталога промптов, и как теперь выглядит откат. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Задержка гейтится только на контуре, допустимом для персональных данных](decisions/0035-latency-gate-only-on-the-personal-data-contour.md) | Почему p95 демо-шлюза остаётся числом в отчёте, но не гейтом, и как профиль модели объявляет свой контур. | `p4ulbr4dl3y` | 2026-10-24 |
 
 ## Прогоны и восстановление
 
@@ -161,6 +162,7 @@
 - [Оценка 2026-10-24: prompt-v6-subset](measurements/2026-10-24-eval-full-prompt-v6-subset.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: prompt-v6](measurements/2026-10-24-eval-full-prompt-v6.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: prompt-v7](measurements/2026-10-24-eval-full-prompt-v7.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: полный прогон на стеке qwen3 + deepseek](measurements/2026-10-24-eval-full-qwen-stack-full.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: прогон поиск acl matrix](measurements/2026-10-24-eval-retrieval-acl-matrix.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-bm25-off](measurements/2026-10-24-eval-retrieval-arm-bm25-off.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-bm25-on](measurements/2026-10-24-eval-retrieval-arm-bm25-on.md) — проверен 2026-10-24

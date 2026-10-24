@@ -11,7 +11,10 @@ reasoning_effort: none
 # (5 of 137 cases flipped), which moves `answer_contains` and `escalation_precision` by provider
 # noise. A lookup answer has nothing to be creative about.
 temperature: 0.0
-max_tokens: 700
+# 1600, not 700: the model reasons in the same budget, and a legal question ("сколько дней
+# отпуска") burned 700 tokens on thoughts and returned empty content twice in a row on the live
+# stand (2026-10-24), which escalated as "unavailable".
+max_tokens: 1600
 # Reasoning tokens are billed as output, so effort is off and the timeout stays generous: the
 # gate is p95 completion <= 8000 ms.
 timeout_s: 30.0

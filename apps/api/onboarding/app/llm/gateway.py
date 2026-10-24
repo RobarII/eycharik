@@ -130,9 +130,15 @@ class GatewayLLM(LLM):
                     raise KeyError("envelope has no data object")
                 body = wrapped
             content = body["choices"][0]["message"]["content"]
+            finish_reason = body["choices"][0].get("finish_reason")
         except (ValueError, KeyError, IndexError, TypeError):
             raise LLMResponseError("provider response has no choices[0].message.content") from None
         if not isinstance(content, str) or not content.strip():
+            if finish_reason == "length":
+                # A reasoning model spent the whole budget on thoughts and returned no answer.
+                # Another attempt with the same budget buys nothing but latency and tokens
+                # (measured 2026-10-24: two empty completions in a row, 8.5 s apart).
+                raise LLMResponseError("provider stopped at max_tokens before answering")
             raise EmptyCompletionError("provider returned empty content")
 
         usage = body.get("usage") or outer_usage or {}

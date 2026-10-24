@@ -53,14 +53,21 @@ def handler_returning(
 
 
 def completion_body(
-    text: str = '{"answer": "ok"}', *, cached_tokens: int = 0
+    text: str = '{"answer": "ok"}', *, cached_tokens: int = 0, finish_reason: str | None = None
 ) -> dict[str, object]:
+    choice: dict[str, object] = {"message": {"content": text}}
+    if finish_reason is not None:
+        choice["finish_reason"] = finish_reason
+    return _body(choice, cached_tokens)
+
+
+def _body(choice: dict[str, object], cached_tokens: int) -> dict[str, object]:
     usage: dict[str, object] = {"prompt_tokens": 100, "completion_tokens": 50}
     if cached_tokens:
         usage["prompt_tokens_details"] = {"cached_tokens": cached_tokens}
     return {
         "model": "test-model",
-        "choices": [{"message": {"content": text}}],
+        "choices": [choice],
         "usage": usage,
     }
 
@@ -243,6 +250,16 @@ async def test_an_empty_completion_is_not_retried_when_the_profile_forbids_it() 
 
     with pytest.raises(EmptyCompletionError):
         await build(handler, profile=profile, max_retries=2).complete(REQUEST)
+
+    assert len(calls) == 1
+
+
+async def test_a_completion_cut_by_max_tokens_is_not_retried_as_empty() -> None:
+    # The budget went to reasoning; one more attempt with the same budget repeats the wait.
+    handler, calls = handler_returning((200, completion_body("", finish_reason="length")))
+
+    with pytest.raises(LLMResponseError, match="max_tokens"):
+        await build(handler).complete(REQUEST)
 
     assert len(calls) == 1
 

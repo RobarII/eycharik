@@ -1,0 +1,11 @@
+name: local-bge-m3
+role: embed
+description: "Eval sidecar: bge-m3 Q8_0 behind a local llama.cpp server, Metal. The recommended embedder of ADR 0030, measured without a vendor key."
+family: openai-chat
+model: bge-m3
+# Native width, no Matryoshka truncation: the vector column stays 1024 either way.
+dim: 1024
+# Metal answers 89 fragments and 137 queries in seconds; the budget covers a cold shard.
+timeout_s: 30.0
+# Text never leaves the machine, so the call is inside the contour. The machine is not the pilot.
+personal_data: true

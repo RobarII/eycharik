@@ -1,0 +1,10 @@
+name: local-bge-reranker-v2-m3
+role: rerank
+description: "Eval sidecar: bge-reranker-v2-m3 Q8_0 behind a local llama.cpp server, Metal. The recommended reranker of ADR 0030, measured without a vendor key."
+family: cohere-rerank
+model: bge-reranker-v2-m3
+# Metal scores 30 pairs in milliseconds, so the pilot's 6 s deadline is slack here. Kept permissive
+# on purpose: a spent deadline would hide a Metal problem behind the fusion fallback.
+timeout_s: 8.0
+deadline_s: 15.0
+personal_data: true

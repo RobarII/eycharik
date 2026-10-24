@@ -195,7 +195,8 @@ def test_the_environment_overrides_the_selected_profile() -> None:
 def test_the_profile_owns_defaults_the_environment_does_not_set() -> None:
     profile = answer_profile(settings(llm_profile="opencode-deepseek-v4.1-flash"))
 
-    assert profile.max_tokens == 700
+    # 1600 leaves room for reasoning inside the same budget: 700 returned empty completions live.
+    assert profile.max_tokens == 1600
     assert profile.timeout_s == 30.0
     assert profile.max_retries == 1
 

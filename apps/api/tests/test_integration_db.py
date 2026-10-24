@@ -45,6 +45,7 @@ from onboarding.app.db.models import (
     ExtractionRow,
     FileRow,
     InboundFileRow,
+    IndexStateRow,
     JobRow,
     MessageRow,
     QuestionRow,
@@ -99,6 +100,7 @@ from onboarding.core.transitions import start as start_run
 from onboarding.ports import (
     ExtractionRecord,
     InboundFile,
+    KnowledgeUnavailableError,
     OutboundMessage,
     SearchQuery,
     StoredRun,
@@ -408,6 +410,68 @@ async def test_knowledge_round_trip(database: Database) -> None:
     assert results
     assert any(result.chunk.doc_id == "hr/leave-policy" for result in results)
     assert all(result.chunk.id for result in results)
+
+
+async def test_a_search_refuses_an_index_built_by_another_embedder(
+    database: Database,
+) -> None:
+    """A model swap without a reindex answers every question wrongly and fails none.
+
+    The recorded fingerprint is what turns that silence into a refusal a human can act on.
+    """
+    await ingest(
+        directory=ROOT / "knowledge",
+        schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+        writer=PostgresKnowledgeWriter(database, HashingEmbedder(dim=1024)),
+        embedder=HashingEmbedder(dim=1024),
+    )
+    async with database.session() as session:
+        state = await session.get(IndexStateRow, "active")
+        assert state is not None
+        state.embedder = "some-other-model@1024"
+
+    with pytest.raises(KnowledgeUnavailableError, match="reindex before serving answers"):
+        await PostgresKnowledgeBase(database, HashingEmbedder(dim=1024)).search(
+            SearchQuery(
+                text="сколько дней отпуска",
+                audience=("all",),
+                on_date=date(2026, 10, 23),
+                limit=5,
+            )
+        )
+
+
+async def test_a_search_refuses_a_vector_width_the_index_does_not_have(
+    database: Database,
+) -> None:
+    """An embedder without a fingerprint still has a width, and the column is the only witness."""
+
+    class WidthOnlyEmbedder:
+        dim = 768
+
+        async def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
+            return tuple((1.0,) * 768 for _ in texts)
+
+    await ingest(
+        directory=ROOT / "knowledge",
+        schema_path=ROOT / "docs" / "contracts" / "doc.schema.json",
+        writer=PostgresKnowledgeWriter(database, HashingEmbedder(dim=1024)),
+        embedder=HashingEmbedder(dim=1024),
+    )
+    async with database.session() as session:
+        state = await session.get(IndexStateRow, "active")
+        assert state is not None
+        state.embedder = ""
+
+    with pytest.raises(KnowledgeUnavailableError, match="this process embeds 768"):
+        await PostgresKnowledgeBase(database, WidthOnlyEmbedder()).search(
+            SearchQuery(
+                text="сколько дней отпуска",
+                audience=("all",),
+                on_date=date(2026, 10, 23),
+                limit=5,
+            )
+        )
 
 
 async def test_lexical_branch_survives_a_question_phrased_as_a_question(

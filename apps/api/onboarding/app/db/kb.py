@@ -106,6 +106,14 @@ class PostgresKnowledgeBase:
                 f"knowledge index was built with {state.embedder!r}, this process embeds with "
                 f"{current!r}; reindex before serving answers"
             )
+        # An embedder without a fingerprint still has a width, and the column is the only witness
+        # left. Checking it here is what makes writing it worth a column at all.
+        width = getattr(self._embedder, "dim", 0)
+        if not current and width and state.dim != width:
+            raise KnowledgeUnavailableError(
+                f"knowledge index is {state.dim} wide, this process embeds {width}; "
+                "reindex before serving answers"
+            )
 
 
 class PostgresKnowledgeWriter:

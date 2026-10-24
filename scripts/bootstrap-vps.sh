@@ -96,7 +96,7 @@ if [ -f "$AVAIL/$FINAL_NAME" ]; then
     BACKUP_CONF="$(mktemp)"
     cp "$AVAIL/$FINAL_NAME" "$BACKUP_CONF"
 fi
-cleanup() { [ -n "$BACKUP_CONF" ] && rm -f "$BACKUP_CONF"; }
+cleanup() { if [ -n "$BACKUP_CONF" ]; then rm -f "$BACKUP_CONF"; fi; return 0; }
 trap cleanup EXIT
 
 envsubst '${DOMAIN}' <"$ROOT/infra/nginx/onboarding-acme.conf.template" >"$AVAIL/$ACME_NAME"

@@ -1,16 +1,17 @@
 name: release
 
-# Build immutable images from a tag, from `main`, or from a manually chosen ref and push them to
-# GHCR.
+# Two verbs, and neither one compiles anything twice.
 #
-# A push to `main` releases itself. `version` decides the version, `build` publishes both images
-# under the commit SHA, and only after they exist does `tag` create the release tag. The tag is
-# therefore a promise that the images are pullable, and a failed build leaves no tag behind.
+#  - a push to `main` runs `build`: one image per commit, tagged `sha-<sha>`, with provenance and an
+#    SBOM. That tag never moves, so it is what a rollback names.
+#  - a `v*` tag runs `promote`: the *same digest* under a version tag. Nothing is rebuilt, so a
+#    version cannot contain code that was never on `main`. A human pushes that tag; no bot does.
 #
-# A tag pushed by hand, or a manual dispatch, publishes the ref it was given and creates no tag.
+# A manual dispatch promotes an arbitrary ref, which lets an operator re-tag a commit that already
+# has an image. If the image is missing the run fails and says which commit to merge first.
 #
-# `latest` is deliberately not published: the deploy workflow consumes the commit SHA, and a
-# release that cannot name its commit cannot be rolled back.
+# `latest` is deliberately not published: a release that cannot name its commit cannot be rolled
+# back, and the deploy workflow consumes the commit SHA.
 
 on:
   push:
@@ -19,12 +20,12 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Git ref (tag, branch, or commit SHA) to release
+        description: Git ref (tag, branch, or commit SHA) to promote
         required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
   packages: write
   id-token: write
 
@@ -36,35 +37,9 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  version:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      version: ${{ steps.decide.outputs.version }}
-      sha: ${{ steps.rev.outputs.sha }}
-      short: ${{ steps.rev.outputs.short }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
-          fetch-depth: 0
-      - name: Resolve the checked-out commit
-        id: rev
-        run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
-      - name: Decide the version
-        id: decide
-        env:
-          REF_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.ref_type }}
-          REF_NAME: ${{ github.event.inputs.ref || github.ref_name }}
-        run: |
-          version=$(python3 scripts/next_release.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "releasing $REF_NAME as $version"
-
   build:
-    needs: version
+    name: build ${{ matrix.name }}
+    if: github.event_name == 'push' && github.ref_type == 'branch'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -78,8 +53,9 @@ jobs:
             file: apps/admin/Dockerfile
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.sha }}
+      - name: Resolve the commit
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Lowercase the image prefix
         id: image
         run: echo "prefix=$(printf '%s' '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
@@ -102,39 +78,80 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
           # The cabinet's context has no `.git`, so the commit arrives as a build argument.
           build-args: |
-            VITE_BUILD_ID=${{ needs.version.outputs.short }}
+            VITE_BUILD_ID=${{ steps.rev.outputs.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ needs.version.outputs.sha }}
-            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}-${{ matrix.name }}:${{ needs.version.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}-${{ matrix.name }}:sha-${{ steps.rev.outputs.sha }}
+      - name: Report the vulnerabilities of the image we just published
+        # Reporting, not gating: a scanner that blocks on day one blocks on the base image, not on
+        # our code. It becomes a gate when a baseline of accepted findings exists. See ADR 0028.
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}-${{ matrix.name }}:sha-${{ steps.rev.outputs.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"
 
-  tag:
-    needs: [version, build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  promote:
+    name: promote ${{ github.ref_name }}
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref_type == 'tag')
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.rev.outputs.sha }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.version.outputs.sha }}
+          ref: ${{ github.event.inputs.ref || github.ref }}
           fetch-depth: 0
-      - name: Tag the released commit
+      - name: Resolve the commit
+        id: rev
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Decide the version
+        id: version
         env:
-          VERSION: ${{ needs.version.outputs.version }}
-          SHA: ${{ needs.version.outputs.sha }}
+          REF_NAME: ${{ github.event.inputs.ref || github.ref_name }}
         run: |
-          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "not a release version: $VERSION" >&2
-            exit 1
-          fi
-          if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
-            echo "$VERSION already exists; the images for $SHA stay reachable by its SHA"
-            exit 0
-          fi
-          # The runner has no git identity of its own, and an annotated tag needs one.
-          git -c user.name="github-actions[bot]" \
-            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            tag -a "$VERSION" -m "Release $VERSION" "$SHA"
-          git push origin "refs/tags/$VERSION"
+          version=$(python3 scripts/release_version.py --ref "$REF_NAME")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "promoting $REF_NAME as $version"
+      - name: Lowercase the image prefix
+        id: image
+        run: echo "prefix=$(printf '%s' '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Promote the digest of ${{ steps.rev.outputs.sha }} to ${{ steps.version.outputs.version }}
+        env:
+          SHA: ${{ steps.rev.outputs.sha }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PREFIX: ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}
+        run: |
+          set -euo pipefail
+          for name in api admin; do
+            source="$PREFIX-$name:sha-$SHA"
+            if ! docker buildx imagetools inspect "$source" >/dev/null 2>&1; then
+              echo "$source is not in the registry: push this commit to main first, or promote a commit the build already published" >&2
+              exit 1
+            fi
+            docker buildx imagetools create --tag "$PREFIX-$name:$VERSION" "$source"
+            echo "$name: $VERSION -> $(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$PREFIX-$name:$VERSION")"
+          done
+      - name: Record what was released
+        run: |
+          {
+            echo "### release ${{ steps.version.outputs.version }}"
+            echo
+            echo "- commit: \`${{ steps.rev.outputs.sha }}\`"
+            echo "- images: \`${{ steps.image.outputs.prefix }}-{api,admin}:${{ steps.version.outputs.version }}\`"
+            echo "- built by: the \`build\` job of the \`main\` push that published this digest"
+            echo "- provenance and SBOM: attached by \`build\`; nothing was rebuilt here"
+          } >> "$GITHUB_STEP_SUMMARY"

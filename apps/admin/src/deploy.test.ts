@@ -9,6 +9,10 @@ const release = readFileSync(
   new URL("../../../.github/workflows/release.yml", import.meta.url),
   "utf8",
 );
+const deploy = readFileSync(
+  new URL("../../../.github/workflows/deploy.yml", import.meta.url),
+  "utf8",
+);
 
 describe("the cabinet's nginx server", () => {
   it("ships a content security policy that forbids inline scripts and foreign origins", () => {
@@ -48,30 +52,52 @@ describe("the admin image", () => {
   });
 
   it("receives the released commit from the workflow", () => {
-    expect(release).toContain("short=$(git rev-parse --short HEAD)");
-    expect(release).toMatch(/build-args: \|\n\s+VITE_BUILD_ID=\$\{\{ needs\.version\.outputs\.short \}\}/);
+    expect(release).toContain('echo "sha=$(git rev-parse HEAD)"');
+    expect(release).toMatch(/build-args: \|\n\s+VITE_BUILD_ID=\$\{\{ steps\.rev\.outputs\.sha \}\}/);
   });
 
-  it("is built from the commit the version job resolved, not from a moving branch", () => {
-    expect(release).toMatch(/ref: \$\{\{ needs\.version\.outputs\.sha \}\}/);
-    expect(release).toMatch(/-\$\{\{ matrix\.name \}\}:\$\{\{ needs\.version\.outputs\.sha \}\}/);
+  it("is published under the commit it was built from, never under a moving branch", () => {
+    expect(release).toMatch(/}-\$\{\{ matrix\.name \}\}:sha-\$\{\{ steps\.rev\.outputs\.sha \}\}/);
+    expect(release).not.toContain(":latest");
+  });
+});
+
+describe("the release workflow", () => {
+  it("compiles nothing when it promotes a version", () => {
+    // `imagetools create` copies a manifest; `build-push-action` runs once, in the `build` job.
+    expect(release).toContain("docker buildx imagetools create --tag");
+    expect((release.match(/docker\/build-push-action/g) ?? []).length).toBe(1);
   });
 
-  it("tags the push to main only after both images were pushed", () => {
+  it("takes the version from a human ref and refuses anything else", () => {
+    expect(release).toContain("scripts/release_version.py --ref");
+    expect(release).not.toContain('git tag -a');
+    expect(release).not.toContain('git push origin "refs/tags/');
+  });
+
+  it("builds a push to main and promotes a tag, and never both", () => {
     expect(release).toContain("branches: [main]");
-    expect(release).toContain("needs: [version, build]");
-    expect(release).toContain(
-      "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
-    );
-    expect(release).toContain('git push origin "refs/tags/$VERSION"');
+    expect(release).toContain("tags: [\"v*\"]");
+    expect(release).toContain("if: github.event_name == 'push' && github.ref_type == 'branch'");
+    expect(release).toContain("'push' && github.ref_type == 'tag'");
   });
 
-  it("leaves an existing tag alone, so a re-run does not invent a version", () => {
-    expect(release).toMatch(/if git rev-parse -q --verify "refs\/tags\/\$VERSION"/);
+  it("fails when the digest for that commit was never published", () => {
+    expect(release).toContain("imagetools inspect");
+    expect(release).toContain("is not in the registry");
+  });
+});
+
+describe("the deploy workflow", () => {
+  it("is reached by a version tag, not by a merge into main", () => {
+    expect(deploy).toContain("startsWith(github.event.workflow_run.head_branch, 'v')");
   });
 
-  it("tags as the bot, because the runner has no git identity", () => {
-    expect(release).toContain('-c user.name="github-actions[bot]"');
-    expect(release).toContain('-c user.email="41898282+github-actions[bot]@users.noreply.github.com"');
+  it("refuses a commit without the gate, even from a manual run", () => {
+    expect(deploy).toContain('select(.name == "gate" and .conclusion == "success")');
+  });
+
+  it("refuses a commit whose images are not published", () => {
+    expect(deploy).toContain("docker manifest inspect");
   });
 });

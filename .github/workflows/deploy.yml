@@ -1,11 +1,17 @@
 name: deploy
 
-# Deploy the image built by the release workflow. A tag release reaches production only after the
-# build succeeds; a manual run can redeploy or roll back to any previously released SHA.
+# Production is reached from one place: a successful release of a `v*` tag. A push to `main` builds
+# images and stops there, so merging a doc fix no longer redeploys the bot.
+#
+# A manual run redeploys or rolls back to any commit that already has a published image. Both verbs
+# pass the same two guards before touching the host:
+#
+#   1. the commit has a successful `gate` check — the exact job `ci.yml` runs;
+#   2. both images exist in the registry for that commit.
 #
 # Required repository variables: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PORT (optional), DEPLOY_PATH
-# (optional). Required secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS. Configure the `production`
-# environment with required reviewers when the plan supports it; the tag push is the human gate.
+# (optional). Required secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS. Add required reviewers to the
+# `production` environment when the plan supports it; the tag push is the human gate either way.
 
 on:
   workflow_run:
@@ -28,9 +34,13 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: production
     steps:
       - name: Resolve the release SHA
@@ -53,6 +63,25 @@ jobs:
           [[ "$USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || { echo "DEPLOY_USER is missing or invalid" >&2; exit 1; }
           [[ "$PORT" =~ ^[0-9]{1,5}$ ]] || { echo "DEPLOY_PORT is invalid" >&2; exit 1; }
           [[ "$DEPLOY_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]] || { echo "DEPLOY_PATH is missing or invalid" >&2; exit 1; }
+      - name: The commit passed the gate and both images are pullable
+        # A manual dispatch names an arbitrary SHA. Without these two checks it could ship code that
+        # never met `ci.yml`, or fail halfway on the host with an image that does not exist.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          green=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/check-runs" \
+            --jq '[.check_runs[] | select(.name == "gate" and .conclusion == "success")] | length')
+          [ "$green" -gt 0 ] || { echo "no successful 'gate' check for $SHA: run ci on that commit first" >&2; exit 1; }
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          prefix=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          for name in api admin; do
+            if ! docker manifest inspect "ghcr.io/$prefix-$name:$SHA" > /dev/null; then
+              echo "ghcr.io/$prefix-$name:$SHA is not published: push that commit to main first" >&2
+              exit 1
+            fi
+          done
       - name: Install the deploy key
         env:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}

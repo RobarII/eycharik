@@ -57,6 +57,8 @@ services:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    healthcheck:
+      disable: true
 
   admin:
     build: apps/admin

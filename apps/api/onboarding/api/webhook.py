@@ -57,10 +57,16 @@ async def receive(channel: str, request: Request) -> PlainTextResponse:
     container = request.app.state.container
     ingress = _ingress(request, channel)
     if not ingress.configured:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "webhook secret is not configured"
-        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "webhook secret is not configured")
     body = await _body(request)
+
+    # VK proves the address before it will send anything and does so without the secret, so the
+    # handshake comes first: it has to be answerable by a server that is only being configured.
+    # Everything else stays behind the secret below.
+    confirmation = ingress.handshake(body)
+    if confirmation is not None:
+        return PlainTextResponse(confirmation)
+
     headers = {name.lower(): value for name, value in request.headers.items()}
     if not ingress.verify(headers, body):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad webhook secret")
@@ -71,10 +77,6 @@ async def receive(channel: str, request: Request) -> PlainTextResponse:
         json.loads(body)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid json") from None
-
-    confirmation = ingress.handshake(body)
-    if confirmation is not None:
-        return PlainTextResponse(confirmation)
 
     inbound = ingress.parse(body, received_at=container.clock.now())
     if inbound is None:

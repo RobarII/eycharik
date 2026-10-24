@@ -55,6 +55,11 @@ from this table. If a question is not answered here, the answer does not exist y
 | Can the same sentence arrive twice, and what happens then? | [decisions/0023-a-delivery-is-deduped-not-a-sentence.md](decisions/0023-a-delivery-is-deduped-not-a-sentence.md) |
 | Why does every cabinet route carry `/v1`? | [decisions/0024-a-versioned-cabinet-api.md](decisions/0024-a-versioned-cabinet-api.md) |
 | Which models does the demo deploy, and why two vendors? | [decisions/0025-demo-models-on-opencode-and-openrouter.md](decisions/0025-demo-models-on-opencode-and-openrouter.md) |
+| Which models fit a Russian-hosted 152-ФЗ pilot? | [decisions/0026-russian-hosted-model-options.md](decisions/0026-russian-hosted-model-options.md) |
+| What does a Russian-hosted pilot cost per answer? | [product/business-case.md](product/business-case.md) |
+| Which vendor or GPU, at what price, read when? | [product/vendor-comparison.md](product/vendor-comparison.md) |
+| What evidence does the DPO need for 152-ФЗ? | [runbooks/152fz-checklist.md](runbooks/152fz-checklist.md) |
+| How many tokens does one answer cost? | [measurements/2026-10-25-token-budget.md](measurements/2026-10-25-token-budget.md) |
 | How good and how expensive is the Jev classifier? | [measurements/2026-10-23-sentiment-jev-expanded-v2.md](measurements/2026-10-23-sentiment-jev-expanded-v2.md) |
 | Does a run really follow a person from one messenger to another? | [measurements/2026-10-24-cross-channel-move.md](measurements/2026-10-24-cross-channel-move.md) |
 | What does the demo host have? | [measurements/2026-10-23-demo-vps-capacity.md](measurements/2026-10-23-demo-vps-capacity.md) |

@@ -24,6 +24,7 @@ from onboarding.evals.runner import (
     GoldenSetError,
     Report,
     baseline_json,
+    baseline_refusal,
     case_record,
     compare_records,
     derive_baseline,
@@ -62,6 +63,11 @@ def main(argv: list[str] | None = None) -> int:
         "--write-baseline",
         action="store_true",
         help="pin this run as the baseline: gate = Wilson lower bound of what it measured",
+    )
+    parser.add_argument(
+        "--force-baseline",
+        action="store_true",
+        help="pin even a failing run; the pinned gates then describe the failure",
     )
     parser.add_argument(
         "--compare",
@@ -130,6 +136,10 @@ async def _run(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
     if args.write:
         _write(report, args, settings, on_date, comparison)
     if args.write_baseline:
+        refusal = None if args.force_baseline else baseline_refusal(report)
+        if refusal is not None:
+            print(f"not pinning: {refusal}", file=sys.stderr)
+            return 1
         pinned = derive_baseline(report, commit=_commit())
         args.baseline.parent.mkdir(parents=True, exist_ok=True)
         args.baseline.write_text(baseline_json(pinned), encoding="utf-8")
@@ -212,7 +222,7 @@ def _write(
             embed_provider=settings.embed_provider,
             note=note,
             on_date=on_date,
-            retrieval=_retrieval_label(settings),
+            retrieval=retrieval_label(settings),
             artifact=artifact.name,
             comparison=comparison,
         ),
@@ -231,7 +241,7 @@ def _model_label(settings: Settings, *, retrieval_only: bool) -> str:
     return f"{settings.llm_provider}/{profile.name} ({profile.model}) @ {settings.llm_base_url}"
 
 
-def _retrieval_label(settings: Settings) -> str:
+def retrieval_label(settings: Settings) -> str:
     """Everything that changes a retrieved list, in one line a later reader can diff.
 
     The embedder and the reranker were here first; ``bm25`` and contextual retrieval were not,

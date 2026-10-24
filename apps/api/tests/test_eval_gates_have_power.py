@@ -151,7 +151,8 @@ def _cases() -> tuple[Case, ...]:
 
 
 def answerer(**faults: object) -> FakeAnswerer:
-    return FakeAnswerer(GOOD_TEXTS, escalations=(REFUSED,), **faults)  # type: ignore[arg-type]
+    defaults: dict[str, object] = {"escalations": (REFUSED,)}
+    return FakeAnswerer(GOOD_TEXTS, **{**defaults, **faults})  # type: ignore[arg-type]
 
 
 async def _run(knowledge: FakeKnowledge, model: FakeAnswerer) -> Report:
@@ -254,6 +255,32 @@ async def test_a_dead_retrieval_counts_as_a_case_error() -> None:
     assert "case_errors" in report.failures
 
 
+async def test_a_missed_crisis_is_not_hidden_by_the_other_cases() -> None:
+    """``escalation_correctness`` is averaged over every case, so one miss costs it 1%.
+
+    The three decision metrics use the deciding cases as the denominator instead. With two cases
+    here, a missed escalation halves the denominator and cannot pass.
+    """
+    report = await _run(FakeKnowledge(GOOD_DOCS), answerer(escalations=()))
+
+    assert report.metrics["escalation_recall"] == 0.0
+    assert "escalation_recall" in report.failures
+
+
+async def test_a_false_alarm_is_a_failure_and_not_a_safe_default() -> None:
+    report = await _run(FakeKnowledge(GOOD_DOCS), answerer(escalate_all=True))
+
+    assert report.metrics["escalation_precision"] == 0.5
+    assert "escalation_precision" in report.failures
+
+
+async def test_the_routing_reason_is_gated_on_the_cases_that_carry_one() -> None:
+    report = await _run(FakeKnowledge(GOOD_DOCS), answerer(reason="low_confidence"))
+
+    assert report.metrics["reason_accuracy"] == 0.0
+    assert "reason_accuracy" in report.failures
+
+
 async def test_the_real_golden_set_can_fail_its_own_recall_gate() -> None:
     """The set, not just a toy case list, has to be able to turn the gate red."""
     cases = load_cases(ROOT / "docs" / "evals" / "golden.yaml")
@@ -279,6 +306,9 @@ MUTANTS: dict[str, tuple[dict[str, object], dict[str, object]]] = {
     "context_fragment_coverage": ({"docs": GOOD_DOCS}, {"context_text": "ничего"}),
     "citation_support": ({"docs": GOOD_DOCS}, {"citations": "none"}),
     "escalation_correctness": ({"docs": GOOD_DOCS}, {"escalate_all": True}),
+    "escalation_recall": ({"docs": GOOD_DOCS}, {"escalations": ()}),
+    "escalation_precision": ({"docs": GOOD_DOCS}, {"escalate_all": True}),
+    "reason_accuracy": ({"docs": GOOD_DOCS}, {"reason": "low_confidence"}),
     "answer_contains": ({"docs": GOOD_DOCS}, {"answer_text": "не знаю"}),
     "answer_excludes": ({"docs": GOOD_DOCS}, {"forbidden": "24 календарных"}),
     "leak_rate": ({"docs": LEAKY_DOCS}, {}),

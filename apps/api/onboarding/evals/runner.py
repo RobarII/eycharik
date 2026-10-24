@@ -476,9 +476,26 @@ SAMPLE_DENOMINATORS: dict[str, Callable[[CaseResult], bool]] = {
 }
 
 
+def baseline_refusal(report: Report) -> str | None:
+    """Why this run may not become the baseline, or ``None`` when it may.
+
+    A baseline is derived from a run that passed. Pinning a failing run lowers every gate to what
+    the failure already achieved — the next run then cannot fail, which is the opposite of the
+    reason the file exists.
+    """
+    if not report.failures:
+        return None
+    return (
+        "this run failed "
+        + ", ".join(report.failures)
+        + "; fix it or pass --force-baseline, because a pinned failure lowers the gates"
+    )
+
+
 def _sample_size(report: Report, metric: str) -> int:
     predicate = SAMPLE_DENOMINATORS.get(metric, _any_result)
     return max(1, sum(1 for result in report.results if not result.error and predicate(result)))
+
 
 def _floor(value: float) -> float:
     return int(value * 100.0) / 100.0
@@ -660,8 +677,7 @@ def case_record(result: CaseResult) -> dict[str, Any]:
         "citation_supported": 1.0 if result.citation_supported else 0.0,
         "escalation_correct": 1.0 if result.escalation_correct else 0.0,
         "escalation_matched": 1.0
-        if result.escalated is not None
-        and result.escalated == result.case.expect_escalation
+        if result.escalated is not None and result.escalated == result.case.expect_escalation
         else 0.0,
         "contains_expected": 1.0 if result.contains_expected else 0.0,
         "forbidden_clean": 1.0 if result.forbidden_clean else 0.0,

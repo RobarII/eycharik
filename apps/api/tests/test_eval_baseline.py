@@ -15,6 +15,7 @@ from onboarding.evals.runner import (
     Case,
     CaseResult,
     baseline_json,
+    baseline_refusal,
     derive_baseline,
     load_baseline,
     summarise,
@@ -122,3 +123,26 @@ def test_a_baseline_round_trips_through_its_file(tmp_path: Path) -> None:
 
 def test_a_missing_baseline_file_is_not_an_error(tmp_path: Path) -> None:
     assert load_baseline(tmp_path / "absent.json") is None
+
+
+def test_a_failing_run_may_not_become_the_baseline() -> None:
+    """A pinned failure lowers the gates to what the failure already reached."""
+    baseline = Baseline(commit="abc123", overall={"recall_at_5": 1.0})
+    report = summarise(
+        (_hits(_case("a")), _misses(_case("b"))),
+        generated=False,
+        baseline=baseline,
+    )
+
+    assert report.failures
+    refusal = baseline_refusal(report)
+    assert refusal is not None
+    assert "recall_at_5" in refusal
+    assert "force-baseline" in refusal
+
+
+def test_a_passing_run_may_become_the_baseline() -> None:
+    report = summarise((_hits(_case("a")),), generated=False)
+
+    assert report.failures == ()
+    assert baseline_refusal(report) is None

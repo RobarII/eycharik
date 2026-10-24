@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from onboarding.app.settings import Settings
+from onboarding.evals.__main__ import retrieval_label
 from onboarding.evals.runner import (
     Baseline,
     Case,
@@ -126,3 +128,27 @@ def test_a_comparison_is_rendered_with_its_interval() -> None:
 
     assert "## Comparison against baseline" in markdown
     assert "p(delta <= 0)" in markdown
+
+
+def _settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "_env_file": None,
+        "embed_provider": "hashing",
+        "embed_profile": "local-hashing",
+        "embed_dim": 1024,
+    }
+    return Settings(**{**base, **overrides})  # type: ignore[arg-type]
+
+
+def test_the_retrieval_label_names_the_switch_that_changed_the_run() -> None:
+    """ADR 0012 and ADR 0016 are experiments; two arms must not share a header."""
+    off = retrieval_label(_settings())
+    on = retrieval_label(
+        _settings(bm25_enabled=True, contextual_retrieval=True, contextual_prompt_version=2)
+    )
+
+    assert "bm25:off" in off
+    assert "contextual:off" in off
+    assert "bm25:on" in on
+    assert "contextual:v2" in on
+    assert off != on

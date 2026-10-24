@@ -4,9 +4,9 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-COVERAGE_MIN ?= 85
+.PHONY: install check lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo demo-data demo-data-del fmt docs docs-index admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
 
-.PHONY: install check lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl run worker up down logs migrate ingest seed demo demo-data demo-data-del fmt docs admin-install admin-dev admin-build admin-check admin-e2e prod-config prod-up smoke deploy-remote backup restore
+COVERAGE_MIN ?= 85
 
 install:
 	uv sync
@@ -123,7 +123,11 @@ demo-data-del:
 	docker compose exec -T postgres psql -U onboarding -d onboarding -v ON_ERROR_STOP=1 < scripts/demo-data-del.sql
 
 docs:
+	$(PY) python scripts/docs_index.py --check
 	$(PY) python scripts/check_docs.py
+
+docs-index:
+	$(PY) python scripts/docs_index.py --write
 
 admin-install:
 	cd apps/admin && npm ci

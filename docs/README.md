@@ -1,102 +1,185 @@
-# Documentation index
+# Документация
 
-The single entry point. Every document in `docs/` is listed here; CI fails when a file is missing
-from this table. If a question is not answered here, the answer does not exist yet — add the row.
+Индекс собран из frontmatter скриптом `scripts/docs_index.py`. Руками не править:
+`make docs-index` перезапишет, `make docs` упадёт при расхождении.
 
-## By question
+Правила ведения — [conventions.md](conventions.md). Термины — [glossary.md](glossary.md).
 
-| Question | File |
+## С чего начать
+
+| Вопрос | Документ |
 |---|---|
-| What is the system made of, and how does a message travel through it? | [architecture.md](architecture.md) |
-| What did the client actually ask for? | [case/poliplastic-2026.md](case/poliplastic-2026.md) |
-| What do the words mean? | [glossary.md](glossary.md) |
-| How do we write code, tests, and commits? | [conventions.md](conventions.md) |
-| What exactly does the MAX API give us? | [contracts/max-api.md](contracts/max-api.md) |
-| How does one core serve several messengers? | [contracts/channel.md](contracts/channel.md), [decisions/0019-a-channel-is-an-address.md](decisions/0019-a-channel-is-an-address.md) |
-| What does Telegram give us? | [contracts/telegram-api.md](contracts/telegram-api.md) |
-| What does VK give us? | [contracts/vk-api.md](contracts/vk-api.md) |
-| What can one messenger carry, and where is that written? | [contracts/channel-profile.schema.json](contracts/channel-profile.schema.json), profiles in `apps/api/channel-profiles/` |
-| What does the recruiter cabinet call, and with what rights? | [contracts/admin-api.md](contracts/admin-api.md) |
-| What exactly does the model see? | [prompts/answer/v7.md](prompts/answer/v7.md) (current), [v6](prompts/answer/v6.md), [v5](prompts/answer/v5.md), [v4](prompts/answer/v4.md), [v3](prompts/answer/v3.md), [v2](prompts/answer/v2.md), [v1](prompts/answer/v1.md) (superseded) |
-| How is a survey answer scored? | [prompts/sentiment/v1.md](prompts/sentiment/v1.md), [product/risk-radar.md](product/risk-radar.md) |
-| What is the Jev classifier pilot? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md), rubric [prompts/sentiment-jev/v1.yaml](prompts/sentiment-jev/v1.yaml) |
-| How is a chunk given context before embedding? | [prompts/context/v1.md](prompts/context/v1.md) |
-| What does the assistant answer, and what does it refuse? | [product/answer-policy.md](product/answer-policy.md) |
-| How does sentiment become risk, escalation, and a digest? | [product/risk-radar.md](product/risk-radar.md) |
-| What does the sentiment layer return? | [contracts/sentiment.schema.json](contracts/sentiment.schema.json) |
-| What may a Jev rubric contain? | [contracts/jev-rubric.schema.json](contracts/jev-rubric.schema.json), rubric [prompts/sentiment-jev/v1.yaml](prompts/sentiment-jev/v1.yaml) |
-| Which model runs, and what does it allow? | [contracts/model-profile.schema.json](contracts/model-profile.schema.json), profiles in `apps/api/model-profiles/` |
-| What are the onboarding scenarios? | [product/scenarios.md](product/scenarios.md) |
-| Which mascot image belongs to which step? | [product/scenario-images.md](product/scenario-images.md) |
-| How do I demo this in five minutes? | [product/demo-script.md](product/demo-script.md) |
-| How do we defend the project to organizers? | [product/defense.md](product/defense.md) |
-| Who may see what? | [product/roles.md](product/roles.md) |
-| Why is the code split into core and app? | [decisions/0001-functional-core.md](decisions/0001-functional-core.md) |
-| Why does the webhook answer before doing work? | [decisions/0002-async-webhook.md](decisions/0002-async-webhook.md) |
-| Why hybrid retrieval instead of pure vectors? | [decisions/0003-hybrid-retrieval.md](decisions/0003-hybrid-retrieval.md) |
-| Why are prompts files with versions? | [decisions/0004-prompts-as-data.md](decisions/0004-prompts-as-data.md) |
-| Why does one Postgres hold state, vectors, and the outbox? | [decisions/0005-single-postgres.md](decisions/0005-single-postgres.md) |
-| Why refuse instead of guessing? | [decisions/0006-refuse-over-guess.md](decisions/0006-refuse-over-guess.md) |
-| Why is there an offline provider? | [decisions/0007-extractive-demo-provider.md](decisions/0007-extractive-demo-provider.md) |
-| Why a hosted reranker? | [decisions/0008-hosted-rerank.md](decisions/0008-hosted-rerank.md) |
-| Why is the latency gate 8 s? | [decisions/0009-latency-budget.md](decisions/0009-latency-budget.md) |
-| Why one vendor for answers, embeddings, and rerank? | [decisions/0010-one-model-vendor.md](decisions/0010-one-model-vendor.md) |
-| Why is Jev behind a flag? | [decisions/0011-jev-sentiment-pilot.md](decisions/0011-jev-sentiment-pilot.md) |
-| Why not BM25 / ParadeDB? | [decisions/0012-no-bm25-in-request-path.md](decisions/0012-no-bm25-in-request-path.md) |
-| Why is a model a profile file? | [decisions/0013-model-profiles.md](decisions/0013-model-profiles.md) |
-| Why does the cabinet write through the outbox, and what does leaving delete? | [decisions/0014-cabinet-writes-through-the-outbox.md](decisions/0014-cabinet-writes-through-the-outbox.md) |
-| Why is extraction an adapter, and how does an uploaded PDF become a document? | [decisions/0015-extraction-is-an-adapter.md](decisions/0015-extraction-is-an-adapter.md) |
-| Why is contextual retrieval written but switched off? | [decisions/0016-contextual-retrieval.md](decisions/0016-contextual-retrieval.md) |
-| How is the sentiment eval measured, and why does it abort on an outage? | [decisions/0017-sentiment-eval-v2.md](decisions/0017-sentiment-eval-v2.md) |
-| Why does the cabinet hold a cookie instead of a token? | [decisions/0018-session-cookie-for-the-cabinet.md](decisions/0018-session-cookie-for-the-cabinet.md) |
-| Why is Jev a profile and not a special case? | [decisions/0020-jev-as-a-classifier-profile.md](decisions/0020-jev-as-a-classifier-profile.md) |
-| Why does a model have no environment fallback? | [decisions/0021-model-identity-has-one-home.md](decisions/0021-model-identity-has-one-home.md) |
-| Why is a markdown upload queued instead of indexed? | [decisions/0022-knowledge-upload-is-async.md](decisions/0022-knowledge-upload-is-async.md) |
-| Can the same sentence arrive twice, and what happens then? | [decisions/0023-a-delivery-is-deduped-not-a-sentence.md](decisions/0023-a-delivery-is-deduped-not-a-sentence.md) |
-| Why does every cabinet route carry `/v1`? | [decisions/0024-a-versioned-cabinet-api.md](decisions/0024-a-versioned-cabinet-api.md) |
-| Which models does the demo deploy, and why two vendors? | [decisions/0025-demo-models-on-opencode-and-openrouter.md](decisions/0025-demo-models-on-opencode-and-openrouter.md) |
-| Which models fit a Russian-hosted 152-ФЗ pilot? | [decisions/0026-russian-hosted-model-options.md](decisions/0026-russian-hosted-model-options.md) |
-| What does a Russian-hosted pilot cost per answer? | [product/business-case.md](product/business-case.md) |
-| Which vendor or GPU, at what price, read when? | [product/vendor-comparison.md](product/vendor-comparison.md) |
-| What evidence does the DPO need for 152-ФЗ? | [runbooks/152fz-checklist.md](runbooks/152fz-checklist.md) |
-| How many tokens does one answer cost? | [measurements/2026-10-25-token-budget.md](measurements/2026-10-25-token-budget.md) |
-| How good and how expensive is the Jev classifier? | [measurements/2026-10-23-sentiment-jev-expanded-v2.md](measurements/2026-10-23-sentiment-jev-expanded-v2.md) |
-| Does a run really follow a person from one messenger to another? | [measurements/2026-10-24-cross-channel-move.md](measurements/2026-10-24-cross-channel-move.md) |
-| What does the demo host have? | [measurements/2026-10-23-demo-vps-capacity.md](measurements/2026-10-23-demo-vps-capacity.md) |
-| How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
-| An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |
-| How is OCR quality measured? | [evals/ocr.yaml](evals/ocr.yaml), `make eval-ocr` |
-| How do I deploy? | [runbooks/deploy.md](runbooks/deploy.md) |
-| How do I back up and restore? | [runbooks/backup.md](runbooks/backup.md) |
-| How do I migrate the database? | [runbooks/migrate.md](runbooks/migrate.md) |
-| How do proactive reminders run on a schedule? | [runbooks/cron.md](runbooks/cron.md) |
-| What is deleted, when, and how do I offboard someone? | [runbooks/retention.md](runbooks/retention.md) |
-| What metrics exist and what should alert? | [runbooks/observability.md](runbooks/observability.md) |
-| The model provider is down — what now? | [runbooks/llm-outage.md](runbooks/llm-outage.md) |
-| The provider is blocked from this network — how do I still measure? | [runbooks/provider-tunnel.md](runbooks/provider-tunnel.md) |
-| Webhooks return 401 — what now? | [runbooks/webhook-auth.md](runbooks/webhook-auth.md) |
-| How do I turn on Telegram or VK? | [runbooks/channels.md](runbooks/channels.md) |
-| How is answer quality measured? | [evals/README.md](evals/README.md), case contract [contracts/golden.schema.json](contracts/golden.schema.json) |
-| How is the risk radar scored, and what does a label mean? | [evals/sentiment-guide.md](evals/sentiment-guide.md) |
-| How is the retrieval corpus built, and what can it prove? | [evals/corpus-design.md](evals/corpus-design.md) |
-| Where do measured numbers live? | [measurements/TEMPLATE.md](measurements/TEMPLATE.md) |
-| Where does a postmortem live? | [incidents/TEMPLATE.md](incidents/TEMPLATE.md) |
+| Что за система и как идёт сообщение | [architecture.md](architecture.md) |
+| Как писать код, тесты и коммиты | [conventions.md](conventions.md) |
+| Что значит слово | [glossary.md](glossary.md) |
+| Что можно ответить сотруднику | [product/answer-policy.md](product/answer-policy.md) |
+| Что вызывает кабинет | [contracts/admin-api.md](contracts/admin-api.md) |
+| Как выкатить и откатить | [runbooks/deploy.md](runbooks/deploy.md) |
+| Как измеряется качество | [evals/README.md](evals/README.md) |
+| Где лежат числа | [measurements/TEMPLATE.md](measurements/TEMPLATE.md) |
 
-## Document classes
+## Правила системы
 
-| Class | Purpose | Change rule |
-|---|---|---|
-| `architecture.md`, `glossary.md`, `conventions.md` | normative description of the system | edit in place, keep the anchor headings stable |
-| `contracts/` | schemas and API surfaces that code is generated from or validated against | schema first, code second |
-| `decisions/` | immutable records of why | never edit an accepted ADR; add a new one |
-| `runbooks/` | steps under stress | keep short, imperative, tested in staging |
-| `product/` | rules the bot and the cockpit obey | edit with a matching test or eval case |
-| `case/` | transcript of the client brief | append corrections with a date; never reword the quotes |
-| `evals/` | the quality gate | every new failure mode becomes a case |
-| `measurements/`, `incidents/` | evidence | one file per event, never rewritten |
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Архитектура](architecture.md) | Из чего состоит система и как сообщение проходит через неё. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Соглашения](conventions.md) | Как писать код, тесты и коммиты и как вести документацию в репозитории. | `p4ulbr4dl3y` | 2026-10-24 |
 
-## Frontmatter
+## Контракты
 
-Every document under `knowledge/` carries YAML frontmatter validated by
-[contracts/doc.schema.json](contracts/doc.schema.json). Documents under `docs/` do not need
-frontmatter; the index above is their identifier.
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Контракт admin API](contracts/admin-api.md) | Какие роуты отдаёт admin API, какие права нужны и какой формы ответы получает кабинет. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Контракт канала](contracts/channel.md) | Где проходит граница между доменом и мессенджером и что обязан выполнять адаптер канала. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Контракт MAX Bot API](contracts/max-api.md) | Какие факты MAX Bot API использует интеграция и откуда каждый из них взят. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Контракт Telegram Bot API](contracts/telegram-api.md) | Какие факты Telegram Bot API использует интеграция и откуда каждый из них взят. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Контракт VK Callback API](contracts/vk-api.md) | Какие факты VK Callback API использует интеграция и откуда каждый из них взят. | `p4ulbr4dl3y` | 2026-10-24 |
+
+## Решения (ADR)
+
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Функциональное ядро, императивная оболочка](decisions/0001-functional-core.md) | Почему переходы сценария, ранжирование и проверка обоснованности живут в чистом core без I/O. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Вебхук подтверждает приём до работы](decisions/0002-async-webhook.md) | Почему `api` отвечает `200` до генерации ответа и как дедупликация держит обработку в одном экземпляре. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Гибридный поиск, переранжирование, затем генерация](decisions/0003-hybrid-retrieval.md) | Почему поиск идёт тремя стадиями и что каждая стадия даёт по отдельности. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Промпты — версионированные файлы](decisions/0004-prompts-as-data.md) | Почему промпт лежит файлом с версией и метаданными, а не строкой в коде. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Один Postgres для состояния, векторов, очереди и outbox](decisions/0005-single-postgres.md) | Почему состояние прогонов, очередь, outbox и векторы живут в одной базе и где её потолок. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Лучше отказать, чем угадать](decisions/0006-refuse-over-guess.md) | Почему ответ без цитаты на найденный фрагмент заменяется эскалацией, а не уходит сотруднику. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Экстрактивный провайдер для офлайн-демо](decisions/0007-extractive-demo-provider.md) | Зачем нужен `LLM_PROVIDER=extractive` и почему он не может обслуживать продакшен. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Переранжирование через хостинговый кросс-энкодер](decisions/0008-hosted-rerank.md) | Почему третий шаг поиска вынесен в HTTP-вызов и как отказ переранжировщика не роняет ответ. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Бюджет p95 в восемь секунд для хостинговой модели](decisions/0009-latency-budget.md) | Откуда взялся гейт в 8000 мс, чем он измерен и в каком порядке резать конвейер. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Один вендор для ответа, эмбеддингов и переранжирования](decisions/0010-one-model-vendor.md) | Почему пилот свёл ответы, эмбеддинги и переранжирование к одному провайдеру и что это стоило. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Jev как необязательный классификатор тональности](decisions/0011-jev-sentiment-pilot.md) | Что даёт Jev за флагом `SENTIMENT_PROVIDER=jev`, чем он измерен и чего ещё не хватает для решения. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Без BM25 в пути запроса, пока](decisions/0012-no-bm25-in-request-path.md) | Почему ParadeDB и BM25 не включены в продакшене и при каких условиях к ним вернуться. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Модель — профиль, а не путь кода](decisions/0013-model-profiles.md) | Почему диалект, конверт и цены модели уехали в YAML-профиль со схемой и как это проверяется. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Кабинет пишет через outbox](decisions/0014-cabinet-writes-through-the-outbox.md) | Как ответ рекрутёра доходит до сотрудника и что стирает увольнение. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Извлечение — адаптер, а не шаг вебхука](decisions/0015-extraction-is-an-adapter.md) | Почему разбор PDF живёт за портом, а правила качества остаются чистыми функциями. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Контекстный поиск при индексации](decisions/0016-contextual-retrieval.md) | Почему префикс к фрагменту написан, измерен и оставлен выключенным. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Прогон оценки тональности как прибор](decisions/0017-sentiment-eval-v2.md) | Как меряется тональность, почему прогон отменяется при сбое провайдера и что показали числа. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Сессионная кука кабинета](decisions/0018-session-cookie-for-the-cabinet.md) | Почему кабинет меняет bearer-токен на HttpOnly-куку и что это меняет в защите. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Канал — это адрес, а не клиент](decisions/0019-a-channel-is-an-address.md) | Как один core обслуживает несколько мессенджеров и что для этого пришлось разделить. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Jev как профиль классификатора](decisions/0020-jev-as-a-classifier-profile.md) | Почему Jev переехал в профиль классификатора, что это дало и что показали два прогона. | `p4ulbr4dl3y` | 2026-10-24 |
+| [У идентичности модели один дом](decisions/0021-model-identity-has-one-home.md) | Почему имя модели живёт только в профиле, а env-фолбэк убран. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Загрузка документа асинхронна](decisions/0022-knowledge-upload-is-async.md) | Запрос принимает документ и ставит в очередь, индексирует воркер. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Дедупликация доставки, а не предложения](decisions/0023-a-delivery-is-deduped-not-a-sentence.md) | Почему повтор текста из другого мессенджера остаётся ответом, а не отбрасывается. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Версия в пути админ-API кабинета](decisions/0024-a-versioned-cabinet-api.md) | Почему кабинет ходит в /admin/api/v1 и как живёт некверсионный алиас. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Демо-модели на OpenCode и OpenRouter](decisions/0025-demo-models-on-opencode-and-openrouter.md) | Какие модели отвечают в демо, откуда они и что это значит для 152-ФЗ. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Модели на российской площадке для пилота по 152-ФЗ](decisions/0026-russian-hosted-model-options.md) | Что прочитано у российских провайдеров, что рекомендовано и чего не хватает для решения. | `p4ulbr4dl3y` | 2026-10-24 |
+
+## Прогоны и восстановление
+
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Пакет доказательств по 152-ФЗ](runbooks/152fz-checklist.md) | Чек-лист инженерных доказательств обработки персональных данных для DPO оператора. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Бэкап и восстановление](runbooks/backup.md) | Как снимать дамп Postgres, проверять его и восстанавливать базу после сбоя. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Включение канала](runbooks/channels.md) | Как включить Telegram или VK рядом с MAX и доказать, что канал работает от вебхука до доставки. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Прогон по cron](runbooks/cron.md) | Как устроен отдельный cron-вход и как проверить один проход планировщика. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Деплой](runbooks/deploy.md) | Как выкатить прод на одну VM, проверить его смоуком и откатиться на прошлый образ. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Документ не дошёл до корпуса](runbooks/extraction.md) | Где искать загруженный файл, что значит каждый отказ извлечения и как перечитать его с другим профилем. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Отказ провайдера моделей](runbooks/llm-outage.md) | Симптомы, разбор и действия, когда модель не отвечает, а бот должен жить. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Миграция базы](runbooks/migrate.md) | Правила правки схемы, проверка на черновой базе и вывод базы из чужой линии ревизий. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Наблюдаемость](runbooks/observability.md) | Что процесс отдаёт в метриках, по каким порогам ставить алерты и что сознательно не собирается. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Доступ к заблокированному провайдеру](runbooks/provider-tunnel.md) | Как провести запросы к провайдеру моделей через SOCKS-туннель и что об этом писать в измерении. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Хранение и офбординг](runbooks/retention.md) | Что система хранит, сколько и как проверить, что чистка прошла. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Вебхуки отклоняются или не приходят](runbooks/webhook-auth.md) | Порядок проверок, когда MAX перестаёт доставлять события и вебхук отвечает отказом. | `p4ulbr4dl3y` | 2026-10-24 |
+
+## Продукт
+
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Политика ответа](product/answer-policy.md) | Что ассистент отвечает сам, что отдаёт человеку и на что обязан опираться. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Бизнес-кейс](product/business-case.md) | Сколько стоит ответ и от каких вводов заказчика зависит выгода пилота. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Защита проекта](product/defense.md) | Сценарий выступления: маршрут демо, текст на пять минут, ответы на вопросы. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Демо за пять минут](product/demo-script.md) | Как показать новичка, ассистента и кабинет рекрутера на защите. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Риск-радар](product/risk-radar.md) | Как свободные ответы становятся сигналами риска и когда рекрутёра поднимают. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Роли и доступ](product/roles.md) | Кто что видит и что может в кабинете и в базе знаний. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Картинки сценария](product/scenario-images.md) | Какие открытки «Корсика» привязаны к шагам сценария и откуда они взялись. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Сценарии онбординга](product/scenarios.md) | Как устроены шаги, таймеры, опросы и картинки в сценарии. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Сравнение вендоров](product/vendor-comparison.md) | Цены на модели, эмбеддинги, переранжирование и GPU для пилота в российском контуре. | `p4ulbr4dl3y` | 2026-10-24 |
+
+## Оценки качества
+
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Корпус для поиска](evals/corpus-design.md) | Из чего собран корпус и что его числа способны доказать. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Как размечать тональность](evals/sentiment-guide.md) | Правила меток тона и тегов для набора sentiment.yaml. | `p4ulbr4dl3y` | 2026-10-24 |
+
+## Измерения
+
+- [Шаблон измерения](measurements/TEMPLATE.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: ёмкость демо-VPS](measurements/2026-10-23-demo-vps-capacity.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: answer-v3-gpt-4.1-mini](measurements/2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: bge-m3-rerank-v2](measurements/2026-10-23-eval-full-bge-m3-rerank-v2.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: bge-m3-rerank](measurements/2026-10-23-eval-full-bge-m3-rerank.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: прогон полный case corpus](measurements/2026-10-23-eval-full-case-corpus.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: deepseek](measurements/2026-10-23-eval-full-deepseek.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: gpt-4.1-mini-bge-m3-rerank](measurements/2026-10-23-eval-full-gpt-4.1-mini-bge-m3-rerank.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: offline](measurements/2026-10-23-eval-full-offline.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: прогон распознавание](measurements/2026-10-23-eval-ocr.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: offline](measurements/2026-10-23-eval-retrieval-offline.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: parade-bm25](measurements/2026-10-23-eval-retrieval-parade-bm25.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: qwen3-embedding-8b-tunnel](measurements/2026-10-23-eval-retrieval-qwen3-embedding-8b-tunnel.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: qwen3-embedding-8b](measurements/2026-10-23-eval-retrieval-qwen3-embedding-8b.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: tsrank-16](measurements/2026-10-23-eval-retrieval-tsrank-16.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: прогон поиск](measurements/2026-10-23-eval-retrieval.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар jev расширенный набор v1](measurements/2026-10-23-sentiment-jev-expanded-v1.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар jev расширенный набор v2](measurements/2026-10-23-sentiment-jev-expanded-v2.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар jev](measurements/2026-10-23-sentiment-jev.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: baseline](measurements/2026-10-23-sentiment-keyword-baseline.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар ключевые слова set v2 dev](measurements/2026-10-23-sentiment-keyword-set-v2-dev.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар ключевые слова set v2 test](measurements/2026-10-23-sentiment-keyword-set-v2-test.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар ключевые слова](measurements/2026-10-23-sentiment-keyword.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар промпт расширенный набор](measurements/2026-10-23-sentiment-prompt-expanded.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: gpt-4.1-mini](measurements/2026-10-23-sentiment-prompt-gpt-4.1-mini.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар промпт set v2 dev](measurements/2026-10-23-sentiment-prompt-set-v2-dev.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар промпт set v2 test](measurements/2026-10-23-sentiment-prompt-set-v2-test.md) — проверен 2026-10-24
+- [Оценка 2026-10-23: риск-радар промпт](measurements/2026-10-23-sentiment-prompt.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: переход между каналами](measurements/2026-10-24-cross-channel-move.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: baseline-v1](measurements/2026-10-24-eval-full-baseline-v1.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: baseline-v2](measurements/2026-10-24-eval-full-baseline-v2.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: baseline-v3](measurements/2026-10-24-eval-full-baseline-v3.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: baseline-v4](measurements/2026-10-24-eval-full-baseline-v4.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: baseline-v5](measurements/2026-10-24-eval-full-baseline-v5.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: final-v6](measurements/2026-10-24-eval-full-final-v6.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: prompt-v5](measurements/2026-10-24-eval-full-prompt-v5.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: prompt-v6-subset](measurements/2026-10-24-eval-full-prompt-v6-subset.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: prompt-v6](measurements/2026-10-24-eval-full-prompt-v6.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: prompt-v7](measurements/2026-10-24-eval-full-prompt-v7.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: прогон поиск acl matrix](measurements/2026-10-24-eval-retrieval-acl-matrix.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: arm-bm25-off](measurements/2026-10-24-eval-retrieval-arm-bm25-off.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: arm-bm25-on](measurements/2026-10-24-eval-retrieval-arm-bm25-on.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: arm-contextual-on](measurements/2026-10-24-eval-retrieval-arm-contextual-on.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: arm-plain](measurements/2026-10-24-eval-retrieval-arm-plain.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: noise-r1](measurements/2026-10-24-eval-retrieval-noise-r1.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: noise-r2](measurements/2026-10-24-eval-retrieval-noise-r2.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: noise-r3](measurements/2026-10-24-eval-retrieval-noise-r3.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: смоук канала VK](measurements/2026-10-24-vk-channel-smoke.md) — проверен 2026-10-24
+- [Оценка 2026-10-25: бюджет токенов](measurements/2026-10-25-token-budget.md) — проверен 2026-10-24
+
+## Инциденты
+
+- [Шаблон инцидента](incidents/TEMPLATE.md) — проверен 2026-10-24
+- [2026-10-24 — база из feature-ветки не поднималась](incidents/2026-10-24-divergent-alembic-lineage.md) — проверен 2026-10-24
+
+## Кейс клиента
+
+| Документ | О чём | Владелец | Проверен |
+|---|---|---|---|
+| [Кейс ПОЛИПЛАСТИК, 2026](case/poliplastic-2026.md) | Что заказчик просил на хакатоне, что уже было у него до нас и где кончается бриф. | `p4ulbr4dl3y` | 2026-10-24 |
+
+## Промпты
+
+Тело промпта — файл, который читает код. Версии не правятся: правка — новая версия.
+
+- **answer**: [v1](prompts/answer/v1.md), [v2](prompts/answer/v2.md), [v3](prompts/answer/v3.md), [v4](prompts/answer/v4.md), [v5](prompts/answer/v5.md), [v6](prompts/answer/v6.md), [v7](prompts/answer/v7.md) (текущая)
+- **context**: [v1](prompts/context/v1.md) (текущая)
+- **sentiment**: [v1](prompts/sentiment/v1.md) (текущая)
+
+## Файлы-данные
+
+Схемы, профили и рубрики не несут frontmatter: их читает код, а описывает документ рядом.
+
+- `docs/contracts/*.schema.json` — схемы контрактов, их описывает [contracts/](contracts/)
+- `docs/prompts/<роль>/<версия>.yaml` — рубрики и промпты с метаданными
+- `docs/evals/*.yaml` — золотые наборы и фикстуры оценок
+- `docs/assets/` — картинки для `product/`

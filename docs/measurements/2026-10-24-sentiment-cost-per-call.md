@@ -10,7 +10,7 @@ last_verified: 2026-10-24
 # Оценка 2026-10-24 — пройдена
 
 - команда: `uv run --with tokenizers python scripts/token_budget.py --cases docs/evals/sentiment.yaml --prompt docs/prompts/sentiment/v1.md --tokenizer $HUB/models--deepseek-ai--DeepSeek-V4-Flash/snapshots/*/tokenizer.json --tokenizer $HUB/models--zai-org--GLM-5.3-flash/snapshots/*/tokenizer.json --tokenizer $HUB/models--openai--gpt-oss-120b/snapshots/*/tokenizer.json --tokenizer $HUB/models--ai-sage--GigaChat3.1-10B-A1.8B/snapshots/*/tokenizer.json`
-- коммит: `f9ef683`
+- коммит: `36bebf9`
 - окружение: `local` macOS, `uv run --with tokenizers`, файлы токенизаторов из кеша Hugging Face
 - набор: `docs/evals/sentiment.yaml`, 163 кейса
 - промпт: `docs/prompts/sentiment/v1.md`

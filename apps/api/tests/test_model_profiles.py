@@ -15,6 +15,7 @@ from onboarding.app.llm.profiles import (
     answer_profile,
     classify_profile,
     embedding_profile,
+    personal_data_contour,
     rerank_profile,
 )
 from onboarding.app.settings import REPO_ROOT, Settings
@@ -254,3 +255,61 @@ async def test_build_llm_wires_the_selected_profile() -> None:
     assert isinstance(llm, GatewayLLM)
     assert llm.profile.name == "opencode-deepseek-v4.1-flash"
     assert llm.profile.model == "deepseek-v4.1-flash"
+
+
+def test_a_demo_gateway_is_outside_the_personal_data_contour() -> None:
+    """ADR 0030: OpenRouter and OpenCode stay out of the contour that may touch employee data."""
+    assert (
+        personal_data_contour(
+            settings(
+                llm_provider="openai",
+                llm_profile="openrouter-gpt-4.1-mini",
+                embed_provider="openai",
+                embed_profile="openrouter-qwen3-embedding-8b",
+                rerank_base_url="https://openrouter.ai/api/v1",
+                rerank_profile="openrouter-nemotron-rerank-8b",
+            )
+        )
+        is False
+    )
+
+
+def test_a_russian_hosted_stack_is_inside_the_contour() -> None:
+    assert (
+        personal_data_contour(
+            settings(
+                llm_provider="gigachat",
+                llm_profile="gigachat-2-pro",
+                embed_provider="gigachat",
+                embed_profile="gigachat-embeddings",
+            )
+        )
+        is True
+    )
+
+
+def test_local_stages_do_not_leave_the_contour() -> None:
+    """Hashing and the extractive answerer compute on this machine and call nothing."""
+    assert (
+        personal_data_contour(
+            settings(llm_provider="extractive", embed_provider="hashing", embed_profile="")
+        )
+        is True
+    )
+
+
+def test_one_cross_border_stage_is_enough_to_leave_the_contour() -> None:
+    """The question is not "is the answer model local" but "does anything leave"."""
+    assert (
+        personal_data_contour(
+            settings(
+                llm_provider="gigachat",
+                llm_profile="gigachat-2-pro",
+                embed_provider="gigachat",
+                embed_profile="gigachat-embeddings",
+                rerank_base_url="https://openrouter.ai/api/v1",
+                rerank_profile="openrouter-cohere-rerank-v3.5",
+            )
+        )
+        is False
+    )

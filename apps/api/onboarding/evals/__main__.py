@@ -15,7 +15,12 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 from onboarding.app.container import build_container
-from onboarding.app.llm.profiles import answer_profile, embedding_profile, rerank_profile
+from onboarding.app.llm.profiles import (
+    answer_profile,
+    embedding_profile,
+    personal_data_contour,
+    rerank_profile,
+)
 from onboarding.app.settings import Settings
 from onboarding.evals.artifact import commit_hash
 from onboarding.evals.runner import (
@@ -135,7 +140,12 @@ async def _run(args: argparse.Namespace, cases: tuple[Case, ...]) -> int:
     finally:
         await container.aclose()
 
-    report = summarise(results, generated=generated, baseline=baseline)
+    report = summarise(
+        results,
+        generated=generated,
+        baseline=baseline,
+        personal_data=personal_data_contour(settings),
+    )
     print(_console_table(report))
     print(_console_strata(report))
 
@@ -174,7 +184,8 @@ def _compare(path: Path, report: Report) -> tuple[PairedDelta, ...]:
 def _console_table(report: Report) -> str:
     lines = [f"{'metric':<24}{'value':>10}", "-" * 34]
     for name, value in report.metrics.items():
-        lines.append(f"{name:<24}{value:>10.3f}")
+        suffix = " (diagnostic)" if name in report.diagnostics else ""
+        lines.append(f"{name:<24}{value:>10.3f}{suffix}")
     if report.failures:
         lines.append(f"{'FAILED':<24}{', '.join(report.failures)}")
     else:

@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 
 from onboarding.core.metrics import mean, percentile, recall_at_k, reciprocal_rank
-from onboarding.evals.runner import MAXIMUMS, Case, CaseResult, Report, summarise
+from onboarding.evals.runner import (
+    MAXIMUMS,
+    Case,
+    CaseResult,
+    Report,
+    _render_metrics,
+    summarise,
+)
 
 
 def test_recall_counts_expected_documents_in_the_top_k() -> None:
@@ -133,6 +140,48 @@ def test_latency_gate_is_an_upper_bound() -> None:
     assert slow.failures == ("p95_completion_ms",)
     assert crawling.failures == ("p95_answer_ms",)
     assert weak.failures == ("recall_at_5",)
+
+
+def test_a_demo_gateway_reports_latency_without_gating_on_it() -> None:
+    """A cross-border endpoint cannot answer for personal data (ADR 0030), so its p95 is a vendor.
+
+    The number stays in the report — hiding it would be the lie the gate exists to prevent — but a
+    red mark against it would read as a defect of the system the pilot would not run on.
+    """
+    demo = Report(
+        metrics={"p95_completion_ms": 11355.0, "p95_answer_ms": 20771.0, "recall_at_5": 0.99},
+        results=(),
+        generated=True,
+        personal_data=False,
+    )
+
+    assert demo.failures == ()
+    assert demo.diagnostics == ("p95_completion_ms", "p95_answer_ms")
+    assert "диагностика" in "".join(_render_metrics(demo))
+
+
+def test_the_pilot_contour_still_gates_on_latency() -> None:
+    pilot = Report(
+        metrics={"p95_completion_ms": 11355.0},
+        results=(),
+        generated=True,
+        personal_data=True,
+    )
+
+    assert pilot.failures == ("p95_completion_ms",)
+    assert pilot.diagnostics == ()
+
+
+def test_a_leak_is_a_gate_on_every_contour() -> None:
+    """The contour relaxes a vendor budget, never confidentiality."""
+    demo = Report(
+        metrics={"leak_rate": 0.1, "p95_answer_ms": 90000.0},
+        results=(),
+        generated=True,
+        personal_data=False,
+    )
+
+    assert demo.failures == ("leak_rate",)
 
 
 def test_the_completion_budget_matches_the_documented_one() -> None:

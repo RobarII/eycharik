@@ -175,6 +175,8 @@ def embedding_profile(settings: Settings) -> EmbeddingProfile:
             family=cast(Any, _EMBED_FAMILY["hashing"]),
             dim=settings.embed_dim,
             timeout_s=_env_float(settings.embed_timeout_s, _EMBED.timeout_s),
+            # Hashing computes on this machine, so the text never leaves the contour.
+            personal_data=True,
         )
     raise ProfileError(
         "EMBED_PROFILE is required: a model identity belongs in apps/api/model-profiles/embed"
@@ -200,6 +202,30 @@ def rerank_profile(settings: Settings) -> RerankProfile | None:
         timeout_s=_env_float(settings.rerank_timeout_s, _RERANK.timeout_s),
         deadline_s=_env_float(settings.rerank_deadline_s, _RERANK.deadline_s),
     )
+
+
+def personal_data_contour(settings: Settings) -> bool:
+    """Whether every stage the pipeline calls stays inside the contour ADR 0030 allows.
+
+    A report needs this because latency of a demo gateway is not the latency of the pilot: a
+    cross-border endpoint is not admissible for personal data at all, and a free one answers 429 in
+    bursts. The eval gates on latency only where the contour makes the number the system's own
+    (ADR 0035).
+    """
+    stages: list[Any] = []
+    try:
+        stages.append(embedding_profile(settings))
+        # The extractive answerer builds its answer from the retrieved fragments on this machine
+        # and calls nothing, so it cannot leave the contour.
+        if settings.llm_provider != "extractive":
+            stages.append(answer_profile(settings))
+        reranker = rerank_profile(settings)
+    except ProfileError:
+        # A stack nobody can describe is not a stack somebody checked.
+        return False
+    if reranker is not None:
+        stages.append(reranker)
+    return all(profile.personal_data for profile in stages)
 
 
 def classify_profile(settings: Settings) -> ClassifyProfile:
@@ -241,6 +267,7 @@ def _answer(data: dict[str, Any]) -> AnswerProfile:
         price_input_rub_per_1k=_number(data, "price_input_rub_per_1k", 0.0),
         price_output_rub_per_1k=_number(data, "price_output_rub_per_1k", 0.0),
         price_cache_read_rub_per_1k=_number(data, "price_cache_read_rub_per_1k", 0.0),
+        personal_data=_flag(data, "personal_data", default=False),
     )
 
 
@@ -252,6 +279,7 @@ def _embedding(data: dict[str, Any]) -> EmbeddingProfile:
         dim=_integer(data, "dim", _EMBED.dim),
         dimensions_param=_flag(data, "dimensions_param", default=False),
         timeout_s=_number(data, "timeout_s", _EMBED.timeout_s),
+        personal_data=_flag(data, "personal_data", default=False),
     )
 
 
@@ -262,6 +290,7 @@ def _rerank(data: dict[str, Any]) -> RerankProfile:
         family=_family(data, ("cohere-rerank",), "cohere-rerank"),
         timeout_s=_number(data, "timeout_s", _RERANK.timeout_s),
         deadline_s=_number(data, "deadline_s", _RERANK.deadline_s),
+        personal_data=_flag(data, "personal_data", default=False),
     )
 
 
@@ -274,6 +303,7 @@ def _classify(data: dict[str, Any]) -> ClassifyProfile:
         timeout_s=_number(data, "timeout_s", _CLASSIFY.timeout_s),
         max_retries=_integer(data, "max_retries", _CLASSIFY.max_retries),
         price_input_rub_per_1k=_number(data, "price_input_rub_per_1k", 0.0),
+        personal_data=_flag(data, "personal_data", default=False),
     )
 
 

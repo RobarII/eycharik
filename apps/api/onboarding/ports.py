@@ -102,6 +102,10 @@ class AnswerProfile:
     price_input_rub_per_1k: float = 0.0
     price_output_rub_per_1k: float = 0.0
     price_cache_read_rub_per_1k: float = 0.0
+    # ``True`` when the call does not take the employee's text across the border, so the profile is
+    # admissible for personal data (ADR 0030). A model on a demo gateway is not, and its latency is
+    # then a property of the gateway: the eval reports it and does not gate on it.
+    personal_data: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +119,8 @@ class EmbeddingProfile:
     # Matryoshka models answer any prefix width; asking for a shorter one avoids a migration.
     dimensions_param: bool = False
     timeout_s: float = 10.0
+    # See ``AnswerProfile.personal_data``. A local embedder keeps the text on the machine.
+    personal_data: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +132,8 @@ class RerankProfile:
     family: Literal["cohere-rerank"] = "cohere-rerank"
     timeout_s: float = 3.0
     deadline_s: float = 6.0
+    # See ``AnswerProfile.personal_data``.
+    personal_data: bool = False
     """The whole stage, retries included. A free endpoint answers 429 in bursts, and three spaced
     attempts at an 8 s timeout reach 32 s, which turns a ranking improvement into a latency
     incident. The budget stops the retrying, not the answering: a failure keeps the hybrid order."""
@@ -147,6 +155,8 @@ class ClassifyProfile:
     timeout_s: float = 8.0
     max_retries: int = 2
     price_input_rub_per_1k: float = 0.0
+    # See ``AnswerProfile.personal_data``.
+    personal_data: bool = False
 
 
 @runtime_checkable

@@ -78,6 +78,11 @@ MAXIMUMS: dict[str, float] = {
     "leak_rate": 0.0,
     "case_errors": 0.0,
 }
+# Latency is a property of the gateway as much as of the code: a free endpoint answers 429 in
+# bursts and a cross-border one is not admissible for personal data at all (ADR 0030). Gating on it
+# outside the pilot contour measures the vendor, so those two are reported and not gated there
+# (ADR 0035).
+LATENCY_MAXIMUMS: tuple[str, ...] = ("p95_completion_ms", "p95_answer_ms")
 # A stratum gate is only quoted when the stratum can carry it. Below this count the interval is
 # wider than any regression worth catching.
 STRATUM_MIN_CASES = 10
@@ -533,6 +538,9 @@ class Report:
     strata: dict[str, dict[str, float]] = field(default_factory=dict)
     counts: dict[str, int] = field(default_factory=dict)
     baseline: Baseline | None = None
+    # Whether every stage of this run stayed inside the contour ADR 0030 allows. ``False`` means a
+    # demo gateway: the numbers describe it, and the latency budgets belong to the pilot instead.
+    personal_data: bool = True
 
     @property
     def gates(self) -> dict[str, float]:
@@ -552,6 +560,13 @@ class Report:
         }
 
     @property
+    def diagnostics(self) -> tuple[str, ...]:
+        """Maximums this run reports but does not gate: the contour makes them a vendor's."""
+        if self.personal_data:
+            return ()
+        return tuple(name for name in LATENCY_MAXIMUMS if name in self.metrics)
+
+    @property
     def failures(self) -> tuple[str, ...]:
         gates = self.gates
         below = [
@@ -562,7 +577,9 @@ class Report:
         above = [
             name
             for name, limit in MAXIMUMS.items()
-            if name in self.metrics and self.metrics[name] > limit
+            if name in self.metrics
+            and name not in self.diagnostics
+            and self.metrics[name] > limit
         ]
         per_stratum: list[str] = []
         if self.baseline is not None:
@@ -663,6 +680,7 @@ def summarise(
     *,
     generated: bool,
     baseline: Baseline | None = None,
+    personal_data: bool = True,
 ) -> Report:
     strata: dict[str, dict[str, float]] = {}
     counts: dict[str, int] = {}
@@ -679,6 +697,7 @@ def summarise(
         strata=strata,
         counts=counts,
         baseline=baseline,
+        personal_data=personal_data,
     )
 
 
@@ -802,6 +821,15 @@ def render_markdown(
     lines += _render_metrics(report)
     if report.failures:
         lines += ["", f"Проваленные гейты: {', '.join(report.failures)}"]
+    if report.diagnostics:
+        lines += [
+            "",
+            "## Задержка — диагностика",
+            "",
+            "Полный контур этого прогона выходит за границу, которую называет ADR 0030, поэтому "
+            "бюджет `p95` здесь не гейт: он измеряет шлюз, а не систему. Гейт задержки действует "
+            "на профилях с `personal_data: true`.",
+        ]
     lines += _render_strata(report)
     lines += _render_comparison(comparison)
     return "\n".join(lines) + "\n"
@@ -813,6 +841,9 @@ def _render_metrics(report: Report) -> list[str]:
     for name, value in report.metrics.items():
         if name == "case_errors":
             lines.append(f"| `{name}` | {value:.0f} | <= {MAXIMUMS[name]:.0f} |")
+            continue
+        if name in report.diagnostics:
+            lines.append(f"| `{name}` | {value:.0f} | диагностика |")
             continue
         if name in MAXIMUMS:
             limit = f"<= {MAXIMUMS[name]:.2f}"

@@ -13,3 +13,6 @@ retry_empty_completion: true
 # Prices stay 0 until the Sber invoice anchors them; never invent a number (workspace rule 5).
 price_input_rub_per_1k: 0.0
 price_output_rub_per_1k: 0.0
+# ADR 0030: вызов остаётся в контуре, допустимом для персональных данных. Задержка такого
+# профиля — задержка пилота, и гейт `p95` относится к ней.
+personal_data: true

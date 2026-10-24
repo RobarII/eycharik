@@ -31,10 +31,9 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, NoReturn
+from typing import Any, NoReturn
 
 import httpx
-import yaml
 
 from onboarding.app.clock import SystemClock
 from onboarding.app.llm.gateway import build_llm
@@ -43,40 +42,31 @@ from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
 from onboarding.core.models import RiskLevel, RiskSignal, Sentiment, SignalTag
 from onboarding.core.risk import assess
-from onboarding.evals.artifact import commit_hash
+
+# ``Case``, ``load_cases`` and ``SentimentSetError`` stay importable from here: the module is the
+# eval's public surface even when the loader lives next door.
+from onboarding.evals.sentiment_cases import (
+    DEFAULT_CASES,
+    SPLITS,
+    Case,
+    SentimentSetError,
+    load_cases,
+)
+from onboarding.evals.sentiment_report import render_artifact, render_markdown
 from onboarding.ports import AuditLog, SentimentAnalysis
 
 ROOT = Path(__file__).resolve().parents[4]
-DEFAULT_CASES = ROOT / "docs" / "evals" / "sentiment.yaml"
 DEFAULT_OUT = ROOT / "docs" / "measurements"
 # The provider is the class of model, not a vendor (ADR 0029). ``jev`` is the name the first
 # artifacts used; it still resolves so an old command in a measurement file keeps running, but every
 # new artifact records ``decisions``.
 PROVIDERS = ("keyword", "prompt", "decisions", "jev")
 ALIASES = {"jev": "decisions"}
-SPLITS = ("dev", "test", "all")
 Z_95 = 1.959963984540054
 BOOTSTRAP_ROUNDS = 5000
 BOOTSTRAP_SEED = 20261023
-SET_VERSION = 2
-MAX_TAGS_PER_CASE = 3
 # A degraded provider is an outage, not a model quality result. Above this share, refuse the run.
 MAX_FALLBACK_RATE = 0.10
-
-
-class SentimentSetError(ValueError):
-    """The labeled set does not satisfy the schema this runner reads."""
-
-
-@dataclass(frozen=True, slots=True)
-class Case:
-    id: str
-    text: str
-    sentiment: Sentiment
-    tags: tuple[SignalTag, ...]
-    split: Literal["dev", "test"] = "dev"
-    expect_escalation: bool = False
-    note: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,99 +362,6 @@ def _percentile(values: list[float], quantile: float) -> float:
     return ordered[index]
 
 
-def load_cases(path: Path, *, split: str = "all") -> tuple[Case, ...]:
-    if not path.is_file():
-        raise SentimentSetError(f"missing sentiment set {path}")
-    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict) or not isinstance(payload.get("cases"), list):
-        raise SentimentSetError(f"{path}: expected a cases list")
-    version = payload.get("version", 1)
-    if version != SET_VERSION:
-        raise SentimentSetError(f"{path}: version must be {SET_VERSION}, got {version!r}")
-    cases: list[Case] = []
-    seen: set[str] = set()
-    for item in payload["cases"]:
-        case = _case(item, path, seen)
-        if split in ("all", case.split):
-            cases.append(case)
-    if not cases:
-        raise SentimentSetError(f"{path}: no cases for split {split!r}")
-    dupes = _duplicate_texts(cases)
-    if dupes:
-        raise SentimentSetError(f"{path}: duplicate case text: {', '.join(sorted(dupes))}")
-    return tuple(cases)
-
-
-def _case(item: Any, path: Path, seen: set[str]) -> Case:
-    if not isinstance(item, dict):
-        raise SentimentSetError(f"{path}: every case must be a mapping")
-    case_id = item.get("id")
-    text = item.get("text")
-    if not isinstance(case_id, str) or not case_id or case_id in seen:
-        raise SentimentSetError(f"{path}: id must be a unique non-empty string")
-    if not isinstance(text, str) or not text.strip():
-        raise SentimentSetError(f"{path}: {case_id}: text must be a non-empty string")
-    try:
-        sentiment = Sentiment(str(item.get("sentiment")))
-    except ValueError:
-        raise SentimentSetError(f"{path}: {case_id}: unknown sentiment") from None
-    tags = _tags(item.get("tags", []), case_id, path)
-    split = item.get("split", "dev")
-    if split not in {"dev", "test"}:
-        raise SentimentSetError(f"{path}: {case_id}: split must be 'dev' or 'test'")
-    escalate = item.get("expect_escalation", False)
-    if not isinstance(escalate, bool):
-        raise SentimentSetError(f"{path}: {case_id}: expect_escalation must be a boolean")
-    if escalate and sentiment is not Sentiment.NEGATIVE:
-        raise SentimentSetError(
-            f"{path}: {case_id}: a crisis case must be labelled negative, got {sentiment.value}"
-        )
-    note = item.get("note", "")
-    if not isinstance(note, str):
-        raise SentimentSetError(f"{path}: {case_id}: note must be a string")
-    seen.add(case_id)
-    return Case(
-        id=case_id,
-        text=text,
-        sentiment=sentiment,
-        tags=tags,
-        split=split,
-        expect_escalation=escalate,
-        note=note,
-    )
-
-
-def _tags(raw: Any, case_id: str, path: Path) -> tuple[SignalTag, ...]:
-    if not isinstance(raw, list):
-        raise SentimentSetError(f"{path}: {case_id}: tags must be a list")
-    tags: list[SignalTag] = []
-    for item in raw:
-        try:
-            tag = SignalTag(str(item))
-        except ValueError:
-            raise SentimentSetError(f"{path}: {case_id}: unknown tag {item!r}") from None
-        if tag in tags:
-            raise SentimentSetError(f"{path}: {case_id}: duplicate tag {tag.value}")
-        tags.append(tag)
-    if len(tags) > MAX_TAGS_PER_CASE:
-        raise SentimentSetError(
-            f"{path}: {case_id}: at most {MAX_TAGS_PER_CASE} tags, "
-            "the classifier cannot return more"
-        )
-    return tuple(tags)
-
-
-def _duplicate_texts(cases: list[Case]) -> set[str]:
-    seen: dict[str, str] = {}
-    dupes: set[str] = set()
-    for case in cases:
-        normalized = " ".join(case.text.lower().split())
-        if normalized in seen:
-            dupes.add(case.id)
-        seen[normalized] = case.id
-    return dupes
-
-
 class CountingAudit:
     """Count what the classifier did to itself, so a fallback is visible in the report.
 
@@ -540,181 +437,6 @@ async def evaluate(
         cost_usd=audit.cost_usd,
         priced_calls=audit.priced_calls,
     )
-
-
-def render_markdown(
-    report: Report,
-    *,
-    command: str,
-    note: str,
-    comparison: Comparison | None = None,
-) -> str:
-    cases = report.cases
-    intervals = {
-        "sentiment_accuracy": report.sentiment_accuracy_ci,
-        "escalation_recall": report.escalation_recall_ci,
-    }
-    lines = [
-        f"# Оценка риска — {report.provider}",
-        "",
-        f"- команда: `{command}`",
-        f"- коммит: `{commit_hash()}`",
-        f"- окружение: `{Settings().environment}`",
-        f"- выборка: `{report.split}`",
-        f"- модель: `{report.model or 'deterministic'}`",
-        f"- рубрика: `{report.rubric or '—'}`",
-        f"- кейсов: {len(cases)} ({_split_counts(cases)})",
-        f"- повторов на кейс: {report.repeat}",
-        f"- вызовов: {len(report.results)}",
-        "",
-        "## Качество",
-        "",
-        "| метрика | значение | 95% CI |",
-        "|---|---|---|",
-        f"| `sentiment_accuracy` | {report.sentiment_accuracy:.3f} | "
-        f"{intervals['sentiment_accuracy'].render()} |",
-        f"| `case_accuracy` | {report.case_accuracy:.3f} | majority over repetitions |",
-        f"| `sentiment_macro_f1` | {report.macro_f1:.3f} | — |",
-        f"| `tag_precision` | {report.tag_precision:.3f} | — |",
-        f"| `tag_recall` | {report.tag_recall:.3f} | — |",
-        f"| `tag_f1` | {report.tag_f1:.3f} | — |",
-        f"| `escalation_recall` | {report.escalation_recall:.3f} | "
-        f"{intervals['escalation_recall'].render()} |",
-        f"| `false_alarm_rate` | {report.false_alarm_rate:.3f} | — |",
-        f"| `fallback_rate` | {report.fallback_rate:.3f} | — |",
-        f"| `format_error_rate` | {report.format_error_rate:.3f} | — |",
-        "",
-        "## Стоимость",
-        "",
-        "| метрика | значение |",
-        "|---|---|",
-        f"| `cost_rub_total` | {report.cost_rub:.4f} |",
-        f"| `cost_rub_per_1k_calls` | {report.cost_per_1k_calls:.4f} |",
-        f"| `input_tokens_total` | {report.input_tokens} |",
-        f"| `output_tokens_total` | {report.output_tokens} |",
-        f"| `cost_usd_total` | {report.cost_usd:.6f} |",
-        f"| `cost_usd_per_1k_calls` | {report.cost_usd_per_1k_calls:.6f} |",
-        f"| `priced_calls` | {report.priced_calls} / {len(report.results)} |",
-        "",
-        "## Задержка",
-        "",
-        "| метрика | значение |",
-        "|---|---|",
-        f"| `p50_latency_ms` | {report.p50_latency_ms:.1f} |",
-        f"| `p95_latency_ms` | {report.p95_latency_ms:.1f} |",
-        f"| `p99_latency_ms` | {report.p99_latency_ms:.1f} |",
-        "",
-        "## Полнота по тону",
-        "",
-        "| тон | полнота | кейсов с меткой |",
-        "|---|---|---|",
-    ]
-    for sentiment, recall in report.per_class_recall.items():
-        expected = sum(1 for result in report.results if result.case.sentiment is sentiment)
-        lines.append(f"| `{sentiment.value}` | {recall:.3f} | {expected} |")
-    lines += [
-        "",
-        "## Матрица ошибок",
-        "",
-        "Строки — метка, столбцы — предсказание.",
-        "",
-        "| метка \\ предсказание | " + " | ".join(item.value for item in Sentiment) + " |",
-        "|---|" + "---|" * len(Sentiment),
-    ]
-    for label in Sentiment:
-        row = [str(report.confusion.get((label, predicted), 0)) for predicted in Sentiment]
-        lines.append(f"| `{label.value}` | " + " | ".join(row) + " |")
-    lines += [
-        "",
-        "## Полнота по тегу",
-        "",
-        "| тег | полнота | кейсов с меткой |",
-        "|---|---|---|",
-    ]
-    for tag, recall in report.per_tag_recall.items():
-        expected = sum(1 for result in report.results if tag in result.case.tags)
-        lines.append(f"| `{tag.value}` | {recall:.3f} | {expected} |")
-    if note:
-        lines += ["", f"Заметка: {note}"]
-    if comparison is not None:
-        lines += ["", "## Сравнение", "", _comparison_markdown(comparison)]
-    if report.flaky_cases:
-        lines += [
-            "",
-            "## Нестабильные кейсы",
-            "",
-            "Кейс, вердикт которого сменился между повторами. Гейт не может быть строже этого.",
-            "",
-            "| кейс | вердикты |",
-            "|---|---|",
-        ]
-        for case_id in report.flaky_cases:
-            seen = sorted(
-                {
-                    result.signal.sentiment.value
-                    for result in report.results
-                    if result.case.id == case_id
-                }
-            )
-            lines.append(f"| `{case_id}` | {', '.join(seen)} |")
-    if report.missed_escalations:
-        lines += [
-            "",
-            "## Пропущенные эскалации",
-            "",
-            "Рекрутёра надо было предупредить, а его не предупредили. Этот список важнее",
-            "любого среднего.",
-            "",
-            "| кейс | ожидаемый тон | предсказанный тон | теги |",
-            "|---|---|---|---|",
-        ]
-        for result in report.missed_escalations:
-            tags = ", ".join(tag.value for tag in result.signal.tags)
-            lines.append(
-                f"| `{result.case.id}` | {result.case.sentiment.value} | "
-                f"{result.signal.sentiment.value} | {tags} |"
-            )
-    if report.failures:
-        lines += [
-            "",
-            "## Ошибки разметки",
-            "",
-            "| кейс | ожидалось | получено | теги |",
-            "|---|---|---|---|",
-        ]
-        for failure in report.failures:
-            tags = ", ".join(tag.value for tag in failure.signal.tags)
-            lines.append(
-                f"| `{failure.case.id}` | {failure.case.sentiment.value} | "
-                f"{failure.signal.sentiment.value} | {tags} |"
-            )
-    lines.append("")
-    return "\n".join(lines)
-
-
-def _comparison_markdown(comparison: Comparison) -> str:
-    verdict = (
-        "разница неотличима от шума"
-        if comparison.interval.low <= 0.0 <= comparison.interval.high
-        else ("кандидат лучше" if comparison.delta > 0 else "кандидат хуже")
-    )
-    return "\n".join(
-        [
-            f"- метрика: `{comparison.metric}`",
-            f"- парных кейсов: {comparison.paired_cases}",
-            f"- базовый: {comparison.baseline:.3f}",
-            f"- кандидат: {comparison.candidate:.3f}",
-            f"- дельта: {comparison.delta:+.3f} (95% бутстрэп-CI {comparison.interval.render()})",
-            f"- p(дельта <= 0): {comparison.p_value:.3f}",
-            f"- чтение: {verdict}",
-        ]
-    )
-
-
-def _split_counts(cases: tuple[Case, ...]) -> str:
-    dev = sum(1 for case in cases if case.split == "dev")
-    test = len(cases) - dev
-    return f"dev {dev}, test {test}"
 
 
 def _correctness(report: Report) -> dict[str, bool]:
@@ -823,52 +545,6 @@ def load_artifact(path: Path) -> Report:
         cost_usd=float(header.get("cost_usd", 0.0)),
         priced_calls=int(header.get("priced_calls", 0)),
     )
-
-
-def render_artifact(report: Report, *, command: str) -> str:
-    header = {
-        "kind": "run",
-        "provider": report.provider,
-        "split": report.split,
-        "repeat": report.repeat,
-        "commit": commit_hash(),
-        "environment": Settings().environment,
-        "prompt_version": report.prompt_version,
-        "rubric": report.rubric or None,
-        "model": report.model or None,
-        "input_tokens": report.input_tokens,
-        "output_tokens": report.output_tokens,
-        "cost_rub": round(report.cost_rub, 6),
-        "cost_usd": round(report.cost_usd, 9),
-        "priced_calls": report.priced_calls,
-        "command": command,
-        "started_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "cases": len(report.cases),
-        "fallbacks": report.fallbacks,
-        "format_errors": report.format_errors,
-        "fallback_reasons": [list(item) for item in report.fallback_reasons],
-    }
-    lines = [json.dumps(header, ensure_ascii=False)]
-    for result in report.results:
-        lines.append(
-            json.dumps(
-                {
-                    "kind": "case",
-                    "id": result.case.id,
-                    "rep": result.rep,
-                    "expected_sentiment": result.case.sentiment.value,
-                    "predicted_sentiment": result.signal.sentiment.value,
-                    "expected_tags": [tag.value for tag in result.case.tags],
-                    "predicted_tags": [tag.value for tag in result.signal.tags],
-                    "confidence": result.signal.confidence,
-                    "expect_escalation": result.case.expect_escalation,
-                    "escalated": result.level_escalates,
-                    "latency_ms": round(result.latency_ms, 1),
-                },
-                ensure_ascii=False,
-            )
-        )
-    return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:

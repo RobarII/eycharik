@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from onboarding.evals.runner import (
+    GATES,
     STRATUM_MIN_CASES,
     Baseline,
     Case,
@@ -79,9 +80,7 @@ def test_a_thin_stratum_gets_no_gate_of_its_own() -> None:
 
 
 def test_a_thick_stratum_gets_a_gate_of_its_own() -> None:
-    results = [
-        _hits(_case(f"c{index}", stratum="fact")) for index in range(STRATUM_MIN_CASES)
-    ]
+    results = [_hits(_case(f"c{index}", stratum="fact")) for index in range(60)]
 
     baseline = derive_baseline(_report(*results), commit="abc123")
 
@@ -106,6 +105,38 @@ def test_a_pinned_overall_gate_replaces_the_default() -> None:
     )
 
     assert "recall_at_5" in report.failures
+
+
+def test_a_stratum_floor_below_policy_is_not_written_down() -> None:
+    """A stratum bound under the policy gate is inert; recording it invents a gate."""
+    cases = [_case(f"c{index}") for index in range(20)]
+    baseline = derive_baseline(_report(*[_hits(case) for case in cases]), commit="abc123")
+
+    # 20/20 hits give a floor of 0.83, which is below the 0.90 policy for `recall_at_5`.
+    assert baseline.overall["recall_at_5"] == 0.83
+    assert "recall_at_5" not in baseline.strata.get("fact", {})
+
+
+def test_a_stratum_floor_above_policy_is_written_down() -> None:
+    cases = [_case(f"c{index}") for index in range(60)]
+    baseline = derive_baseline(_report(*[_hits(case) for case in cases]), commit="abc123")
+
+    assert baseline.strata["fact"]["recall_at_5"] > GATES["recall_at_5"]
+
+
+def test_a_pinned_floor_never_lowers_a_policy_gate() -> None:
+    """A thin sample produces a loose bound; it must not replace the policy with it."""
+    baseline = Baseline(commit="abc123", overall={"escalation_precision": 0.36})
+    report = summarise((_hits(_case("a")),), generated=False, baseline=baseline)
+
+    assert report.gates["escalation_precision"] == GATES["escalation_precision"]
+
+
+def test_a_pinned_floor_that_is_higher_than_policy_raises_the_gate() -> None:
+    baseline = Baseline(commit="abc123", overall={"recall_at_5": 0.99})
+    report = summarise((_hits(_case("a")),), generated=False, baseline=baseline)
+
+    assert report.gates["recall_at_5"] == 0.99
 
 
 def test_a_baseline_round_trips_through_its_file(tmp_path: Path) -> None:

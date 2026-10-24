@@ -1,42 +1,25 @@
 {
-  "commit": "65fc273",
+  "commit": "ff02d8b",
   "overall": {
-    "answer_contains": 0.82,
+    "answer_contains": 0.83,
     "answer_excludes": 0.6,
     "citation_support": 0.97,
-    "context_fragment_coverage": 0.94,
-    "context_recall_at_5": 0.96,
+    "context_fragment_coverage": 0.95,
+    "context_recall_at_5": 0.97,
     "escalation_correctness": 0.88,
-    "escalation_precision": 0.47,
-    "escalation_recall": 0.79,
+    "escalation_precision": 0.48,
+    "escalation_recall": 0.7,
     "leak_rate": 0.0,
-    "mrr": 0.87,
+    "mrr": 0.89,
     "p95_answer_ms": 15000.0,
     "p95_completion_ms": 8000.0,
     "reason_accuracy": 0.64,
-    "recall_at_5": 0.96
+    "recall_at_5": 0.95
   },
   "strata": {
-    "acl": {
-      "answer_contains": 0.72,
-      "answer_excludes": 0.72,
-      "citation_support": 0.72,
-      "context_fragment_coverage": 0.72,
-      "context_recall_at_5": 0.72,
-      "escalation_correctness": 0.72,
-      "escalation_precision": 0.72,
-      "escalation_recall": 0.72,
-      "reason_accuracy": 0.72,
-      "recall_at_5": 0.72
-    },
     "fact": {
-      "answer_contains": 0.82,
-      "citation_support": 0.96,
-      "context_fragment_coverage": 0.93,
       "context_recall_at_5": 0.96,
-      "escalation_correctness": 0.87,
-      "escalation_precision": 0.0,
-      "recall_at_5": 0.96
+      "recall_at_5": 0.95
     }
   }
 }

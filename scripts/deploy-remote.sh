@@ -98,6 +98,14 @@ wait_healthy admin 30 || { echo "deploy: admin did not become healthy" >&2; exit
 log "smoke testing $PUBLIC_URL"
 ./scripts/smoke.sh "$PUBLIC_URL"
 
+# Keep the compose environment in step with the running tag so an operator's `docker compose`
+# command does not silently target the previous release.
+if grep -q '^TAG=' "$ENV_FILE"; then
+    sed -i "s/^TAG=.*/TAG=$SHA/" "$ENV_FILE"
+else
+    printf 'TAG=%s\n' "$SHA" >>"$ENV_FILE"
+fi
+
 printf '%s\n' "$SHA" > .deployed_sha.tmp
 mv .deployed_sha.tmp .deployed_sha
 log "deployed $SHA"

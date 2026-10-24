@@ -5,7 +5,7 @@ name: deploy
 #
 # Required repository variables: DEPLOY_HOST, DEPLOY_USER, DEPLOY_PORT (optional), DEPLOY_PATH
 # (optional). Required secrets: DEPLOY_SSH_KEY, DEPLOY_KNOWN_HOSTS. Configure the `production`
-# environment with required reviewers so a tag cannot deploy without a human.
+# environment with required reviewers when the plan supports it; the tag push is the human gate.
 
 on:
   workflow_run:
@@ -28,7 +28,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production

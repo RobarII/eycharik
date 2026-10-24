@@ -27,6 +27,7 @@ from onboarding.core.models import (
     RunId,
     Scenario,
     ScheduledEntry,
+    Step,
     StepKind,
     StepState,
     SurveyAnswer,
@@ -266,6 +267,11 @@ class OnboardingService:
                 # request for a status: answering each one repeated the same notice (measured live
                 # 2026-10-24: six identical "Следующий этап" messages in a row). Only a button
                 # press on a stale keyboard is a real question about the stage.
+                return ServiceResult(handled=True)
+            upcoming = scenario.step(stored.scheduled.step_id)
+            if not _button_belongs(upcoming, event.button_id):
+                # A press on the keyboard of a step the run has already left is a stale tap. Live
+                # 2026-10-24: a double tap on "Всё открывается" sent two identical stage notices.
                 return ServiceResult(handled=True)
             await self._ack_scheduled(
                 scenario,
@@ -660,6 +666,12 @@ class OnboardingService:
         )
         for action in actions:
             await self._executor.execute(action, context)
+
+
+def _button_belongs(step: Step, button_id: str | None) -> bool:
+    if button_id is None:
+        return False
+    return any(button.id == button_id for row in step.keyboard for button in row)
 
 
 def _command(text: str | None) -> str | None:

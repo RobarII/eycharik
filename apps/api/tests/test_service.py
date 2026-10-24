@@ -855,3 +855,36 @@ async def test_a_statement_after_completion_is_not_escalated() -> None:
     assert answerer.calls == []
     assert len(messaging.sent) == sent_before
     assert "event_without_run" in audit.names()
+
+
+async def test_a_stale_button_while_scheduled_does_not_repeat_the_notice() -> None:
+    """A double tap on the keyboard of a passed step sent two identical stage notices."""
+    service, runs, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    # day_before is scheduled: its own button still earns a status, a button of an earlier step
+    # (tone_formal) must be silent.
+    notices = len([m for m in messaging.sent if m.text.startswith("Следующ")])
+
+    pressed_own = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="ready")
+    )
+    after_own = len([m for m in messaging.sent if m.text.startswith("Следующ")])
+    pressed_stale = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_you")
+    )
+    after_stale = len([m for m in messaging.sent if m.text.startswith("Следующ")])
+
+    assert pressed_own.handled and pressed_stale.handled
+    assert after_own == notices + 1
+    assert after_stale == after_own
+    assert next(iter(runs.runs.values())).scheduled is not None

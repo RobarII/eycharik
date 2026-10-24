@@ -42,7 +42,12 @@ def content_type(path: Path) -> str:
 
 
 def upload_token(payload: dict[str, Any]) -> str | None:
-    """Read the media token from either documented upload response shape."""
+    """Read the media token from any upload response MAX has been seen to return.
+
+    The live API answers ``{"photos": {"0": {"token": "..."}}}``; the docs describe
+    ``photos.photoIds.token`` and ``photos.photos[].token``. All three are accepted, so a
+    documentation drift cannot break image sending.
+    """
     direct = payload.get("token")
     if isinstance(direct, str) and direct:
         return direct
@@ -60,4 +65,9 @@ def upload_token(payload: dict[str, Any]) -> str | None:
                     nested = item.get("token")
                     if isinstance(nested, str) and nested:
                         return nested
+        for value in photos.values():
+            if isinstance(value, dict):
+                nested = value.get("token")
+                if isinstance(nested, str) and nested:
+                    return nested
     return None

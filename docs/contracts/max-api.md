@@ -41,7 +41,7 @@ Source: <https://dev.max.ru/docs-api/use-cases/sending-messages/media> and
 |---|---|
 | Upload | `POST /uploads?type=image` returns `url` and optionally `token` |
 | Bytes | `POST` the returned `url` with `Content-Type: multipart/form-data`, one file in `data` |
-| Token | the upload answer carries `photos.photoIds.token`; the adapter also accepts a top-level `token` |
+| Token | live answer (2026-10-24): `{"photos": {"0": {"token": "..."}}}`. Docs describe `photos.photoIds.token`; the adapter accepts that, `photos.photos[].token`, any other `photos` entry with a `token`, and a top-level `token` |
 | Message | `{"type": "image", "payload": {"token": "..."}}` in `attachments` |
 | Reuse | one token maps to one uploaded file and may be reused for later messages |
 | Processing | `400 attachment.not.ready` means the file is not processed yet; retry with backoff |
@@ -59,6 +59,7 @@ no product value at this scale.
 | Route | `POST /webhook/max` on our side |
 | Method | `HTTPS POST`, port 443 only, no port in the URL |
 | Secret header | `X-Max-Bot-Api-Secret`, compared in constant time |
+| Secret value | at least 5 characters; shorter is rejected with `400 proto.payload`, `Field 'secret' does not match required pattern` (measured 2026-10-24) |
 | Empty secret | `503`, so a misconfigured deployment fails loudly instead of accepting unsigned calls |
 | Acknowledgement | `200` within 30 seconds, anything else is a delivery failure |
 | Retries | up to 10, exponential: 60 s, 150 s, 375 s, … |

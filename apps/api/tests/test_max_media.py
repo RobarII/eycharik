@@ -33,8 +33,11 @@ def test_builds_the_documented_attachment_shape() -> None:
     assert image_attachment("token-1") == {"type": "image", "payload": {"token": "token-1"}}
 
 
-def test_reads_both_documented_upload_responses() -> None:
+def test_reads_every_upload_response_shape() -> None:
     assert upload_token({"token": "top"}) == "top"
     assert upload_token({"photos": {"photoIds": {"token": "nested"}}}) == "nested"
     assert upload_token({"photos": {"photos": [{"token": "list"}]}}) == "list"
+    # Captured from the live API on 2026-10-24; the docs do not describe this shape.
+    assert upload_token({"photos": {"0": {"token": "indexed"}}}) == "indexed"
+    assert upload_token({"photos": {}}) is None
     assert upload_token({}) is None

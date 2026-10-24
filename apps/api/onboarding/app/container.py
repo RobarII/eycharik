@@ -39,6 +39,7 @@ from onboarding.app.llm.rerank import build_reranker
 from onboarding.app.llm.sentiment import build_sentiment
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
+from onboarding.app.tls import verify as tls_verify
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.extract import DocumentExtractor
@@ -107,10 +108,9 @@ def _classifier(
 def build_container(settings: Settings) -> Container:
     common = build_common(settings)
 
-    verify: bool | str = True
-    if settings.max_ca_bundle is not None:
-        verify = str(settings.max_ca_bundle)
-    http = httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0), verify=verify)
+    http = httpx.AsyncClient(
+        timeout=httpx.Timeout(15.0, connect=5.0), verify=tls_verify(settings.max_ca_bundle)
+    )
 
     llm = build_llm(settings, common.clock, http)
     embedder = build_embedder(settings, http)

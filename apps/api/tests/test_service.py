@@ -604,6 +604,70 @@ async def test_a_question_while_scheduled_reaches_the_assistant() -> None:
     assert messaging.sent[-1].text == "Ответ ассистента"
 
 
+async def test_a_document_with_a_question_while_scheduled_reaches_the_assistant() -> None:
+    """Measured 2026-10-24: a captioned document was acknowledged and its question vanished."""
+    service, runs, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+    sent_before = len(messaging.sent)
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(
+            kind=EventKind.FILE_RECEIVED,
+            at=NOW,
+            text="Это паспорт. А когда зарплата?",
+        ),
+    )
+
+    assert result.handled
+    assert answerer.calls == [("Это паспорт. А когда зарплата?", NOW.date())]
+    assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
+    assert len(messaging.sent) == sent_before + 1
+    assert messaging.sent[-1].text == "Ответ ассистента"
+
+
+async def test_a_document_without_a_question_while_scheduled_is_not_announced_twice() -> None:
+    """The stage notice goes out when the step is entered; one document must not repeat it."""
+    service, runs, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+    sent_before = len(messaging.sent)
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.FILE_RECEIVED, at=NOW, text="вот документы"),
+    )
+
+    assert result.handled
+    assert answerer.calls == []
+    assert len(messaging.sent) == sent_before
+    assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
+    assert next(iter(runs.runs.values())).scheduled is not None
+
+
 async def test_a_button_while_scheduled_gets_a_stage_status() -> None:
     service, runs, messaging, _, _ = build()
     await service.start(EMPLOYEE, ADDRESS)

@@ -35,6 +35,7 @@ from onboarding.core.risk import assess, keyword_signal, scale_signal
 from onboarding.core.transitions import (
     advance,
     is_confirmation,
+    is_question,
     jump,
     replay,
     resume_scheduled,
@@ -233,11 +234,18 @@ class OnboardingService:
                 step=stored.scheduled.step_id,
                 event=event.kind.value,
             )
+            # A caption is the message: a document with a question is a question, and silence
+            # here would swallow it, exactly like a text question in the same state.
+            asks_something = (
+                event.kind is EventKind.FILE_RECEIVED
+                and bool(event.text)
+                and is_question(event.text)
+            )
             if (
                 event.kind is EventKind.MESSAGE_RECEIVED
                 and event.text
                 and not is_confirmation(event.text)
-            ):
+            ) or asks_something:
                 await self._act(
                     (Action(kind=ActionKind.ANSWER),),
                     address,
@@ -245,6 +253,11 @@ class OnboardingService:
                     now.date(),
                     question=event.text,
                 )
+                return ServiceResult(handled=True)
+            if event.kind is EventKind.FILE_RECEIVED:
+                # The file is already stored by the intake job, and the stage notice went out when
+                # the step was entered. Repeating it per document is noise (measured 2026-10-24:
+                # two identical "next stage" messages in one dialog).
                 return ServiceResult(handled=True)
             await self._ack_scheduled(
                 scenario,

@@ -40,7 +40,7 @@ class PostgresBlobStore:
                 insert(FileRow)
                 .values(
                     id=digest,
-                    filename=_safe_name(filename),
+                    filename=safe_filename(filename),
                     media_type=media_type[:120],
                     size=len(content),
                     content=content,
@@ -55,7 +55,7 @@ class PostgresBlobStore:
             return None if row is None else bytes(row.content)
 
 
-def _safe_name(filename: str) -> str:
+def safe_filename(filename: str) -> str:
     """A filename is user input: keep the last path component and nothing executable."""
     name = PurePosixPath(filename.replace("\\", "/")).name.strip()
     return (name or "upload")[:MAX_FILENAME_CHARS]

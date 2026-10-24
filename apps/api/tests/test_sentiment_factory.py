@@ -100,7 +100,12 @@ def test_the_jev_provider_without_a_key_is_a_setup_error() -> None:
 
 
 def test_the_prompt_provider_names_the_model_it_will_call() -> None:
-    choice = build("prompt", llm=ScriptedLLM(responses=[]), llm_api_key=SecretStr("sk"))
+    choice = build(
+        "prompt",
+        llm=ScriptedLLM(responses=[]),
+        llm_api_key=SecretStr("sk"),
+        llm_profile="gigachat-2-pro",
+    )
 
     assert choice.provider == "prompt"
     assert choice.prompt_version == 1

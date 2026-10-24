@@ -121,12 +121,6 @@ export interface KnowledgeDocument {
   updated_at: string;
 }
 
-export interface KnowledgeUploaded {
-  id: string;
-  title: string;
-  chunks: number;
-}
-
 export type Capability =
   | "runs.read"
   | "questions.read"
@@ -159,7 +153,7 @@ export interface KnowledgeFileQueued {
 /** What extraction decided about one uploaded file. `status` is the extraction's, not the file's. */
 export interface KnowledgeExtraction {
   content_hash: string;
-  status: "queued" | "running" | "indexed" | "refused" | string;
+  status: "queued" | "running" | "indexed" | "rejected" | string;
   reason: string | null;
   engine: string;
   route: string;

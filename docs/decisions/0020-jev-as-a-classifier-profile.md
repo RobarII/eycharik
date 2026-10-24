@@ -1,4 +1,4 @@
-# 0019 — Jev is a classifier profile, not a special case
+# 0020 — Jev is a classifier profile, not a special case
 
 Date: 2026-10-24
 Status: accepted — the structure shipped and the classifier was measured through OpenRouter

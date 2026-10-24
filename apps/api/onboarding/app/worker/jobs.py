@@ -9,13 +9,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import datetime
 
+from onboarding.app.jobs import EXTRACT_DOCUMENT, INDEX_DOCUMENT, MESSAGE, START, TIMEOUT
 from onboarding.app.worker.extract import DocumentExtractor
+from onboarding.app.worker.index import DocumentIndexer
 from onboarding.app.worker.payload import JobPayloadError
 from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import Address, Channel, ChatId, EmployeeId, Event, EventKind
 from onboarding.ports import AuditLog, Clock, JobSink
-
-EXTRACT_DOCUMENT = "extract_document"
 
 
 class JobRunner:
@@ -27,12 +27,14 @@ class JobRunner:
         clock: Clock,
         audit: AuditLog,
         extractor: DocumentExtractor,
+        indexer: DocumentIndexer,
     ) -> None:
         self._queue = queue
         self._service = service
         self._clock = clock
         self._audit = audit
         self._extractor = extractor
+        self._indexer = indexer
 
     async def run_once(self) -> int:
         jobs = await self._queue.claim()
@@ -56,17 +58,20 @@ class JobRunner:
         if kind == EXTRACT_DOCUMENT:
             await self._extractor.run(payload)
             return
+        if kind == INDEX_DOCUMENT:
+            await self._indexer.run(payload)
+            return
         employee_id = EmployeeId(_text(payload, "employee_id"))
         address = Address(
             channel=Channel(_text(payload, "channel")),
             chat_id=ChatId(_integer(payload, "chat_id")),
         )
-        if kind == "start":
+        if kind == START:
             await self._service.start(employee_id, address)
             return
-        if kind == "message":
+        if kind == MESSAGE:
             event = _event(payload.get("event"))
-        elif kind == "timeout":
+        elif kind == TIMEOUT:
             event = Event(kind=EventKind.TIMEOUT, at=self._clock.now())
         else:
             raise JobPayloadError(f"unknown job kind {kind!r}")

@@ -14,7 +14,6 @@ import argparse
 import asyncio
 import logging
 
-from onboarding.app.clock import SystemClock
 from onboarding.app.container import build_container
 from onboarding.app.db.outbox import MessageDispatcher
 from onboarding.app.db.retention import RetentionPurger
@@ -60,9 +59,10 @@ async def run(settings: Settings, *, max_jobs: int) -> tuple[int, int, int]:
     runner = JobRunner(
         queue=container.queue,
         service=container.service,
-        clock=SystemClock(),
+        clock=container.clock,
         audit=container.audit,
         extractor=container.extractor,
+        indexer=container.indexer,
     )
     try:
         return await tick_once(
@@ -71,7 +71,7 @@ async def run(settings: Settings, *, max_jobs: int) -> tuple[int, int, int]:
             dispatcher=container.dispatcher,
             purger=RetentionPurger(
                 container.database,
-                SystemClock(),
+                container.clock,
                 days=settings.data_retention_days,
             ),
             max_jobs=max_jobs,

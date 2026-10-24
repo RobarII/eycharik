@@ -221,14 +221,6 @@ class KnowledgeUpload(BaseModel):
     text: str = Field(min_length=20, max_length=200_000)
 
 
-class KnowledgeUploaded(BaseModel):
-    model_config = ConfigDict(frozen=True)
-
-    id: str
-    title: str
-    chunks: int
-
-
 class KnowledgeFileQueued(BaseModel):
     """A file accepted for extraction. It is not in the corpus yet, and the cabinet says so."""
 

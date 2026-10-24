@@ -33,6 +33,7 @@ from onboarding.app.db.models import (
     AuditRow,
     ChannelIdentityRow,
     EmployeeRow,
+    ExtractionRow,
     FileRow,
     JobRow,
     MessageRow,
@@ -89,7 +90,7 @@ from .fakes import (
     ScriptedLLM,
     scored_chunk,
 )
-from .test_jobs import StubExtractor
+from .test_jobs import StubExtractor, StubIndexer
 
 pytestmark = pytest.mark.integration
 
@@ -563,6 +564,7 @@ async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
         clock=FrozenClock(NOW),
         audit=DatabaseAuditLog(database),
         extractor=StubExtractor(),  # type: ignore[arg-type]
+        indexer=StubIndexer(),  # type: ignore[arg-type]
     )
 
     queued, handled, delivered = await tick_once(
@@ -1030,7 +1032,8 @@ async def test_hr_uploads_a_pdf_and_the_extraction_job_is_queued(database: Datab
         pending = await http.get(
             f"/admin/api/knowledge/files/{blob_id}", headers={"Authorization": "Bearer hr"}
         )
-        assert pending.status_code == 404
+        assert pending.status_code == 200
+        assert pending.json()["status"] == "queued"
 
         await PostgresExtractionCache(database).save(
             ExtractionRecord(
@@ -1052,6 +1055,58 @@ async def test_hr_uploads_a_pdf_and_the_extraction_job_is_queued(database: Datab
     assert done.status_code == 200
     assert done.json()["status"] == "indexed"
     assert done.json()["document_id"] == "hr/uploaded"
+
+
+async def test_hr_uploads_markdown_and_the_index_job_is_queued(database: Database) -> None:
+    app = admin_app()
+    text = """---
+id: hr/async-perk
+title: Асинхронная компенсация
+type: knowledge
+status: active
+owner: hr
+audience: [all]
+valid_from: 2026-01-01
+---
+## Спорт
+
+Компания компенсирует занятия спортом.
+"""
+    async with (
+        app.router.lifespan_context(app),  # type: ignore[attr-defined]
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as http,
+    ):
+        response = await http.post(
+            "/admin/api/knowledge",
+            json={"text": text},
+            headers={"Authorization": "Bearer hr"},
+        )
+        assert response.status_code == 202, response.text
+        queued = response.json()
+        assert queued["status"] == "queued"
+
+        async with database.session() as session:
+            job = await session.scalar(
+                select(JobRow).where(JobRow.kind == "index_document")
+            )
+            extraction = await session.scalar(
+                select(ExtractionRow).where(
+                    ExtractionRow.content_hash == queued["content_hash"]
+                )
+            )
+        assert job is not None
+        assert extraction is not None
+        assert extraction.status == "queued"
+
+        status = await http.get(
+            f"/admin/api/knowledge/files/{queued['content_hash']}",
+            headers={"Authorization": "Bearer hr"},
+        )
+
+    assert status.status_code == 200
+    assert status.json()["status"] == "queued"
 
 
 async def test_only_hr_may_upload_a_file(database: Database) -> None:

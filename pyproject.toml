@@ -28,6 +28,7 @@ ocr = [
 
 [dependency-groups]
 dev = [
+  "import-linter>=2.15",
   "mypy>=1.13",
   "pytest>=8.3",
   "pytest-asyncio>=0.24",
@@ -83,3 +84,35 @@ plugins = []
 [[tool.mypy.overrides]]
 module = ["pgvector.*", "pypdfium2.*", "rapidocr.*"]
 ignore_missing_imports = true
+
+[tool.importlinter]
+root_package = "onboarding"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "api -> app -> ports -> core"
+type = "layers"
+layers = ["onboarding.api", "onboarding.app", "onboarding.ports", "onboarding.core"]
+
+[[tool.importlinter.contracts]]
+name = "The API never reaches into an adapter or a provider"
+type = "forbidden"
+source_modules = [
+  "onboarding.api.admin",
+  "onboarding.api.auth",
+  "onboarding.api.cursor",
+  "onboarding.api.errors",
+  "onboarding.api.schemas",
+  "onboarding.api.webhook",
+]
+forbidden_modules = [
+  "onboarding.app.db",
+  "onboarding.app.llm",
+  "onboarding.app.channels",
+  "onboarding.app.knowledge",
+  "onboarding.app.worker",
+  "onboarding.app.admin.actions",
+  "onboarding.app.admin.queries",
+  "sqlalchemy",
+  "httpx",
+]

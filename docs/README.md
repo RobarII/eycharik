@@ -48,7 +48,9 @@ from this table. If a question is not answered here, the answer does not exist y
 | Why is contextual retrieval written but switched off? | [decisions/0016-contextual-retrieval.md](decisions/0016-contextual-retrieval.md) |
 | How is the sentiment eval measured, and why does it abort on an outage? | [decisions/0017-sentiment-eval-v2.md](decisions/0017-sentiment-eval-v2.md) |
 | Why does the cabinet hold a cookie instead of a token? | [decisions/0018-session-cookie-for-the-cabinet.md](decisions/0018-session-cookie-for-the-cabinet.md) |
-| Why is Jev a profile and not a special case? | [decisions/0019-jev-as-a-classifier-profile.md](decisions/0019-jev-as-a-classifier-profile.md) |
+| Why is Jev a profile and not a special case? | [decisions/0020-jev-as-a-classifier-profile.md](decisions/0020-jev-as-a-classifier-profile.md) |
+| Why does a model have no environment fallback? | [decisions/0021-model-identity-has-one-home.md](decisions/0021-model-identity-has-one-home.md) |
+| Why is a markdown upload queued instead of indexed? | [decisions/0022-knowledge-upload-is-async.md](decisions/0022-knowledge-upload-is-async.md) |
 | How good and how expensive is the Jev classifier? | [measurements/2026-10-23-sentiment-jev-expanded-v2.md](measurements/2026-10-23-sentiment-jev-expanded-v2.md) |
 | How does the assistant read an uploaded PDF or scan? | [contracts/extraction-profile.schema.json](contracts/extraction-profile.schema.json), profiles in `apps/api/model-profiles/extract/` |
 | An uploaded file did not reach the corpus — what now? | [runbooks/extraction.md](runbooks/extraction.md) |

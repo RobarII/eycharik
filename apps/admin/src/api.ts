@@ -5,7 +5,6 @@ import type {
   KnowledgeDocument,
   KnowledgeExtraction,
   KnowledgeFileQueued,
-  KnowledgeUploaded,
   ListResponse,
   OffboardedEmployee,
   Page,
@@ -131,8 +130,8 @@ export function fetchKnowledge(): Promise<ListResponse<KnowledgeDocument>> {
   return request("/admin/api/knowledge");
 }
 
-export function uploadKnowledge(text: string): Promise<KnowledgeUploaded> {
-  return post<KnowledgeUploaded>("/admin/api/knowledge", { text });
+export function uploadKnowledge(text: string): Promise<KnowledgeFileQueued> {
+  return post<KnowledgeFileQueued>("/admin/api/knowledge", { text });
 }
 
 export interface FileMetadata {

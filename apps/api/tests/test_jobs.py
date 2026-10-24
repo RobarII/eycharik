@@ -39,6 +39,14 @@ class StubExtractor:
         self.payloads.append(dict(payload))  # type: ignore[arg-type]
 
 
+class StubIndexer:
+    def __init__(self) -> None:
+        self.payloads: list[dict[str, object]] = []
+
+    async def run(self, payload: object) -> None:
+        self.payloads.append(dict(payload))  # type: ignore[arg-type]
+
+
 class RecordingQueue:
     def __init__(self) -> None:
         self.completed: list[int] = []
@@ -52,6 +60,19 @@ class RecordingQueue:
 
     async def fail(self, job: ClaimedJob, error: Exception) -> None:
         self.failed.append((job.id, type(error).__name__))
+
+
+def build_with_indexer() -> tuple[JobRunner, StubIndexer]:
+    indexer = StubIndexer()
+    runner = JobRunner(
+        queue=RecordingQueue(),  # type: ignore[arg-type]
+        service=StubService(),  # type: ignore[arg-type]
+        clock=FrozenClock(NOW),
+        audit=NullAudit(),
+        extractor=StubExtractor(),  # type: ignore[arg-type]
+        indexer=indexer,  # type: ignore[arg-type]
+    )
+    return runner, indexer
 
 
 def build() -> tuple[JobRunner, StubService, RecordingQueue]:
@@ -69,6 +90,7 @@ def build_with_extractor() -> tuple[JobRunner, StubService, RecordingQueue, Stub
         clock=FrozenClock(NOW),
         audit=NullAudit(),
         extractor=extractor,  # type: ignore[arg-type]
+        indexer=StubIndexer(),  # type: ignore[arg-type]
     )
     return runner, service, queue, extractor
 
@@ -147,3 +169,11 @@ async def test_extract_job_goes_to_the_extractor_not_the_scenario() -> None:
     assert extractor.payloads == [payload]
     assert service.handled == []
     assert service.started == []
+
+
+async def test_index_job_reaches_the_indexer() -> None:
+    runner, indexer = build_with_indexer()
+
+    await runner._dispatch("index_document", {"blob_id": "abc"})
+
+    assert indexer.payloads == [{"blob_id": "abc"}]

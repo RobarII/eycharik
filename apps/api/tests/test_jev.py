@@ -373,6 +373,7 @@ def test_the_profile_selects_the_model_and_the_rubric() -> None:
 def test_the_environment_can_override_the_rubric_and_the_envelope() -> None:
     settings = Settings(
         _env_file=None,
+        classify_profile="jev-1.13.0",
         sentiment_rubric="sentiment-jev@2",
         jev_timeout_s=3.0,
         jev_max_retries=0,

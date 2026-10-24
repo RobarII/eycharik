@@ -16,10 +16,9 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import text
 
-from onboarding.api import admin, webhook
-from onboarding.app.container import build_container
+from onboarding.api import admin, errors, webhook
+from onboarding.app.api_container import build_api_container
 from onboarding.app.observability import metrics
 from onboarding.app.settings import Settings
 
@@ -35,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.container = build_container(resolved)
+        app.state.container = build_api_container(resolved)
         try:
             yield
         finally:
@@ -49,6 +48,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/openapi.json" if docs_enabled else None,
         lifespan=lifespan,
     )
+    errors.install(app)
     app.include_router(webhook.router)
     app.include_router(admin.router)
 
@@ -112,10 +112,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/readyz", include_in_schema=False)
     async def readyz(request: Request) -> Response:
-        try:
-            async with request.app.state.container.database.session() as session:
-                await session.execute(text("select 1"))
-        except Exception:  # noqa: BLE001 - readiness must answer, not raise
+        healthy = await request.app.state.container.health.ping()
+        if not healthy:
             return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
         return Response(status_code=status.HTTP_200_OK)
 

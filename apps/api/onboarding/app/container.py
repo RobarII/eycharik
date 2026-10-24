@@ -1,28 +1,25 @@
-"""Composition root.
+"""Composition root for the worker, the CLI, and the eval runner.
 
-Every dependency is built once, here, from settings. Nothing else in the app constructs an HTTP
-client, a database or a model adapter on its own.
+The API has its own container (``api_container``) and deliberately cannot construct a model. This
+one builds the full graph: models, retrieval, extraction, the outbox, and the scheduler.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import httpx
 
 from onboarding.app.channels.max.client import MaxClient
-from onboarding.app.channels.max.ingress import MaxIngress
-from onboarding.app.channels.profiles import ChannelProfileLibrary
 from onboarding.app.channels.telegram.client import TelegramClient
-from onboarding.app.channels.telegram.ingress import TelegramIngress
 from onboarding.app.channels.vk.client import VkClient
-from onboarding.app.channels.vk.ingress import VkIngress
-from onboarding.app.clock import SystemClock
+from onboarding.app.composition import (
+    DOC_SCHEMA,
+    SCENARIO_ASSETS_DIR,
+    Common,
+    build_common,
+)
 from onboarding.app.copy import Copy, load_copy
-from onboarding.app.db.blobs import PostgresBlobStore
-from onboarding.app.db.directory import SqlDirectory
-from onboarding.app.db.extractions import PostgresExtractionCache
 from onboarding.app.db.kb import (
     PostgresKnowledgeBase,
     PostgresKnowledgeWriter,
@@ -30,62 +27,44 @@ from onboarding.app.db.kb import (
 )
 from onboarding.app.db.outbox import MessageDispatcher, OutboxMessaging
 from onboarding.app.db.queue import JobQueue
-from onboarding.app.db.repos import (
-    DatabaseAuditLog,
-    DatabaseQuestionLog,
-    DatabaseRunRepository,
-)
+from onboarding.app.db.repos import DatabaseQuestionLog, DatabaseRunRepository
 from onboarding.app.db.scheduler import ReminderScheduler
-from onboarding.app.db.session import Database
 from onboarding.app.knowledge.extract.ocr import build_ocr
 from onboarding.app.knowledge.extract.pdf import PdfReader
 from onboarding.app.knowledge.extract.pptx import PptxReader
-from onboarding.app.knowledge.extract.profiles import ExtractionProfileLibrary
 from onboarding.app.knowledge.extract.router import RoutingExtraction
 from onboarding.app.llm.embeddings import build_embedder
 from onboarding.app.llm.gateway import build_llm
 from onboarding.app.llm.rerank import build_reranker
 from onboarding.app.llm.sentiment import build_sentiment
 from onboarding.app.prompts import PromptLibrary
-from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.settings import Settings
 from onboarding.app.worker.actions import ActionExecutor
 from onboarding.app.worker.answerer import Answerer
 from onboarding.app.worker.extract import DocumentExtractor
+from onboarding.app.worker.index import DocumentIndexer
 from onboarding.app.worker.service import OnboardingService
-from onboarding.core.channels import ChannelProfile
 from onboarding.core.models import Channel
 from onboarding.ports import (
     LLM,
     AuditLog,
     Clock,
     Embedder,
-    Ingress,
     KnowledgeBase,
     Messaging,
     SentimentAnalysis,
 )
 
-SCENARIO_DIR = Path(__file__).resolve().parents[1] / "scenarios"
-SCENARIO_ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets" / "scenario"
-
 
 @dataclass(slots=True)
-class Container:
-    settings: Settings
-    clock: Clock
+class Container(Common):
     http: httpx.AsyncClient
-    database: Database
     llm: LLM
     embedder: Embedder
     knowledge: KnowledgeBase
     prompts: PromptLibrary
     copy: Copy
-    catalog: ScenarioCatalog
-    directory: SqlDirectory
-    profiles: dict[Channel, ChannelProfile]
     senders: dict[Channel, Messaging]
-    ingress: dict[Channel, Ingress]
     outbox: OutboxMessaging
     answerer: Answerer
     executor: ActionExecutor
@@ -93,19 +72,18 @@ class Container:
     queue: JobQueue
     dispatcher: MessageDispatcher
     scheduler: ReminderScheduler
-    audit: DatabaseAuditLog
-    blobs: PostgresBlobStore
-    extraction_cache: PostgresExtractionCache
     extractor: DocumentExtractor
+    indexer: DocumentIndexer
 
     async def aclose(self) -> None:
         await self.http.aclose()
-        await self.database.dispose()
+        await Common.aclose(self)
 
 
 def _classifier(
     settings: Settings,
     *,
+    clock: Clock,
     http: httpx.AsyncClient,
     llm: LLM,
     prompts: PromptLibrary,
@@ -116,7 +94,7 @@ def _classifier(
     try:
         return build_sentiment(
             settings,
-            clock=SystemClock(),
+            clock=clock,
             client=http,
             prompts=prompts,
             audit=audit,
@@ -127,48 +105,39 @@ def _classifier(
 
 
 def build_container(settings: Settings) -> Container:
+    common = build_common(settings)
+
     verify: bool | str = True
     if settings.max_ca_bundle is not None:
         verify = str(settings.max_ca_bundle)
     http = httpx.AsyncClient(timeout=httpx.Timeout(15.0, connect=5.0), verify=verify)
 
-    database = Database(settings.database_url)
-    clock = SystemClock()
-    llm = build_llm(settings, clock, http)
+    llm = build_llm(settings, common.clock, http)
     embedder = build_embedder(settings, http)
     assert_embedding_width(embedder.dim)
-    knowledge = PostgresKnowledgeBase(database, embedder, bm25=settings.bm25_enabled)
-
+    knowledge = PostgresKnowledgeBase(
+        common.database, embedder, bm25=settings.bm25_enabled
+    )
     prompts = PromptLibrary(settings.prompts_dir)
     copy = load_copy(settings.copy_path)
-    catalog = ScenarioCatalog.load(SCENARIO_DIR)
-    directory = SqlDirectory(database)
-    audit = DatabaseAuditLog(database)
 
-    profiles = ChannelProfileLibrary(
-        settings.channel_profiles_dir,
-        settings.contracts_dir / "channel-profile.schema.json",
-    ).load_all()
     enabled = set(settings.channels)
     senders: dict[Channel, Messaging] = {}
-    ingress: dict[Channel, Ingress] = {}
     if Channel.MAX in enabled and settings.max_webhook_secret.get_secret_value():
         senders[Channel.MAX] = MaxClient(
             base_url=settings.max_base_url,
             token=settings.max_bot_token,
             client=http,
-            messages_per_second=profiles[Channel.MAX].messages_per_second,
+            messages_per_second=common.profiles[Channel.MAX].messages_per_second,
             assets_dir=SCENARIO_ASSETS_DIR,
         )
-        ingress[Channel.MAX] = MaxIngress(settings.max_webhook_secret)
     if Channel.TELEGRAM in enabled and settings.telegram_webhook_secret.get_secret_value():
         senders[Channel.TELEGRAM] = TelegramClient(
             base_url=settings.telegram_base_url,
             token=settings.telegram_bot_token,
             client=http,
-            profile=profiles[Channel.TELEGRAM],
+            profile=common.profiles[Channel.TELEGRAM],
         )
-        ingress[Channel.TELEGRAM] = TelegramIngress(settings.telegram_webhook_secret)
     if (
         Channel.VK in enabled
         and settings.vk_webhook_secret.get_secret_value()
@@ -179,13 +148,10 @@ def build_container(settings: Settings) -> Container:
             api_version=settings.vk_api_version,
             token=settings.vk_access_token,
             client=http,
-            profile=profiles[Channel.VK],
-        )
-        ingress[Channel.VK] = VkIngress(
-            settings.vk_webhook_secret, settings.vk_confirmation_code
+            profile=common.profiles[Channel.VK],
         )
 
-    outbox = OutboxMessaging(database, senders, profiles)
+    outbox = OutboxMessaging(common.database, senders, common.profiles)
     reranker = build_reranker(settings, http)
     answerer = Answerer(
         knowledge=knowledge,
@@ -193,71 +159,84 @@ def build_container(settings: Settings) -> Container:
         prompts=prompts,
         copy=copy,
         settings=settings,
-        audit=audit,
+        audit=common.audit,
         reranker=reranker,
     )
     executor = ActionExecutor(
         messaging=outbox,
         answerer=answerer,
         copy=copy,
-        audit=audit,
-        questions=DatabaseQuestionLog(database),
+        audit=common.audit,
+        questions=DatabaseQuestionLog(common.database),
     )
-    classifier = _classifier(settings, http=http, llm=llm, prompts=prompts, audit=audit)
+    classifier = _classifier(
+        settings,
+        clock=common.clock,
+        http=http,
+        llm=llm,
+        prompts=prompts,
+        audit=common.audit,
+    )
     service = OnboardingService(
-        runs=DatabaseRunRepository(database),
-        catalog=catalog,
+        runs=DatabaseRunRepository(common.database),
+        catalog=common.catalog,
         executor=executor,
-        clock=clock,
-        directory=directory,
-        audit=audit,
+        clock=common.clock,
+        directory=common.directory,
+        audit=common.audit,
         classifier=classifier,
     )
-    extraction_profiles = ExtractionProfileLibrary(
-        settings.extraction_profiles_dir,
-        settings.contracts_dir / "extraction-profile.schema.json",
-    )
-    extraction_profile = extraction_profiles.load(settings.extraction_profile)
-    blobs = PostgresBlobStore(database, max_bytes=settings.extraction_max_upload_bytes)
-    extraction_cache = PostgresExtractionCache(database)
+
+    writer = PostgresKnowledgeWriter(common.database, embedder)
     extractor = DocumentExtractor(
-        blobs=blobs,
+        blobs=common.blobs,
         extraction=RoutingExtraction(
             readers=(PdfReader(), PptxReader()),
-            ocr=build_ocr(extraction_profile.family),
+            ocr=build_ocr(common.extraction_profile.family),
             max_pages=settings.extraction_max_pages,
         ),
-        cache=extraction_cache,
-        writer=PostgresKnowledgeWriter(database, embedder),
+        cache=common.extraction_cache,
+        writer=writer,
         embedder=embedder,
-        schema_path=settings.contracts_dir / "doc.schema.json",
-        profile=extraction_profile,
-        audit=audit,
+        schema_path=settings.contracts_dir / DOC_SCHEMA,
+        profile=common.extraction_profile,
+        audit=common.audit,
     )
+    indexer = DocumentIndexer(
+        blobs=common.blobs,
+        cache=common.extraction_cache,
+        writer=writer,
+        embedder=embedder,
+        schema_path=settings.contracts_dir / DOC_SCHEMA,
+        audit=common.audit,
+    )
+
     return Container(
-        settings=settings,
-        clock=clock,
+        settings=common.settings,
+        clock=common.clock,
+        database=common.database,
+        audit=common.audit,
+        catalog=common.catalog,
+        directory=common.directory,
+        profiles=common.profiles,
+        ingress=common.ingress,
+        blobs=common.blobs,
+        extraction_cache=common.extraction_cache,
+        extraction_profile=common.extraction_profile,
         http=http,
-        database=database,
         llm=llm,
         embedder=embedder,
         knowledge=knowledge,
         prompts=prompts,
         copy=copy,
-        catalog=catalog,
-        directory=directory,
-        profiles=profiles,
         senders=senders,
-        ingress=ingress,
         outbox=outbox,
         answerer=answerer,
         executor=executor,
         service=service,
-        queue=JobQueue(database),
-        dispatcher=MessageDispatcher(database, senders),
-        scheduler=ReminderScheduler(database),
-        audit=audit,
-        blobs=blobs,
-        extraction_cache=extraction_cache,
+        queue=JobQueue(common.database),
+        dispatcher=MessageDispatcher(common.database, senders),
+        scheduler=ReminderScheduler(common.database),
         extractor=extractor,
+        indexer=indexer,
     )

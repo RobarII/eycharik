@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import (
@@ -49,7 +48,6 @@ from onboarding.api.schemas import (
     KnowledgeFileQueued,
     KnowledgeList,
     KnowledgeUpload,
-    KnowledgeUploaded,
     LinkIdentity,
     OffboardedEmployee,
     Question,
@@ -62,44 +60,14 @@ from onboarding.api.schemas import (
     SessionRequest,
     TagCount,
 )
-from onboarding.app.admin.actions import (
-    EmployeeNotFoundError,
-    EmployeeOffboarder,
-    QuestionAlreadyResolvedError,
-    QuestionAssigner,
-    QuestionNotFoundError,
-    QuestionResolver,
-    UnknownAssigneeError,
-)
-from onboarding.app.admin.queries import (
-    AdminQueries,
-    QuestionCursor,
-    QuestionRecord,
-    RunCursor,
-    RunRecord,
-)
-from onboarding.app.db.kb import PostgresKnowledgeWriter
-from onboarding.app.db.queue import JobQueue
-from onboarding.app.knowledge.extract.media import SUPPORTED, media_type_for
-from onboarding.app.knowledge.ingest import (
-    CorpusError,
-    load_schema,
-    validate_frontmatter,
-)
-from onboarding.app.knowledge.pipeline import ingest_document
+from onboarding.app.admin.records import QuestionCursor, QuestionRecord, RunCursor, RunRecord
 from onboarding.app.scenarios import ScenarioCatalog, ScenarioCatalogError
-from onboarding.app.worker.jobs import EXTRACT_DOCUMENT
-from onboarding.core.models import EmployeeId
 
 router = APIRouter(prefix="/admin/api", tags=["admin"])
 
 log = logging.getLogger("onboarding.api.admin")
 
 Admin = Annotated[AdminPrincipal, Depends(current_admin)]
-
-
-def _queries(request: Request) -> AdminQueries:
-    return AdminQueries(request.app.state.container.database)
 
 
 def _scope(principal: AdminPrincipal) -> str | None:
@@ -179,7 +147,7 @@ async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's 
     q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> RunList:
     catalog = request.app.state.container.catalog
-    queries = _queries(request)
+    queries = request.app.state.container.admin.queries
     recruiter_id = _scope(principal)
     department = _department(principal)
     active = {"active": True, "completed": False, "all": None}[status_filter]
@@ -202,7 +170,7 @@ async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's 
 
 @router.get("/runs/{run_id}", response_model=RunDetail)
 async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDetail:
-    queries = _queries(request)
+    queries = request.app.state.container.admin.queries
     record = await queries.run(
         run_id, recruiter_id=_scope(principal), department=_department(principal)
     )
@@ -250,7 +218,7 @@ async def list_questions(  # noqa: PLR0917 - the query parameters are the endpoi
     assignee: Annotated[Literal["me", "unassigned", "any"], Query()] = "any",
 ) -> QuestionList:
     answered = {"unanswered": False, "answered": True, "all": None}[status]
-    queries = _queries(request)
+    queries = request.app.state.container.admin.queries
     recruiter_id = _scope(principal)
     department = _department(principal)
     mine = principal.subject if assignee == "me" else None
@@ -288,20 +256,13 @@ async def resolve_question(
     body: ResolveQuestion,
 ) -> ResolvedQuestion:
     """Close one escalated question and queue the recruiter's reply in the outbox."""
-    container = request.app.state.container
-    resolver = QuestionResolver(container.database, container.clock)
-    try:
-        resolution = await resolver.resolve(
-            question_id,
-            text=body.text,
-            actor=principal.subject,
-            recruiter_id=_scope(principal),
-            department=_department(principal),
-        )
-    except QuestionNotFoundError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "question not found") from None
-    except QuestionAlreadyResolvedError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "question already resolved") from None
+    resolution = await request.app.state.container.admin.resolve_question(
+        question_id,
+        text=body.text,
+        actor=principal.subject,
+        recruiter_id=_scope(principal),
+        department=_department(principal),
+    )
     return ResolvedQuestion(
         id=resolution.question_id,
         employee_id=resolution.employee_id,
@@ -326,9 +287,8 @@ async def link_identity(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="only hr_admin may link a messenger account",
         )
-    container = request.app.state.container
-    linked = await container.directory.link(
-        body.channel, body.external_id, EmployeeId(body.employee_id)
+    linked = await request.app.state.container.admin.link_identity(
+        body.channel, body.external_id, body.employee_id
     )
     if not linked:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "employee not found")
@@ -351,25 +311,13 @@ async def assign_question(
     up is not a privilege. HR keeps the ability to reassign somebody else's card, which is what
     "the recruiter is on holiday" needs.
     """
-    container = request.app.state.container
-    assigner = QuestionAssigner(container.database, container.clock)
-    try:
-        assignment = await assigner.assign(
-            question_id,
-            assignee=body.assignee or None,
-            actor=principal.subject,
-            known=container.settings.admin_subjects,
-            recruiter_id=_scope(principal),
-            department=_department(principal),
-        )
-    except UnknownAssigneeError:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "assignee is not an admin"
-        ) from None
-    except QuestionNotFoundError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "question not found") from None
-    except QuestionAlreadyResolvedError:
-        raise HTTPException(status.HTTP_409_CONFLICT, "question already resolved") from None
+    assignment = await request.app.state.container.admin.assign_question(
+        question_id,
+        assignee=body.assignee or None,
+        actor=principal.subject,
+        recruiter_id=_scope(principal),
+        department=_department(principal),
+    )
     return AssignedQuestion(
         id=assignment.question_id,
         employee_id=assignment.employee_id,
@@ -392,12 +340,9 @@ async def offboard_employee(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="only hr_admin may offboard an employee",
         )
-    container = request.app.state.container
-    offboarder = EmployeeOffboarder(container.database, container.clock)
-    try:
-        result = await offboarder.offboard(employee_id, actor=principal.subject)
-    except EmployeeNotFoundError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "employee not found") from None
+    result = await request.app.state.container.admin.offboard(
+        employee_id, actor=principal.subject
+    )
     return OffboardedEmployee(
         employee_id=result.employee_id,
         questions_deleted=result.questions_deleted,
@@ -508,7 +453,7 @@ def _question(record: QuestionRecord) -> Question:
 @router.get("/analytics/overview", response_model=AnalyticsOverview)
 async def analytics_overview(request: Request, principal: Admin) -> AnalyticsOverview:
     since = request.app.state.container.clock.now() - timedelta(days=7)
-    record = await _queries(request).overview(
+    record = await request.app.state.container.admin.queries.overview(
         recruiter_id=_scope(principal), department=_department(principal), since=since
     )
     return AnalyticsOverview(
@@ -530,7 +475,7 @@ async def weekly_digest(
     days: Annotated[int, Query(ge=1, le=31)] = 7,
 ) -> DigestList:
     since = request.app.state.container.clock.now() - timedelta(days=days)
-    records = await _queries(request).digest(
+    records = await request.app.state.container.admin.queries.digest(
         recruiter_id=_scope(principal), department=_department(principal), since=since
     )
     return DigestList(
@@ -561,7 +506,7 @@ async def knowledge_documents(
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
 ) -> KnowledgeList:
     """Active documents. An ``hr_only`` document is not fetched for a non-HR caller at all."""
-    records = await _queries(request).knowledge(
+    records = await request.app.state.container.admin.queries.knowledge(
         limit=limit, include_hr_only=principal.is_hr
     )
     return KnowledgeList(
@@ -583,46 +528,24 @@ async def knowledge_documents(
 
 @router.post(
     "/knowledge",
-    response_model=KnowledgeUploaded,
-    status_code=status.HTTP_201_CREATED,
+    response_model=KnowledgeFileQueued,
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def upload_knowledge(
     request: Request,
     principal: Admin,
     body: KnowledgeUpload,
-) -> KnowledgeUploaded:
-    """HR uploads one markdown document with frontmatter; it is indexed in the same request."""
+) -> KnowledgeFileQueued:
+    """HR uploads one markdown document; the worker indexes it and the cabinet polls."""
     if not principal.is_hr:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="only hr_admin may change the knowledge base",
         )
-    container = request.app.state.container
-    try:
-        indexed = await ingest_document(
-            text=body.text,
-            source="upload",
-            schema_path=container.settings.contracts_dir / "doc.schema.json",
-            writer=PostgresKnowledgeWriter(container.database),
-            embedder=container.embedder,
-        )
-    except CorpusError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
-        ) from None
-    except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
-        ) from None
-    await container.audit.record(
-        "knowledge_ingested",
-        document=indexed.id,
-        chunks=indexed.chunks,
-        by=principal.subject,
+    submission = await request.app.state.container.admin.submit_markdown(
+        body.text, actor=principal.subject
     )
-    return KnowledgeUploaded(
-        id=indexed.id, title=indexed.title, chunks=indexed.chunks
-    )
+    return KnowledgeFileQueued(content_hash=submission.content_hash, status="queued")
 
 
 @router.post(
@@ -650,52 +573,22 @@ async def upload_knowledge_file(
     container = request.app.state.container
     limit = container.settings.extraction_max_upload_bytes
     content = await file.read(limit + 1)
-    if len(content) > limit:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"upload exceeds {limit} bytes",
-        )
-    if not content:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="empty upload"
-        )
-
-    media_type = media_type_for(file.filename or "", file.content_type)
-    if media_type not in SUPPORTED:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="supported formats: PDF, PPTX",
-        )
-
-    frontmatter = _file_metadata(metadata, container.settings.contracts_dir)
-    blob_id = await container.blobs.put(
-        content, filename=file.filename or "upload", media_type=media_type
+    submission = await container.admin.submit_file(
+        content=content,
+        filename=file.filename or "upload",
+        declared_media_type=file.content_type,
+        raw_metadata=metadata,
+        actor=principal.subject,
+        max_bytes=limit,
     )
-    async with container.database.session() as session:
-        await JobQueue.enqueue(
-            session,
-            EXTRACT_DOCUMENT,
-            {
-                "blob_id": blob_id,
-                "filename": file.filename or "upload",
-                "media_type": media_type,
-                "metadata": frontmatter,
-            },
-        )
-    await container.audit.record(
-        "knowledge_file_queued",
-        blob=blob_id,
-        media_type=media_type,
-        by=principal.subject,
-    )
-    return KnowledgeFileQueued(content_hash=blob_id, status="queued")
+    return KnowledgeFileQueued(content_hash=submission.content_hash, status="queued")
 
 
 @router.get("/knowledge/files/{content_hash}", response_model=KnowledgeExtraction)
 async def extraction_status(
     request: Request, principal: Admin, content_hash: str
 ) -> KnowledgeExtraction:
-    record = await request.app.state.container.extraction_cache.load_latest(content_hash)
+    record = await request.app.state.container.admin.extraction(content_hash)
     if record is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="no extraction for this file"
@@ -710,22 +603,3 @@ async def extraction_status(
         min_confidence=record.min_confidence,
         document_id=record.document_id,
     )
-
-
-def _file_metadata(raw: str, contracts_dir: Path) -> dict[str, Any]:
-    """Parse the form's JSON metadata and validate it against ``doc.schema.json``."""
-    try:
-        parsed: Any = json.loads(raw)
-    except json.JSONDecodeError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=f"metadata is not valid JSON: {error}",
-        ) from None
-    try:
-        return validate_frontmatter(
-            parsed, load_schema(contracts_dir / "doc.schema.json"), source="upload"
-        )
-    except CorpusError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
-        ) from None

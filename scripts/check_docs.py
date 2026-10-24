@@ -21,6 +21,8 @@ INDEX = DOCS / "README.md"
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 ROUTE_ROW = re.compile(r"^\|\s*`(GET|POST|PUT|PATCH|DELETE)`\s*\|\s*(.+?)\s*\|", re.M)
 BACKTICK = re.compile(r"`([^`]+)`")
+ADR_TITLE = re.compile(r"^#\s+(\d{4})[\s:—-]", re.M)
+ADR_NAME = re.compile(r"^(\d{4})-")
 
 SKIP = {"README.md"}
 # Internal surfaces: the MAX webhook, the scrape endpoint, and FastAPI's own pages.
@@ -60,6 +62,7 @@ def main() -> int:
                 )
 
     problems.extend(_route_problems())
+    problems.extend(_adr_problems())
 
     if problems:
         print("\n".join(problems), file=sys.stderr)
@@ -95,6 +98,31 @@ def _walk(routes: Iterable[Any]) -> list[tuple[str, str]]:
         if inner is not None:
             found.extend(_walk(inner.routes))
     return found
+
+
+def _adr_problems() -> list[str]:
+    """Each ADR number names one file and one title; a duplicate makes a reference ambiguous."""
+    seen: dict[str, Path] = {}
+    problems: list[str] = []
+    for path in sorted((DOCS / "decisions").glob("*.md")):
+        if path.name == "README.md":
+            continue
+        match = ADR_NAME.match(path.name)
+        if match is None:
+            problems.append(f"ADR without a number: {path.name}")
+            continue
+        number = match.group(1)
+        if number in seen:
+            problems.append(f"duplicate ADR {number}: {seen[number].name} and {path.name}")
+        seen[number] = path
+        title = ADR_TITLE.search(path.read_text(encoding="utf-8"))
+        if title is None:
+            problems.append(f"ADR without a numbered title: {path.name}")
+        elif title.group(1) != number:
+            problems.append(f"ADR {number} has title number {title.group(1)}: {path.name}")
+        if not re.search(r"^-?\s*Status:", path.read_text(encoding="utf-8"), re.M):
+            problems.append(f"ADR without a Status line: {path.name}")
+    return problems
 
 
 def _route_problems() -> list[str]:

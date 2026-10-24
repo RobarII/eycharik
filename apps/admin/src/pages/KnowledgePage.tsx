@@ -33,6 +33,7 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
   const { can } = useSession();
   const canWrite = can("knowledge.write");
   const [text, setText] = useState("");
+  const [hash, setHash] = useState<string | null>(null);
   const query = useQuery({
     queryKey: ["knowledge"],
     queryFn: fetchKnowledge,
@@ -40,13 +41,27 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
   });
   const upload = useMutation({
     mutationFn: uploadKnowledge,
-    onSuccess: () => {
+    onSuccess: (queued) => {
       setText("");
-      void queryClient.invalidateQueries({ queryKey: ["knowledge"] });
+      setHash(queued.content_hash);
     },
   });
+  const extraction = useQuery({
+    queryKey: ["extraction", hash],
+    queryFn: () => fetchExtraction(hash as string),
+    enabled: hash !== null,
+    refetchInterval: (q) => {
+      const status = q.state.data?.status;
+      return status && TERMINAL.has(status) ? false : REFRESH.extraction;
+    },
+  });
+  const done = extraction.data ? TERMINAL.has(extraction.data.status) : false;
 
-  useUnauthorized(query.error ?? upload.error, onUnauthorized);
+  useEffect(() => {
+    if (done) void queryClient.invalidateQueries({ queryKey: ["knowledge"] });
+  }, [done, queryClient]);
+
+  useUnauthorized(query.error ?? upload.error ?? extraction.error, onUnauthorized);
 
   return (
     <section className="page">
@@ -71,7 +86,7 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
         <section className="card">
           <div className="card-head">
             <h2>Новый документ</h2>
-            <span className="card-note">Индексируется сразу</span>
+            <span className="card-note">Индексирует воркер</span>
           </div>
           <form
             className="upload"
@@ -109,14 +124,17 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
                 className="button button-primary"
                 disabled={upload.isPending || text.length < 20}
               >
-                {upload.isPending ? "Индексируем…" : "Загрузить и проиндексировать"}
+                {upload.isPending ? "Ставим в очередь…" : "Загрузить и проиндексировать"}
               </button>
             </div>
             {upload.isError ? <ErrorNote error={upload.error} /> : null}
             {upload.isSuccess ? (
-              <p className="note note-ok" role="status">
-                «{upload.data.title}» проиндексирован: {upload.data.chunks} фрагментов, id{" "}
-                <code>{upload.data.id}</code>.
+              <p className={done ? "note note-ok" : "note"} role="status">
+                {done
+                  ? extraction.data?.status === "indexed"
+                    ? <>Документ проиндексирован, id <code>{extraction.data.document_id}</code>.</>
+                    : <>Документ отклонён: {extraction.data?.reason ?? "неизвестная причина"}.</>
+                  : "Документ в очереди: воркер проверит frontmatter и построит индекс."}
               </p>
             ) : null}
           </form>
@@ -168,7 +186,7 @@ export function KnowledgePage({ onUnauthorized }: { onUnauthorized: () => void }
 
 const UPLOAD_ACCEPT = ".pdf,.pptx,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
-const TERMINAL = new Set(["indexed", "refused"]);
+const TERMINAL = new Set(["indexed", "rejected"]);
 
 /**
  * A PDF or a deck: recognition takes seconds per page, so the server answers 202 and the cabinet
@@ -304,7 +322,7 @@ function FileUpload({ onUnauthorized }: { onUnauthorized: () => void }) {
               <p>
                 {extraction.data.status === "indexed"
                   ? `Готово: ${countLabel(extraction.data.pages, "страница", "страницы", "страниц")}, движок ${extraction.data.engine}.`
-                  : extraction.data.status === "refused"
+                  : extraction.data.status === "rejected"
                     ? `Распознавание отказано: ${extraction.data.reason ?? "причина не указана"}.`
                     : "Распознаём страницы…"}
               </p>

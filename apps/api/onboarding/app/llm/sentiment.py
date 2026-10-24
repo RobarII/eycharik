@@ -231,7 +231,7 @@ def build_sentiment(
         return SentimentChoice(
             provider="prompt",
             classifier=SentimentClassifier(llm=llm, prompts=prompts, audit=audit),
-            model=settings.llm_profile or settings.llm_model,
+            model=settings.llm_profile,
             prompt_version=PROMPT_VERSION,
         )
     if chosen == "jev":

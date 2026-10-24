@@ -4,13 +4,13 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check lint types test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e
+.PHONY: install check lint types arch test eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline run worker up down logs migrate ingest seed demo fmt docs admin-install admin-dev admin-build admin-check admin-e2e
 
 install:
 	uv sync
 	cd apps/admin && npm ci
 
-check: lint types test docs admin-check
+check: lint types arch test docs admin-check
 
 lint:
 	$(PY) ruff check .
@@ -21,6 +21,9 @@ fmt:
 
 types:
 	$(PY) mypy
+
+arch:                              # import cycles, layer order, and "api never calls a model"
+	$(PY) lint-imports
 
 test:
 	$(PY) pytest

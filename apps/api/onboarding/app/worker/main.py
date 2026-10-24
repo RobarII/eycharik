@@ -9,7 +9,6 @@ import asyncio
 import logging
 import signal
 
-from onboarding.app.clock import SystemClock
 from onboarding.app.container import build_container
 from onboarding.app.db.retention import RetentionPurger
 from onboarding.app.settings import Settings
@@ -27,13 +26,14 @@ async def run_forever(settings: Settings, stop: asyncio.Event) -> None:
     runner = JobRunner(
         queue=container.queue,
         service=container.service,
-        clock=SystemClock(),
+        clock=container.clock,
         audit=container.audit,
         extractor=container.extractor,
+        indexer=container.indexer,
     )
     purger = RetentionPurger(
         container.database,
-        SystemClock(),
+        container.clock,
         days=settings.data_retention_days,
     )
     ticks = 0

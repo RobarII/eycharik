@@ -70,7 +70,6 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: SecretStr = SecretStr("")
     llm_oauth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-    llm_model: str = "gpt-4o-mini"
     # Explicit overrides. ``None`` means "the model profile in apps/api/model-profiles decides".
     llm_max_tokens: int | None = None
     llm_timeout_s: float | None = None
@@ -87,7 +86,6 @@ class Settings(BaseSettings):
     embed_profile: str = ""
     embed_base_url: str = ""
     embed_api_key: SecretStr = SecretStr("")
-    embed_model: str = "Embeddings"
     embed_dim: int = 1024
     embed_timeout_s: float | None = None
     llm_embed_scope: str = "GIGACHAT_API_PERS"
@@ -103,7 +101,6 @@ class Settings(BaseSettings):
     sentiment_rubric: str = ""
     jev_base_url: str = "https://api.typesafe.ai/v1"
     jev_api_key: SecretStr = SecretStr("")
-    jev_model: str = "jev-1.13.0"
     # Explicit overrides. ``None`` means "the classify profile decides".
     jev_timeout_s: float | None = None
     jev_max_retries: int | None = None
@@ -324,6 +321,4 @@ class Settings(BaseSettings):
     def is_llm_configured(self) -> bool:
         if self.llm_provider == "extractive":
             return True
-        return bool(self.llm_api_key.get_secret_value()) and bool(
-            self.llm_profile or self.llm_model
-        )
+        return bool(self.llm_api_key.get_secret_value()) and bool(self.llm_profile)

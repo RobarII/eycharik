@@ -149,12 +149,9 @@ def test_a_classify_profile_rejects_a_rubric_without_a_version(tmp_path: Path) -
         library.classify("unversioned")
 
 
-def test_the_classifier_profile_is_built_from_the_environment_when_none_is_chosen() -> None:
-    profile = classify_profile(settings(jev_model="jev-env", jev_timeout_s=2.5))
-
-    assert profile.name == "env"
-    assert profile.model == "jev-env"
-    assert profile.timeout_s == 2.5
+def test_a_classifier_without_a_profile_is_refused() -> None:
+    with pytest.raises(ProfileError, match="CLASSIFY_PROFILE"):
+        classify_profile(settings(classify_profile=""))
 
 
 def test_a_missing_profile_names_the_known_ones() -> None:
@@ -172,12 +169,9 @@ def test_a_name_cannot_escape_the_profiles_directory(name: str) -> None:
         library.answer(name)
 
 
-def test_the_environment_profile_is_used_when_none_is_selected() -> None:
-    profile = answer_profile(settings(llm_provider="gigachat", llm_model="GigaChat-2-Pro"))
-
-    assert profile.name == "env"
-    assert profile.family == "gigachat"
-    assert profile.model == "GigaChat-2-Pro"
+def test_an_answer_model_without_a_profile_is_refused() -> None:
+    with pytest.raises(ProfileError, match="LLM_PROFILE"):
+        answer_profile(settings(llm_profile=""))
 
 
 def test_the_environment_overrides_the_selected_profile() -> None:

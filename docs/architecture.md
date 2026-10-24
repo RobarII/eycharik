@@ -66,6 +66,18 @@ They share code and the database, not memory. The reminder tick runs inside the 
    `messages` row, and `question_resolved` in one transaction. The dispatcher delivers the reply
    with the same pacing and retries as any scenario message.
 
+## An uploaded markdown, end to end
+
+1. `POST /admin/api/knowledge` (HR only) validates the frontmatter against `doc.schema.json` and
+   rejects a non-active document before it reaches storage.
+2. One transaction stores the bytes in `kb_files` by SHA-256, inserts a `queued` row in
+   `kb_extractions`, and enqueues `index_document`. A repeated upload with the same bytes and profile
+   returns `queued=false` and adds no job.
+3. The route answers `202` with `content_hash`; the cabinet polls
+   `GET /admin/api/knowledge/files/{content_hash}`.
+4. The worker validates the stored text again, runs the same `ingest_document` choke point the
+   corpus directory uses, and saves `indexed` or `rejected` in `kb_extractions`.
+
 ## An uploaded file, end to end
 
 The corpus is markdown, but recruiters bring PDFs and scans. Extraction is the bridge, and it is an
@@ -96,7 +108,8 @@ that reads a document says how that document was made.
 
 ## Invariants
 
-1. `api` never calls the model and never waits for a messenger's delivery.
+1. `api` never calls the model and never waits for a messenger's delivery. Its container has no
+   `LLM`, `Embedder`, `Answerer`, or `DocumentExtractor`, so the rule is structural.
 2. `core/` is pure: no I/O, no clock, no randomness. `tests/test_core_purity.py` enforces it.
 3. A live run never changes scenario version; the catalog can hold several versions at once.
 4. An answer without a citation from the retrieved set is not sent.
@@ -181,9 +194,13 @@ holds state, vectors, queue, outbox, questions, and audit; the workload does not
 | `apps/api/onboarding/ports.py` | protocols for clock, model, embedder, knowledge, messaging, ingress, directory, repositories, audit; model profile values |
 | `apps/api/onboarding/app/channels/` | one folder per messenger: client, ingress, render; profile loader and shared pacing |
 | `apps/api/channel-profiles/` | one YAML file per messenger, validated by `docs/contracts/channel-profile.schema.json` |
-| `apps/api/onboarding/api/` | FastAPI app, webhook, admin routes, bearer auth, response schemas |
-| `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base |
-| `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop |
+| `apps/api/onboarding/api/` | FastAPI app, webhook, admin routes, bearer auth, response schemas; transport only |
+| `apps/api/onboarding/app/api_container.py` | the API graph: no model, no embedder, no extractor |
+| `apps/api/onboarding/app/composition.py` | shared graph for every process: database, clock, channels, ingress, profiles |
+| `apps/api/onboarding/app/use_cases/` | inbound acceptance and knowledge submission; one transaction per call |
+| `apps/api/onboarding/app/admin/` | cabinet read models and commands (`service.py` is the route-facing boundary) |
+| `apps/api/onboarding/app/db/` | SQLAlchemy models, repositories, queue, outbox, scheduler, pgvector knowledge base; inbound/submission/health adapters |
+| `apps/api/onboarding/app/worker/` | answer pipeline, action executor, run service, job runner, worker loop, markdown indexer |
 | `apps/api/onboarding/app/llm/` | provider adapters, model profile loader, gateway with retry/breaker/cost, offline extractive provider, embeddings |
 | `apps/api/model-profiles/` | one YAML file per model (`answer/`, `embed/`, `rerank/`) and per reader configuration (`extract/`), validated at startup |
 | `apps/api/onboarding/app/knowledge/` | corpus loading, chunking pipeline, local in-memory backend |

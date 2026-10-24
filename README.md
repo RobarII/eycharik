@@ -29,7 +29,7 @@ Built for the "AI assistant in MAX" case (ООО «Группа ПОЛИПЛАС
 
 ```bash
 make install      # create the virtual environment
-make check        # ruff, mypy, unit tests, docs links
+make check        # ruff, mypy, import contracts, unit tests, docs links, admin
 make eval         # golden-set retrieval, generation, escalation
 make ingest       # index knowledge/ into pgvector
 make demo         # ingest + three employees, two real risk signals, three questions
@@ -56,7 +56,7 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 - **Retrieval**: frontmatter/JSON Schema corpus, deterministic chunking, pgvector HNSW + Russian
   `tsvector`, RRF, hosted rerank, audience and validity as SQL predicates. Every answer carries a
   citation from the retrieved set or escalates.
-- **Answering**: one model call, JSON contract, prompt version `v3`; personal questions
+- **Answering**: one model call, JSON contract, prompt version `v4`; personal questions
   ("кто мой наставник", salary, contract) escalate instead of being answered with generic policy.
 - **Risk radar**: after every survey the answer is classified (hosted model with a deterministic
   keyword fallback), rules turn signals into a level, tags, and Russian reasons, and the audit log
@@ -77,7 +77,7 @@ Working end to end against a local Postgres with pgvector and a hosted model thr
 |---|---|---|
 | Golden set, 16 cases, real model | recall@5 1.00, MRR 1.00, citation 1.00, escalation 1.00, p95 2 237 ms, 0.077 ₽/answer | `docs/measurements/2026-10-23-eval-full-case-corpus.md` |
 | Retrieval with rerank, 12 cases | recall@5 1.00, MRR 1.00 | `docs/measurements/2026-10-23-eval-full-answer-v3-gpt-4.1-mini.md` |
-| Tests | 350+ unit and integration tests; `core/` purity enforced by a test | `apps/api/tests/` |
+| Tests | unit and integration suites; `core/` purity and API boundaries are enforced by tests | `apps/api/tests/` |
 
 ![Run detail](docs/assets/cabinet-run.png)
 

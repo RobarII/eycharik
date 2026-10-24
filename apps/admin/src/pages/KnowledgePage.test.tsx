@@ -90,6 +90,33 @@ describe("KnowledgePage", () => {
     expect(screen.getByRole("button", { name: "Загрузить ещё" })).toBeInTheDocument();
   });
 
+  it("queues markdown and reports the worker's verdict", async () => {
+    vi.mocked(uploadKnowledge).mockResolvedValue({
+      content_hash: "hash-md",
+      status: "queued",
+    });
+    vi.mocked(fetchExtraction).mockResolvedValue({
+      content_hash: "hash-md",
+      status: "indexed",
+      reason: null,
+      engine: "markdown",
+      route: "text",
+      pages: 0,
+      min_confidence: 1,
+      document_id: "hr/new-policy",
+    });
+
+    renderPage(["knowledge.read", "knowledge.write"]);
+    await userEvent.type(
+      screen.getByLabelText("Markdown с frontmatter"),
+      "---\nid: hr/new-policy\ntitle: Политика\n---\n\nТекст документа.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Загрузить и проиндексировать" }));
+
+    expect(await screen.findByText(/Документ проиндексирован/)).toBeInTheDocument();
+    expect(fetchExtraction).toHaveBeenCalledWith("hash-md");
+  });
+
   it("keeps the submit disabled until the file and the id are there", async () => {
     renderPage(["knowledge.read", "knowledge.write"]);
 

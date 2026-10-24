@@ -59,7 +59,7 @@ cookie exists at all.
 | `GET` | `/admin/api/analytics/overview` | seven-day counts: runs, risk levels, unanswered questions, top risk tags |
 | `GET` | `/admin/api/digest/weekly?days=7` | signals that deserve a human, one row per employee and step |
 | `GET` | `/admin/api/knowledge?limit=100` | active knowledge documents, newest first; `hr_only` is hidden from every non-HR role |
-| `POST` | `/admin/api/knowledge` | HR uploads one markdown document with frontmatter; indexed in the request |
+| `POST` | `/admin/api/knowledge` | HR uploads one markdown document; stored by content hash and queued for indexing |
 | `POST` | `/admin/api/knowledge/files` | HR uploads a PDF or a deck; stored by content hash and queued for extraction |
 | `GET` | `/admin/api/knowledge/files/{content_hash}` | what extraction decided about that file, refusals included |
 | `GET` | `/healthz`, `/readyz` | liveness and readiness, no auth |
@@ -308,17 +308,19 @@ A manager sees the same shape, scoped to one department.
 }
 ```
 
-`POST /admin/api/knowledge` takes `{"text": "<markdown with frontmatter>"}` and answers `201`:
+`POST /admin/api/knowledge` takes `{"text": "<markdown with frontmatter>"}` and answers `202`:
 
 ```json
-{"id": "hr/sport-compensation", "title": "Компенсация спорта", "chunks": 1}
+{"content_hash": "5f2c...e1", "status": "queued"}
 ```
 
-The frontmatter is validated against `docs/contracts/doc.schema.json` before anything is written.
+The frontmatter is validated against `docs/contracts/doc.schema.json` before anything is stored.
 An invalid document answers `422` with the exact field, for example
 `upload: owner: 'HR' does not match '^[a-z][a-z0-9_-]*$'`. Only `hr_admin` may upload; a recruiter
-or manager answers `403`. A successful upload is audited as `knowledge_ingested` with the document
-id, the chunk count, and the subject that made the change.
+or manager answers `403`. The bytes are content-addressed, the extraction row becomes `queued`, and
+an `index_document` job is enqueued in the same transaction. The worker embeds and writes the
+chunks; the cabinet polls `GET /admin/api/knowledge/files/{content_hash}` for the result. A
+successful acceptance is audited as `knowledge_queued` with the document id and the subject.
 
 ### Files
 
@@ -357,11 +359,11 @@ whichever profile produced it:
 }
 ```
 
-`status` is `indexed` or `rejected`. `route` is `native_text`, `ocr`, or `rejected`. A rejected file
-carries `reason` — `low_confidence`, `low_dpi`, `blurry`, `encrypted`, `no_pages`,
-`unsupported`, `unreadable`, `too_many_pages`, `too_short`, or `empty` — and `document_id` stays
-null. Before the worker has run, this endpoint answers `404`: the cabinet shows "queued", never a
-guess.
+`status` is `queued`, `running`, `indexed`, or `rejected`. `route` is `native_text`, `ocr`, or
+`rejected`. A rejected file carries `reason` — `low_confidence`, `low_dpi`, `blurry`, `encrypted`,
+`no_pages`, `unsupported`, `unreadable`, `too_many_pages`, `too_short`, or `empty` — and
+`document_id` stays null. The upload transaction creates the `queued` row, so a poll immediately
+after `202` answers `200` with that state; an unknown hash answers `404`.
 
 The status is the extraction's, not the file's: after a profile change the same file can hold one
 record per profile, and this endpoint reports the latest one.

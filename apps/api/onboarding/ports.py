@@ -392,6 +392,57 @@ class JobSink(Protocol):
 
 
 @runtime_checkable
+class InboundSink(Protocol):
+    """Durably accept one inbound event and the job that will process it.
+
+    One transaction: a duplicate delivery is rejected by the dedupe key and never enqueues a
+    second job. The transport never writes either row itself.
+    """
+
+    async def accept(
+        self, *, dedupe_key: str, job_kind: str, payload: Mapping[str, object]
+    ) -> bool:
+        """True when the event is new and the job was queued; False for a duplicate."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeSubmission:
+    """One upload accepted for background indexing."""
+
+    content_hash: str
+    queued: bool
+
+
+@runtime_checkable
+class KnowledgeSubmitter(Protocol):
+    """Store an upload and its indexing job in one transaction.
+
+    The payload carries the bytes, the metadata, and the job kind. The returned flag is ``False``
+    when the same content is already indexed or already queued, so a repeated upload is free.
+    """
+
+    async def submit(
+        self,
+        *,
+        content: bytes,
+        filename: str,
+        media_type: str,
+        metadata: Mapping[str, object],
+        job_kind: str,
+        profile_hash: str | None = None,
+    ) -> KnowledgeSubmission:
+        ...
+
+
+@runtime_checkable
+class HealthCheck(Protocol):
+    """Readiness for the process, not for a dependency graph."""
+
+    async def ping(self) -> bool: ...
+
+
+@runtime_checkable
 class AuditLog(Protocol):
     async def record(self, name: str, **fields: object) -> None:
         """Append-only record. Fields must not contain secrets or raw personal data."""
@@ -545,6 +596,10 @@ class ExtractionCache(Protocol):
     """Extraction is expensive and deterministic per profile, so it is cached by hash pair."""
 
     async def load(self, content_hash: str, profile_hash: str) -> ExtractionRecord | None: ...
+
+    async def load_latest(self, content_hash: str) -> ExtractionRecord | None:
+        """The newest record for a blob, whichever profile produced it. The cabinet reads this."""
+        ...
 
     async def save(self, record: ExtractionRecord) -> None:
         """Insert or replace one record."""

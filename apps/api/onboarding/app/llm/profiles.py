@@ -153,16 +153,8 @@ def answer_profile(settings: Settings) -> AnswerProfile:
                 settings.llm_price_cache_read_rub_per_1k, profile.price_cache_read_rub_per_1k
             ),
         )
-    return AnswerProfile(
-        name="env",
-        model=settings.llm_model,
-        family="gigachat" if settings.llm_provider == "gigachat" else "openai-chat",
-        reasoning_effort=settings.llm_reasoning_effort,
-        max_tokens=_env_int(settings.llm_max_tokens, _ANSWER.max_tokens),
-        timeout_s=_env_float(settings.llm_timeout_s, _ANSWER.timeout_s),
-        max_retries=_env_int(settings.llm_max_retries, _ANSWER.max_retries),
-        price_input_rub_per_1k=_env_float(settings.llm_price_input_rub_per_1k, 0.0),
-        price_output_rub_per_1k=_env_float(settings.llm_price_output_rub_per_1k, 0.0),
+    raise ProfileError(
+        "LLM_PROFILE is required: a model identity belongs in apps/api/model-profiles/answer"
     )
 
 
@@ -176,13 +168,16 @@ def embedding_profile(settings: Settings) -> EmbeddingProfile:
                 f"dim {profile.dim}; a wider vector is a migration, not a setting"
             )
         return replace(profile, timeout_s=_env_float(settings.embed_timeout_s, profile.timeout_s))
-    family = _EMBED_FAMILY[settings.embed_provider]
-    return EmbeddingProfile(
-        name="env",
-        model=settings.embed_model,
-        family=cast(Any, family),
-        dim=settings.embed_dim,
-        timeout_s=_env_float(settings.embed_timeout_s, _EMBED.timeout_s),
+    if settings.embed_provider == "hashing":
+        return EmbeddingProfile(
+            name="env",
+            model="hashing",
+            family=cast(Any, _EMBED_FAMILY["hashing"]),
+            dim=settings.embed_dim,
+            timeout_s=_env_float(settings.embed_timeout_s, _EMBED.timeout_s),
+        )
+    raise ProfileError(
+        "EMBED_PROFILE is required: a model identity belongs in apps/api/model-profiles/embed"
     )
 
 
@@ -210,16 +205,12 @@ def classify_profile(settings: Settings) -> ClassifyProfile:
     The rubric selector is the one value the environment may override, because it is a prompt
     choice (ADR 0004), not a property of the model. Everything else follows ADR 0013.
     """
-    if settings.classify_profile:
-        profile = library(settings).classify(settings.classify_profile)
-    else:
-        profile = ClassifyProfile(
-            name="env",
-            model=settings.jev_model,
-            timeout_s=_env_float(settings.jev_timeout_s, _CLASSIFY.timeout_s),
-            max_retries=_env_int(settings.jev_max_retries, _CLASSIFY.max_retries),
-            price_input_rub_per_1k=_env_float(settings.jev_price_input_rub_per_1k, 0.0),
+    if not settings.classify_profile:
+        raise ProfileError(
+            "CLASSIFY_PROFILE is required: a model identity belongs in "
+            "apps/api/model-profiles/classify"
         )
+    profile = library(settings).classify(settings.classify_profile)
     return replace(
         profile,
         rubric=settings.sentiment_rubric or profile.rubric,

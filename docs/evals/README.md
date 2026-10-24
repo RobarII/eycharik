@@ -272,7 +272,7 @@ resampled together are.
 
 There is no gate yet: a gate needs a stable baseline across models and repetitions. The current
 numbers and the reasoning are in
-[decisions/0019-jev-as-a-classifier-profile.md](../decisions/0019-jev-as-a-classifier-profile.md).
+[decisions/0020-jev-as-a-classifier-profile.md](../decisions/0020-jev-as-a-classifier-profile.md).
 A missed crisis becomes a case here before it becomes a prompt edit.
 
 A stratum needs roughly thirty cases before its recall means anything: on ten crisis cases, three

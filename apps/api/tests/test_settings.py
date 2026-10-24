@@ -102,9 +102,32 @@ def test_production_rejects_hashing_embeddings() -> None:
         Settings(_env_file=None, environment="production", embed_provider="hashing")
 
 
-def test_jev_without_a_key_is_refused_at_startup() -> None:
-    with pytest.raises(ValidationError, match="JEV_API_KEY"):
-        Settings(_env_file=None, sentiment_provider="jev")
+def test_a_decisions_provider_without_a_key_is_refused_at_startup() -> None:
+    with pytest.raises(ValidationError, match="CLASSIFY_API_KEY"):
+        Settings(_env_file=None, sentiment_provider="decisions")
+
+
+def test_the_classifier_default_resolves_at_runtime_not_in_configuration() -> None:
+    """``auto`` names a rule, so an offline profile starts without a key and claims no provider."""
+
+    assert Settings(_env_file=None).sentiment_provider == "auto"
+    configured = Settings(_env_file=None, sentiment_provider="decisions", classify_api_key="k")
+    assert configured.classify_api_key
+
+
+def test_the_old_jev_names_still_configure_the_decisions_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A `.env` written before the rename must not fall back to the keyword floor silently."""
+
+    monkeypatch.setenv("JEV_API_KEY", "legacy-key")
+    monkeypatch.setenv("JEV_BASE_URL", "https://legacy.example/v1")
+    legacy = Settings(_env_file=None)
+    assert legacy.classify_api_key.get_secret_value() == "legacy-key"
+    assert legacy.classify_base_url == "https://legacy.example/v1"
+
+    monkeypatch.setenv("CLASSIFY_API_KEY", "new-key")
+    assert Settings(_env_file=None).classify_api_key.get_secret_value() == "new-key"
 
 
 def test_a_rubric_selector_must_be_named_and_versioned() -> None:
@@ -119,9 +142,9 @@ def test_a_classify_profile_name_cannot_escape_the_profiles_directory() -> None:
         Settings(_env_file=None, classify_profile="../etc/passwd")
 
 
-def test_a_negative_jev_retry_count_is_refused() -> None:
-    with pytest.raises(ValidationError, match="JEV_MAX_RETRIES"):
-        Settings(_env_file=None, jev_max_retries=-1)
+def test_a_negative_classify_retry_count_is_refused() -> None:
+    with pytest.raises(ValidationError, match="CLASSIFY_MAX_RETRIES"):
+        Settings(_env_file=None, classify_max_retries=-1)
 
 
 def test_manager_token_is_supported() -> None:

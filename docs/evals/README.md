@@ -381,9 +381,12 @@ make eval-acl        # every (viewer, document) pair, retrieval-only, no key, no
 ```bash
 make eval-sentiment                      # the configured prompt classifier
 make eval-sentiment PROVIDER=keyword     # deterministic baseline, no key
-make eval-sentiment PROVIDER=jev         # TypeSafe Jev, needs JEV_API_KEY
+make eval-sentiment PROVIDER=decisions   # decisions model, needs CLASSIFY_API_KEY
 make eval-sentiment SPLIT=test REPEAT=3  # the locked half, three calls per case
 ```
+
+`--provider jev` — прежнее имя пути `decisions`; оно принимается, чтобы команда из старого
+измерения запускалась, но артефакт пишется с каноническим именем.
 
 У каждого кейса есть `split: dev | test`. `dev` можно читать, пока правишь промпт; `test` заперт, и
 каждое заявление о качестве называет оба числа, потому что разрыв между ними и есть переобучение. У

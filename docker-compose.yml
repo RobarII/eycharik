@@ -22,7 +22,7 @@ x-local-demo: &local-demo
   RERANK_API_KEY: ${RERANK_API_KEY:-}
   EMBED_DIM: ${EMBED_DIM:-1024}
   EXTRACTION_PROFILE: ${EXTRACTION_PROFILE:-native}
-  SENTIMENT_PROVIDER: ${SENTIMENT_PROVIDER:-prompt}
+  SENTIMENT_PROVIDER: ${SENTIMENT_PROVIDER:-auto}
   ADMIN_TOKENS: "${ADMIN_TOKENS:-dev-recruiter-token:recruiter:rec-1,dev-manager-token:manager:Коммерческий блок,dev-hr-token:hr_admin:hr-1:2030-12-31}"
   DATA_RETENTION_DAYS: ${DATA_RETENTION_DAYS:-365}
 

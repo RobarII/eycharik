@@ -1,9 +1,11 @@
-"""The sentiment layer: two model classifiers, one deterministic fallback, one way to build them.
+"""The sentiment layer: two model classifiers, one deterministic floor, one way to build them.
 
 The prompt classifier labels one answer with the versioned chat prompt; the Jev classifier labels
 it with a rubric and returns probabilities. Both satisfy :class:`SentimentAnalysis`, both degrade
 to ``core/risk.keyword_signal`` through :mod:`onboarding.app.llm.fallback`, and both are built by
 :func:`build_sentiment`, so the composition root and the eval runner cannot choose differently.
+:func:`resolve_provider` is the one place that decides *which* of them a deployment runs: it reads
+what is configured, never what is wished for.
 
 Parsing here is strict for the same reason as ``output.py``: model output is untrusted, and a
 malformed label must degrade to the keyword fallback, not to a silent guess.
@@ -17,6 +19,7 @@ from typing import Any
 import httpx
 
 from onboarding.app.audit import NullAudit
+from onboarding.app.llm.decisions import build_decisions_classifier
 from onboarding.app.llm.fallback import (
     MAX_ANSWER_CHARS,
     MAX_TAGS,
@@ -25,7 +28,6 @@ from onboarding.app.llm.fallback import (
     fallback_signal,
 )
 from onboarding.app.llm.gateway import LLMResponseError
-from onboarding.app.llm.jev import build_jev_classifier
 from onboarding.app.llm.output import AnswerFormatError, parse_json_object
 from onboarding.app.llm.profiles import classify_profile
 from onboarding.app.llm.rubric import RubricLibrary
@@ -53,13 +55,18 @@ __all__ = [
     "MAX_TAGS",
     "PROMPT_NAME",
     "PROMPT_VERSION",
+    "SENTIMENT_PROVIDERS",
     "KeywordSentiment",
     "SentimentClassifier",
     "SentimentFormatError",
     "SentimentSetupError",
     "build_sentiment",
     "parse_sentiment",
+    "resolve_provider",
 ]
+
+# ``auto`` is a rule, not a preference: see :func:`resolve_provider`. The other two name a path.
+SENTIMENT_PROVIDERS: tuple[str, ...] = ("auto", "prompt", "decisions")
 
 
 class SentimentFormatError(AnswerFormatError):
@@ -185,6 +192,9 @@ class SentimentClassifier:
             output_tokens=completion.output_tokens,
             latency_ms=completion.latency_ms,
             cost_rub=completion.cost_rub,
+            # The provider's own charge when it reports one. Without it a USD comparison between
+            # the two paths would be arithmetic on prices nobody measured.
+            cost_usd=completion.cost_usd,
         )
         return RiskSignal(
             source=source,
@@ -211,6 +221,40 @@ class SentimentChoice:
     prompt_version: int | None = None
 
 
+def resolve_provider(settings: Settings) -> str:
+    """Which classifier this deployment runs, from what it can actually reach.
+
+    ``auto`` picks by availability, highest first: a classifier key, then a real answer model, then
+    the deterministic keyword floor. That is the whole reason ``auto`` exists: one configuration
+    works offline (no keys, demo and CI) and in production (key present, the measured faster path)
+    without the composition root guessing and without a second policy to keep in sync.
+
+    ``extractive`` does not count as an answer model here. It is the offline floor itself, so asking
+    it a sentiment question would cost a call, fail the parse, and record a fallback that says
+    nothing new — the floor is what the worker uses when no classifier exists.
+
+    A named provider stays strict about its own credential: ``decisions`` without
+    ``CLASSIFY_API_KEY`` is a typo in configuration and is refused at startup by :class:`Settings`.
+    ``prompt`` without an answer model is not a typo but the offline profile, so it resolves to the
+    same floor the worker would use anyway; availability never depends on a key.
+    """
+    chosen = settings.sentiment_provider
+    if chosen == "decisions":
+        return "decisions"
+    if chosen == "prompt":
+        return "prompt" if _has_answer_model(settings) else "keyword"
+    if settings.classify_api_key.get_secret_value():
+        return "decisions"
+    if _has_answer_model(settings):
+        return "prompt"
+    return "keyword"
+
+
+def _has_answer_model(settings: Settings) -> bool:
+    """A model that can answer a prompt, which the offline extractor cannot."""
+    return settings.llm_provider != "extractive" and settings.is_llm_configured
+
+
 def build_sentiment(
     settings: Settings,
     *,
@@ -222,7 +266,7 @@ def build_sentiment(
     provider: str | None = None,
 ) -> SentimentChoice:
     """Build the configured classifier. The only place that knows a provider or a rubric path."""
-    chosen = provider or settings.sentiment_provider
+    chosen = provider or resolve_provider(settings)
     if chosen == "keyword":
         return SentimentChoice(provider="keyword", classifier=KeywordSentiment())
     if chosen == "prompt":
@@ -234,14 +278,16 @@ def build_sentiment(
             model=settings.llm_profile,
             prompt_version=PROMPT_VERSION,
         )
-    if chosen == "jev":
-        if not settings.jev_api_key.get_secret_value():
-            raise SentimentSetupError("JEV_API_KEY is not set; the jev provider cannot run")
+    if chosen == "decisions":
+        if not settings.classify_api_key.get_secret_value():
+            raise SentimentSetupError(
+                "CLASSIFY_API_KEY is not set; the decisions provider cannot run"
+            )
         profile = _classify_profile(settings)
-        classifier = build_jev_classifier(
+        classifier = build_decisions_classifier(
             client=client,
-            endpoint=f"{settings.jev_base_url.rstrip('/')}/systemone",
-            api_key=settings.jev_api_key,
+            endpoint=f"{settings.classify_base_url.rstrip('/')}/systemone",
+            api_key=settings.classify_api_key,
             profile=profile,
             rubrics=RubricLibrary(
                 settings.prompts_dir, settings.contracts_dir / "jev-rubric.schema.json"
@@ -251,7 +297,7 @@ def build_sentiment(
             breaker=model_breaker(settings),
         )
         return SentimentChoice(
-            provider="jev",
+            provider="decisions",
             classifier=classifier,
             model=profile.model,
             rubric=profile.rubric,

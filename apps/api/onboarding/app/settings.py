@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from onboarding.core.models import Channel
@@ -102,15 +102,34 @@ class Settings(BaseSettings):
     rerank_timeout_s: float | None = None
     rerank_deadline_s: float | None = None
 
-    sentiment_provider: Literal["prompt", "jev"] = "prompt"
+    # ``auto`` resolves by availability (classifier key -> answer model -> keyword floor); see
+    # ``resolve_provider``. Naming a provider pins that path instead of resolving it.
+    sentiment_provider: Literal["auto", "prompt", "decisions"] = "auto"
     classify_profile: str = ""
     sentiment_rubric: str = ""
-    jev_base_url: str = "https://api.typesafe.ai/v1"
-    jev_api_key: SecretStr = SecretStr("")
+    # Endpoint and envelope of the decisions model a classify profile names. The provider is called
+    # after the question shape, not the vendor (ADR 0029): a second decisions model is a new
+    # profile, not a new setting. ``JEV_*`` stays readable so an existing `.env` keeps working.
+    classify_base_url: str = Field(
+        default="https://api.typesafe.ai/v1",
+        validation_alias=AliasChoices("CLASSIFY_BASE_URL", "JEV_BASE_URL"),
+    )
+    classify_api_key: SecretStr = Field(
+        default=SecretStr(""), validation_alias=AliasChoices("CLASSIFY_API_KEY", "JEV_API_KEY")
+    )
     # Explicit overrides. ``None`` means "the classify profile decides".
-    jev_timeout_s: float | None = None
-    jev_max_retries: int | None = None
-    jev_price_input_rub_per_1k: float | None = None
+    classify_timeout_s: float | None = Field(
+        default=None, validation_alias=AliasChoices("CLASSIFY_TIMEOUT_S", "JEV_TIMEOUT_S")
+    )
+    classify_max_retries: int | None = Field(
+        default=None, validation_alias=AliasChoices("CLASSIFY_MAX_RETRIES", "JEV_MAX_RETRIES")
+    )
+    classify_price_input_rub_per_1k: float | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "CLASSIFY_PRICE_INPUT_RUB_PER_1K", "JEV_PRICE_INPUT_RUB_PER_1K"
+        ),
+    )
 
     extraction_profile: str = "native"
     extraction_profiles_dir: Path = Field(
@@ -202,16 +221,16 @@ class Settings(BaseSettings):
             raise ValueError("EMBED_TIMEOUT_S must be positive")
 
     def _check_sentiment(self) -> None:
-        if self.sentiment_provider == "jev" and not self.jev_api_key.get_secret_value():
-            raise ValueError("SENTIMENT_PROVIDER=jev requires JEV_API_KEY")
+        if self.sentiment_provider == "decisions" and not self.classify_api_key.get_secret_value():
+            raise ValueError("SENTIMENT_PROVIDER=decisions requires CLASSIFY_API_KEY")
         if self.classify_profile and not _PROFILE_NAME.fullmatch(self.classify_profile):
             raise ValueError("CLASSIFY_PROFILE must match [a-z0-9][a-z0-9._-]*")
         if self.sentiment_rubric and not _RUBRIC_SELECTOR.fullmatch(self.sentiment_rubric):
             raise ValueError("SENTIMENT_RUBRIC must match <name>@<version>, for example a@1")
-        if self.jev_timeout_s is not None and self.jev_timeout_s <= 0:
-            raise ValueError("JEV_TIMEOUT_S must be positive")
-        if self.jev_max_retries is not None and self.jev_max_retries < 0:
-            raise ValueError("JEV_MAX_RETRIES must not be negative")
+        if self.classify_timeout_s is not None and self.classify_timeout_s <= 0:
+            raise ValueError("CLASSIFY_TIMEOUT_S must be positive")
+        if self.classify_max_retries is not None and self.classify_max_retries < 0:
+            raise ValueError("CLASSIFY_MAX_RETRIES must not be negative")
 
     def _check_limits(self) -> None:
         if not 0.0 <= self.answer_min_confidence <= 1.0:

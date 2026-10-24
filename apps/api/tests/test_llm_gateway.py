@@ -324,3 +324,25 @@ async def test_gigachat_refreshes_the_token_once() -> None:
     assert len(oauth_calls) == 1
     assert len(chat_calls) == 2
     assert chat_calls[0].headers["authorization"] == "Bearer gc-token"
+
+
+async def test_the_provider_reported_charge_reaches_the_completion() -> None:
+    """OpenRouter reports ``usage.cost`` in USD; that number is the ledger, not a profile price."""
+    body = completion_body()
+    body["usage"]["cost"] = 0.0000055  # type: ignore[index]
+    handler, _ = handler_returning((200, body))
+    gateway = build(handler)
+
+    result = await gateway.complete(REQUEST)
+
+    assert result.cost_usd == pytest.approx(0.0000055)
+
+
+async def test_a_silent_provider_is_not_priced_at_zero() -> None:
+    """``None`` means "not reported"; conflating it with zero invents a price nobody measured."""
+    handler, _ = handler_returning((200, completion_body()))
+    gateway = build(handler)
+
+    result = await gateway.complete(REQUEST)
+
+    assert result.cost_usd is None

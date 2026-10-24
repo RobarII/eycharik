@@ -217,10 +217,10 @@ def classify_profile(settings: Settings) -> ClassifyProfile:
     return replace(
         profile,
         rubric=settings.sentiment_rubric or profile.rubric,
-        timeout_s=_env_float(settings.jev_timeout_s, profile.timeout_s),
-        max_retries=_env_int(settings.jev_max_retries, profile.max_retries),
+        timeout_s=_env_float(settings.classify_timeout_s, profile.timeout_s),
+        max_retries=_env_int(settings.classify_max_retries, profile.max_retries),
         price_input_rub_per_1k=_env_float(
-            settings.jev_price_input_rub_per_1k, profile.price_input_rub_per_1k
+            settings.classify_price_input_rub_per_1k, profile.price_input_rub_per_1k
         ),
     )
 

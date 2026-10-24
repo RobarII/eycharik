@@ -111,9 +111,9 @@ async def test_a_misconfigured_classifier_is_a_startup_error_named_for_the_opera
 ) -> None:
     def refuse(*args: object, **kwargs: object) -> None:
         del args, kwargs
-        raise ValueError("JEV_API_KEY is not set")
+        raise ValueError("CLASSIFY_API_KEY is not set")
 
     monkeypatch.setattr(composition, "build_sentiment", refuse)
 
-    with pytest.raises(RuntimeError, match="sentiment provider misconfigured: JEV_API_KEY"):
-        build_container(settings(sentiment_provider="jev", jev_api_key="jev-key"))
+    with pytest.raises(RuntimeError, match="sentiment provider misconfigured: CLASSIFY_API_KEY"):
+        build_container(settings(sentiment_provider="decisions", classify_api_key="classify-key"))

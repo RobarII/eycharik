@@ -15,9 +15,11 @@ from onboarding.app.clock import FrozenClock
 from onboarding.app.llm.fallback import MAX_TAGS, KeywordSentiment
 from onboarding.app.llm.rubric import RubricLibrary
 from onboarding.app.llm.sentiment import (
+    SENTIMENT_PROVIDERS,
     SentimentClassifier,
     SentimentSetupError,
     build_sentiment,
+    resolve_provider,
 )
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import REPO_ROOT, Settings
@@ -60,7 +62,7 @@ def build(
     )
 
 
-def jev_answers(choice: str = "negative") -> dict[str, Any]:
+def decisions_answers(choice: str = "negative") -> dict[str, Any]:
     rubric = RubricLibrary(PROMPTS, CONTRACTS / "jev-rubric.schema.json").load(
         "sentiment-jev@1"
     )
@@ -94,9 +96,9 @@ def test_the_prompt_provider_without_a_key_is_a_setup_error() -> None:
         build("prompt")
 
 
-def test_the_jev_provider_without_a_key_is_a_setup_error() -> None:
-    with pytest.raises(SentimentSetupError, match="JEV_API_KEY"):
-        build("jev")
+def test_the_decisions_provider_without_a_key_is_a_setup_error() -> None:
+    with pytest.raises(SentimentSetupError, match="CLASSIFY_API_KEY"):
+        build("decisions")
 
 
 def test_the_prompt_provider_names_the_model_it_will_call() -> None:
@@ -112,15 +114,15 @@ def test_the_prompt_provider_names_the_model_it_will_call() -> None:
     assert choice.model
 
 
-def test_the_jev_provider_takes_the_model_and_the_rubric_from_the_profile() -> None:
-    choice = build("jev", jev_api_key=SecretStr("jev"))
+def test_the_decisions_provider_takes_the_model_and_the_rubric_from_the_profile() -> None:
+    choice = build("decisions", classify_api_key=SecretStr("classify"))
 
-    assert choice.provider == "jev"
+    assert choice.provider == "decisions"
     assert choice.model == "jev-1.13.0"
     assert choice.rubric == "sentiment-jev@1"
 
 
-def test_the_environment_can_move_the_jev_provider_to_another_rubric(
+def test_the_environment_can_move_the_decisions_provider_to_another_rubric(
     tmp_path: Path,
 ) -> None:
     directory = tmp_path / "sentiment-jev"
@@ -131,8 +133,8 @@ def test_the_environment_can_move_the_jev_provider_to_another_rubric(
     )
 
     choice = build(
-        "jev",
-        jev_api_key=SecretStr("jev"),
+        "decisions",
+        classify_api_key=SecretStr("classify"),
         sentiment_rubric="sentiment-jev@2",
         prompts_dir=tmp_path,
     )
@@ -155,21 +157,26 @@ async def test_both_classifiers_audit_a_fallback_the_same_way() -> None:
         prompts=PromptLibrary(PROMPTS),
         audit=prompt_audit,
     )
-    jev_client = client(lambda _: httpx.Response(503, json={}))
-    jev_audit = RecordingAudit()
-    jev = build("jev", audit=jev_audit, jev_api_key=SecretStr("jev"), http=jev_client)
+    decisions_client = client(lambda _: httpx.Response(503, json={}))
+    decisions_audit = RecordingAudit()
+    classifier = build(
+        "decisions",
+        audit=decisions_audit,
+        classify_api_key=SecretStr("classify"),
+        http=decisions_client,
+    )
 
     prompt_signal = await prompt.classify(TEXT, source="survey:manager")
-    jev_signal = await jev.classifier.classify(TEXT, source="survey:manager")
+    decisions_signal = await classifier.classifier.classify(TEXT, source="survey:manager")
 
-    assert prompt_audit.names() == jev_audit.names() == ["sentiment_fallback"]
-    for audit in (prompt_audit, jev_audit):
+    assert prompt_audit.names() == decisions_audit.names() == ["sentiment_fallback"]
+    for audit in (prompt_audit, decisions_audit):
         fields = audit.events[0][1]
         assert fields["source"] == "survey:manager"
         assert "provider" in fields
         assert "reason" in fields
     _assert_same_signal(prompt_signal, expected)
-    _assert_same_signal(jev_signal, expected)
+    _assert_same_signal(decisions_signal, expected)
 
 
 async def test_both_classifiers_audit_a_format_error_the_same_way() -> None:
@@ -179,26 +186,31 @@ async def test_both_classifiers_audit_a_format_error_the_same_way() -> None:
         prompts=PromptLibrary(PROMPTS),
         audit=prompt_audit,
     )
-    jev_client = client(lambda _: httpx.Response(200, json=jev_answers("angry")))
-    jev_audit = RecordingAudit()
-    jev = build("jev", audit=jev_audit, jev_api_key=SecretStr("jev"), http=jev_client)
+    decisions_client = client(lambda _: httpx.Response(200, json=decisions_answers("angry")))
+    decisions_audit = RecordingAudit()
+    classifier = build(
+        "decisions",
+        audit=decisions_audit,
+        classify_api_key=SecretStr("classify"),
+        http=decisions_client,
+    )
 
     await prompt.classify(TEXT, source="survey:manager")
-    await jev.classifier.classify(TEXT, source="survey:manager")
+    await classifier.classifier.classify(TEXT, source="survey:manager")
 
     assert prompt_audit.names() == ["sentiment_fallback"]
-    assert jev_audit.names() == ["sentiment_format_error", "sentiment_fallback"]
+    assert decisions_audit.names() == ["sentiment_format_error", "sentiment_fallback"]
 
 
-async def test_the_jev_classifier_measures_what_it_spent() -> None:
+async def test_the_decisions_classifier_measures_what_it_spent() -> None:
     audit = RecordingAudit()
-    body = jev_answers()
+    body = decisions_answers()
     body["usage"] = {"input_tokens": 500}
     choice = build(
-        "jev",
+        "decisions",
         audit=audit,
-        jev_api_key=SecretStr("jev"),
-        jev_price_input_rub_per_1k=0.4,
+        classify_api_key=SecretStr("classify"),
+        classify_price_input_rub_per_1k=0.4,
         http=client(lambda _: httpx.Response(200, json=body)),
     )
 
@@ -233,7 +245,7 @@ def _assert_same_signal(actual: RiskSignal, expected: RiskSignal) -> None:
     assert actual.text == expected.text
 
 
-async def test_the_prompt_classifier_reports_the_same_usage_fields_as_jev() -> None:
+async def test_the_prompt_classifier_reports_the_same_usage_fields_as_decisions() -> None:
     """One Cost section prices either path, so both audit events carry tokens and latency."""
     audit = RecordingAudit()
     classifier = SentimentClassifier(
@@ -255,3 +267,91 @@ async def test_the_prompt_classifier_reports_the_same_usage_fields_as_jev() -> N
     assert fields["output_tokens"] == 5
     assert fields["model"] == "scripted"
     assert "latency_ms" in fields
+
+
+def test_auto_resolves_to_the_path_that_is_actually_configured() -> None:
+    """One configuration serves the keyless demo and production: availability decides, not taste."""
+
+    assert resolve_provider(settings(llm_provider="extractive")) == "keyword"
+    assert resolve_provider(settings()) == "keyword"
+    assert resolve_provider(settings(llm_api_key=SecretStr("k"), llm_profile="p")) == "prompt"
+    assert resolve_provider(settings(classify_api_key=SecretStr("k"))) == "decisions"
+    assert (
+        resolve_provider(
+            settings(classify_api_key=SecretStr("k"), llm_api_key=SecretStr("k"), llm_profile="p")
+        )
+        == "decisions"
+    )
+
+
+def test_a_named_provider_pins_the_path_and_keeps_its_own_strictness() -> None:
+    """``prompt`` without an answer model is the offline profile, not a typo; no key is invented."""
+
+    assert resolve_provider(settings(sentiment_provider="prompt")) == "keyword"
+    assert (
+        resolve_provider(settings(sentiment_provider="prompt", llm_provider="extractive"))
+        == "keyword"
+    )
+    assert (
+        resolve_provider(
+            settings(
+                sentiment_provider="prompt", llm_api_key=SecretStr("k"), llm_profile="p"
+            )
+        )
+        == "prompt"
+    )
+    assert (
+        resolve_provider(
+            settings(sentiment_provider="decisions", classify_api_key=SecretStr("k"))
+        )
+        == "decisions"
+    )
+
+
+def test_no_shipped_name_leaks_into_the_factory_unresolved() -> None:
+    """The factory never sees ``auto``: resolution happens once, before a classifier is built."""
+    assert SENTIMENT_PROVIDERS == ("auto", "prompt", "decisions")
+    for name in SENTIMENT_PROVIDERS:
+        resolved = resolve_provider(
+            settings(sentiment_provider=name, classify_api_key=SecretStr("k"))
+        )
+        assert resolved in {"keyword", "prompt", "decisions"}
+        assert resolved != "auto"
+
+
+async def test_the_prompt_classifier_records_the_charge_the_provider_reported() -> None:
+    """Both paths report the same field, so one Cost section prices either one."""
+    audit = RecordingAudit()
+    classifier = SentimentClassifier(
+        llm=ScriptedLLM(
+            responses=[
+                '{"sentiment": "negative", "tags": ["access"], "confidence": 0.9, "reason": "x"}'
+            ],
+            cost_usd=0.00042,
+        ),
+        prompts=PromptLibrary(PROMPTS),
+        audit=audit,
+    )
+
+    await classifier.classify("Доступ не выдали третий день", source="day_three")
+
+    _, fields = audit.events[0]
+    assert fields["cost_usd"] == pytest.approx(0.00042)
+
+
+async def test_a_silent_prompt_provider_records_no_price_rather_than_zero() -> None:
+    audit = RecordingAudit()
+    classifier = SentimentClassifier(
+        llm=ScriptedLLM(
+            responses=[
+                '{"sentiment": "negative", "tags": ["access"], "confidence": 0.9, "reason": "x"}'
+            ]
+        ),
+        prompts=PromptLibrary(PROMPTS),
+        audit=audit,
+    )
+
+    await classifier.classify("Доступ не выдали третий день", source="day_three")
+
+    _, fields = audit.events[0]
+    assert fields["cost_usd"] is None

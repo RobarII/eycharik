@@ -101,7 +101,7 @@ eval-baseline:                      # pin this run: gate = Wilson lower bound of
 eval-ocr:                          # extraction quality; needs no database and no provider key
 	$(PY) python -m onboarding.evals.ocr $(ARGS)
 
-eval-sentiment:                     # PROVIDER=keyword|prompt|jev, SPLIT=dev|test|all
+eval-sentiment:                     # PROVIDER=keyword|prompt|decisions, SPLIT=dev|test|all
 	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --split $(or $(SPLIT),all) --repeat $(or $(REPEAT),1) $(ARGS) --write
 
 run:

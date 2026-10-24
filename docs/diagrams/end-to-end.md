@@ -31,7 +31,7 @@ last_verified: 2026-10-24
 | `BM25_ENABLED` | `false` | BM25 в пути запроса; выключен по ADR 0012 |
 | `CONTEXTUAL_RETRIEVAL` | `false` | префикс контекста при индексации; выключен по ADR 0016 |
 | `ANSWER_MIN_CONFIDENCE` | `0.45` | ниже порога — эскалация |
-| `SENTIMENT_PROVIDER` | `prompt` | `jev` за флагом и с ключом |
+| `SENTIMENT_PROVIDER` | `auto` | по ключу: `decisions`, иначе `prompt`, иначе `keyword` (ADR 0029) |
 | `EXTRACTION_PROFILE` | `native` | `doc-scan` включает OCR |
 | `ADMIN_TOKENS` | три демо-роли | роль, субъект, дата истечения |
 | `DATA_RETENTION_DAYS` | `365` | окно хранения персонального |

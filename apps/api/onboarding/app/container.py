@@ -95,19 +95,20 @@ def _classifier(
     prompts: PromptLibrary,
     audit: AuditLog,
 ) -> SentimentAnalysis | None:
-    if settings.sentiment_provider == "prompt" and not settings.is_llm_configured:
-        return None
     try:
-        return build_sentiment(
+        choice = build_sentiment(
             settings,
             clock=clock,
             client=http,
             prompts=prompts,
             audit=audit,
             llm=llm,
-        ).classifier
+        )
     except ValueError as error:
         raise RuntimeError(f"sentiment provider misconfigured: {error}") from error
+    # ``None`` is the worker's deterministic floor, not a third policy: ``core.risk.keyword_signal``
+    # is already what a missing model signal means everywhere else.
+    return None if choice.provider == "keyword" else choice.classifier
 
 
 def build_container(settings: Settings) -> Container:

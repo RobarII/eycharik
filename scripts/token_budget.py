@@ -28,6 +28,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import yaml
 from tokenizers import Tokenizer  # type: ignore[import-not-found]
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -97,6 +98,57 @@ def _row(
     }
 
 
+def _case_texts(path: Path) -> list[str]:
+    """Every ``text`` field of an eval set, in file order, without the labels.
+
+    The labels do not reach the model, so they cost nothing; the prompt and the free-text answer do.
+    """
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return [str(item["text"]) for item in payload["cases"]]
+
+
+def _cases_report(args: argparse.Namespace, prompt: str) -> int:
+    texts = _case_texts(args.cases)
+    rows = []
+    for path in args.tokenizer:
+        name = next(
+            (part.split("models--")[1] for part in path.parts if "models--" in part),
+            path.name,
+        )
+        tokenizer = Tokenizer.from_file(str(path))
+        prompt_tokens = len(tokenizer.encode(prompt).ids)
+        case_tokens = [len(tokenizer.encode(text).ids) for text in texts]
+        mean_case = round(statistics.mean(case_tokens))
+        rows.append(
+            {
+                "tokenizer": name,
+                "prompt_tokens": prompt_tokens,
+                "case_tokens_mean": mean_case,
+                "case_tokens_p95": _percentile(case_tokens, 0.95),
+                "input_tokens_per_call": prompt_tokens + mean_case,
+                "calls": len(texts),
+                "input_tokens_total": len(texts) * (prompt_tokens + mean_case),
+            }
+        )
+    if args.json:
+        print(json.dumps(rows, indent=2, ensure_ascii=False))
+        return 0
+    header = (
+        f"{'tokenizer':52} {'prompt':>7} {'case':>6} {'p95':>6} {'in/call':>8} "
+        f"{'calls':>6} {'in total':>9}"
+    )
+    print(f"prompt {args.prompt}, {len(texts)} cases from {args.cases}")
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        print(
+            f"{row['tokenizer']:52} {row['prompt_tokens']:>7} {row['case_tokens_mean']:>6} "
+            f"{row['case_tokens_p95']:>6} {row['input_tokens_per_call']:>8} "
+            f"{row['calls']:>6} {row['input_tokens_total']:>9}"
+        )
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tokenizer", required=True, action="append", type=Path)
@@ -106,10 +158,14 @@ def main() -> int:
     parser.add_argument("--completion-chars", type=int, default=700)
     parser.add_argument("--rerank-tokenizer", type=Path)
     parser.add_argument("--rerank-candidates", type=int, default=30)
+    parser.add_argument("--cases", type=Path, help="eval set: count one prompt plus each case text")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     prompt = args.prompt.read_text(encoding="utf-8")
+
+    if args.cases is not None:
+        return _cases_report(args, prompt)
     chunks = _chunks(args.knowledge)
     sample = _answer_sample(chunks, args.completion_chars)
 
@@ -156,8 +212,10 @@ def main() -> int:
     )
     print(f"answer sample {args.completion_chars} chars, context {args.chunks} chunks")
     if rerank_tokens:
-        print(f"rerank {args.rerank_candidates} candidates -> {rerank_tokens} tokens "
-              f"({args.rerank_tokenizer})")
+        print(
+            f"rerank {args.rerank_candidates} candidates -> {rerank_tokens} tokens "
+            f"({args.rerank_tokenizer})"
+        )
     header = f"{'tokenizer':<52}{'prompt':>7}{'chunk':>7}{'in':>7}{'out':>6}{'total':>7}"
     print(header)
     print("-" * len(header))

@@ -49,7 +49,11 @@ from onboarding.ports import AuditLog, SentimentAnalysis
 ROOT = Path(__file__).resolve().parents[4]
 DEFAULT_CASES = ROOT / "docs" / "evals" / "sentiment.yaml"
 DEFAULT_OUT = ROOT / "docs" / "measurements"
-PROVIDERS = ("keyword", "prompt", "jev")
+# The provider is the class of model, not a vendor (ADR 0029). ``jev`` is the name the first
+# artifacts used; it still resolves so an old command in a measurement file keeps running, but every
+# new artifact records ``decisions``.
+PROVIDERS = ("keyword", "prompt", "decisions", "jev")
+ALIASES = {"jev": "decisions"}
 SPLITS = ("dev", "test", "all")
 Z_95 = 1.959963984540054
 BOOTSTRAP_ROUNDS = 5000
@@ -919,7 +923,7 @@ def main(argv: list[str] | None = None) -> int:
 def _command_line(args: argparse.Namespace) -> str:
     parts = [
         "python -m onboarding.evals.sentiment",
-        f"--provider {args.provider}",
+        f"--provider {canonical_provider(args.provider)}",
         f"--split {args.split}",
         f"--repeat {args.repeat}",
     ]
@@ -941,6 +945,11 @@ class _EvalAbortError(Exception):
 def _abort(code: int, message: str) -> NoReturn:
     print(message, file=sys.stderr)
     raise _EvalAbortError(code)
+
+
+def canonical_provider(name: str) -> str:
+    """The class name an artifact records, whichever spelling the command used."""
+    return ALIASES.get(name, name)
 
 
 def _build(
@@ -971,13 +980,13 @@ async def _measure(args: argparse.Namespace, cases: tuple[Case, ...]) -> Report:
     audit = CountingAudit()
     async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as http:
         try:
-            choice = _build(args.provider, Settings(), http, audit)
+            choice = _build(canonical_provider(args.provider), Settings(), http, audit)
         except SentimentSetError as error:
             _abort(2, str(error))
         return await evaluate(
             cases,
             choice.classifier,
-            provider=args.provider,
+            provider=canonical_provider(args.provider),
             audit=audit,
             repeat=args.repeat,
             split=args.split,

@@ -1,13 +1,14 @@
-"""TypeSafe Jev as an alternative sentiment classifier.
+"""A decisions model as the sentiment classifier: one state, typed questions, probabilities.
 
-Jev is not a chat model: it takes one ``state`` and a map of typed questions and returns
-probabilities. The rubric in ``docs/prompts/sentiment-jev/`` is therefore the prompt, and this
-module only transports and validates. A malformed answer degrades to the keyword classifier,
-exactly like a broken chat completion does in ``sentiment.py``.
+A decisions model is not a chat model. It reads one ``state`` once and answers a map of typed
+questions, so the rubric in ``docs/prompts/sentiment-jev/`` is the prompt and this module only
+transports and validates. Nothing here knows a vendor: the endpoint, model, rubric, envelope, and
+price come from a ``classify`` profile (``apps/api/model-profiles/classify/<name>.yaml``), so a
+second decisions model is a new profile plus an eval run, not a branch in the composition root.
+The shipped profiles point at TypeSafe Jev, which speaks the System One wire shape below.
 
-The model, envelope, rubric, and price come from a ``classify`` profile
-(``apps/api/model-profiles/classify/<name>.yaml``), so a new classifier is a file plus an eval run,
-not a branch in the composition root.
+A malformed answer degrades to the keyword classifier, exactly like a broken chat completion does
+in ``sentiment.py``.
 """
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ from onboarding.app.llm.fallback import MAX_ANSWER_CHARS, fallback_signal
 from onboarding.app.llm.providers import PreparedRequest
 from onboarding.app.llm.rubric import Rubric, RubricLibrary
 from onboarding.app.llm.transport import ModelTransport, RejectedError, TransportError
+from onboarding.app.llm.usage import reported_cost_usd
 from onboarding.core.breaker import CircuitBreaker
 from onboarding.core.models import RiskSignal, Sentiment, SignalTag
 from onboarding.ports import AuditLog, ClassifyProfile, Clock, SentimentAnalysis
@@ -34,33 +36,33 @@ from onboarding.ports import AuditLog, ClassifyProfile, Clock, SentimentAnalysis
 _PROBABILITY_TOLERANCE = 0.05
 
 
-class JevError(RuntimeError):
-    """Base class for anything that makes the Jev verdict unusable."""
+class DecisionsError(RuntimeError):
+    """Base class for anything that makes the decisions verdict unusable."""
 
 
-class JevUnavailableError(JevError):
+class DecisionsUnavailableError(DecisionsError):
     """The endpoint did not answer, or answered with a non-retryable error."""
 
 
-class JevFormatError(JevError):
+class DecisionsFormatError(DecisionsError):
     """The endpoint answered, but not inside the contract."""
 
 
 @dataclass(frozen=True, slots=True)
-class JevVerdict:
+class DecisionsVerdict:
     sentiment: Sentiment
     tags: tuple[SignalTag, ...]
     confidence: float
     probabilities: dict[str, float]
 
 
-def parse_jev(payload: Any, rubric: Rubric) -> JevVerdict:
+def parse_decisions(payload: Any, rubric: Rubric) -> DecisionsVerdict:
     """Validate one response against the rubric. Extra answers are ignored, missing ones fail."""
     if not isinstance(payload, dict):
-        raise JevFormatError("response must be an object")
+        raise DecisionsFormatError("response must be an object")
     answers = payload.get("answers")
     if not isinstance(answers, dict):
-        raise JevFormatError("response has no answers object")
+        raise DecisionsFormatError("response has no answers object")
 
     choice = _choice(answers.get("sentiment"), rubric.sentiment_criteria)
     sentiment = Sentiment(choice["choice"])
@@ -78,7 +80,7 @@ def parse_jev(payload: Any, rubric: Rubric) -> JevVerdict:
     if not tags and scored:
         tags = (scored[0][1],)
 
-    return JevVerdict(
+    return DecisionsVerdict(
         sentiment=sentiment,
         tags=tags,
         confidence=confidence,
@@ -88,27 +90,27 @@ def parse_jev(payload: Any, rubric: Rubric) -> JevVerdict:
 
 def _choice(value: Any, criteria: tuple[str, ...]) -> dict[str, Any]:
     if not isinstance(value, dict) or value.get("type") != "choice":
-        raise JevFormatError("sentiment answer must be a choice")
+        raise DecisionsFormatError("sentiment answer must be a choice")
     choice = value.get("choice")
     if not isinstance(choice, str) or choice not in criteria:
-        raise JevFormatError(f"unknown choice {choice!r}")
+        raise DecisionsFormatError(f"unknown choice {choice!r}")
     raw = value.get("probabilities")
     if not isinstance(raw, dict) or set(raw) != set(criteria):
-        raise JevFormatError("sentiment probabilities must cover every option")
+        raise DecisionsFormatError("sentiment probabilities must cover every option")
     probabilities = {
         key: _unit_interval(probability, f"probability {key!r}")
         for key, probability in raw.items()
     }
     if abs(sum(probabilities.values()) - 1.0) > _PROBABILITY_TOLERANCE:
-        raise JevFormatError("sentiment probabilities must sum to 1")
+        raise DecisionsFormatError("sentiment probabilities must sum to 1")
     if probabilities[choice] < max(probabilities.values()) - _PROBABILITY_TOLERANCE:
-        raise JevFormatError("the chosen sentiment is not the most probable one")
+        raise DecisionsFormatError("the chosen sentiment is not the most probable one")
     return {"choice": choice, "probabilities": probabilities, "confidence": value.get("confidence")}
 
 
 def _noul(value: Any, key: str) -> float:
     if not isinstance(value, dict) or value.get("type") != "noul":
-        raise JevFormatError(f"{key}: answer must be noul")
+        raise DecisionsFormatError(f"{key}: answer must be noul")
     return _unit_interval(value.get("noul"), f"{key}.noul")
 
 
@@ -120,15 +122,15 @@ def _confidence(raw: Any, probabilities: dict[str, float]) -> float:
 
 def _unit_interval(value: Any, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
-        raise JevFormatError(f"{label} must be a number")
+        raise DecisionsFormatError(f"{label} must be a number")
     number = float(value)
     if not math.isfinite(number) or not 0.0 <= number <= 1.0:
-        raise JevFormatError(f"{label} must be within [0, 1]")
+        raise DecisionsFormatError(f"{label} must be within [0, 1]")
     return number
 
 
-class JevSentimentClassifier:
-    """Label one free-text answer with Jev, keeping the keyword classifier as the safety net."""
+class DecisionsClassifier:
+    """Label one free-text answer with a decisions model, the keyword classifier as the net."""
 
     def __init__(
         self,
@@ -171,20 +173,22 @@ class JevSentimentClassifier:
         state = text[:MAX_ANSWER_CHARS]
         try:
             payload, elapsed_s = await self._ask(state)
-            verdict = parse_jev(payload, self._rubric)
-        except JevUnavailableError as error:
-            return await self._fallback(text, source, reason="jev_unavailable", detail=str(error))
-        except JevFormatError as error:
-            await self._audit.record(
-                "sentiment_format_error", source=source, provider="jev", error=str(error)
+            verdict = parse_decisions(payload, self._rubric)
+        except DecisionsUnavailableError as error:
+            return await self._fallback(
+                text, source, reason="decisions_unavailable", detail=str(error)
             )
-            return await self._fallback(text, source, reason="jev_format")
+        except DecisionsFormatError as error:
+            await self._audit.record(
+                "sentiment_format_error", source=source, provider="decisions", error=str(error)
+            )
+            return await self._fallback(text, source, reason="decisions_format")
         input_tokens = _input_tokens(payload)
-        cost_usd = _reported_cost(payload)
+        cost_usd = reported_cost_usd(payload.get("usage") if isinstance(payload, dict) else None)
         await self._audit.record(
             "sentiment_classified",
             source=source,
-            provider="jev",
+            provider="decisions",
             model=self._profile.model,
             rubric=self._rubric.selector,
             rubric_version=self._rubric.version,
@@ -222,9 +226,11 @@ class JevSentimentClassifier:
                 parse=self._parse,
             )
         except RejectedError as error:
-            raise JevUnavailableError(f"jev endpoint answered {error.status_code}") from None
+            raise DecisionsUnavailableError(
+                f"decisions endpoint answered {error.status_code}"
+            ) from None
         except TransportError as error:
-            raise JevUnavailableError(f"jev request failed: {error}") from None
+            raise DecisionsUnavailableError(f"decisions request failed: {error}") from None
         return payload, elapsed_s
 
     async def _prepare(self, headers: dict[str, str]) -> PreparedRequest:
@@ -241,9 +247,9 @@ class JevSentimentClassifier:
         try:
             payload: Any = response.json()
         except ValueError as error:
-            raise JevFormatError(f"jev response is not JSON: {error}") from None
+            raise DecisionsFormatError(f"decisions response is not JSON: {error}") from None
         if not isinstance(payload, dict):
-            raise JevFormatError("response must be an object")
+            raise DecisionsFormatError("response must be an object")
         _refuse_an_error_envelope(payload)
         return payload, elapsed_s
 
@@ -251,7 +257,7 @@ class JevSentimentClassifier:
         self, text: str, source: str, *, reason: str, detail: str = ""
     ) -> RiskSignal:
         return await fallback_signal(
-            self._audit, text, source, provider="jev", reason=reason, error=detail
+            self._audit, text, source, provider="decisions", reason=reason, error=detail
         )
 
 
@@ -265,16 +271,7 @@ def _refuse_an_error_envelope(payload: dict[str, Any]) -> None:
         return
     error = payload.get("error")
     detail = error if isinstance(error, str) else "no reason given"
-    raise JevUnavailableError(f"jev endpoint refused the call: {detail[:200]}")
-
-
-def _reported_cost(payload: Any) -> float | None:
-    """``usage.cost`` in USD, reported by OpenRouter; ``None`` on an endpoint that omits it."""
-    usage = payload.get("usage") if isinstance(payload, dict) else None
-    cost = usage.get("cost") if isinstance(usage, dict) else None
-    if isinstance(cost, bool) or not isinstance(cost, int | float):
-        return None
-    return float(cost)
+    raise DecisionsUnavailableError(f"decisions endpoint refused the call: {detail[:200]}")
 
 
 def _input_tokens(payload: Any) -> int:
@@ -283,7 +280,7 @@ def _input_tokens(payload: Any) -> int:
     return tokens if isinstance(tokens, int) and not isinstance(tokens, bool) else 0
 
 
-def build_jev_classifier(
+def build_decisions_classifier(
     *,
     client: httpx.AsyncClient,
     endpoint: str,
@@ -295,7 +292,7 @@ def build_jev_classifier(
     breaker: CircuitBreaker | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> SentimentAnalysis:
-    return JevSentimentClassifier(
+    return DecisionsClassifier(
         client=client,
         endpoint=endpoint,
         api_key=api_key,

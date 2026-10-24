@@ -63,10 +63,10 @@ def choice_for(
 ) -> SentimentChoice:
     settings = Settings(
         _env_file=None,
-        sentiment_provider="jev",
+        sentiment_provider="decisions",
         classify_profile="jev-1.13.0",
-        jev_api_key=SecretStr("jev"),
-        jev_price_input_rub_per_1k=0.5,
+        classify_api_key=SecretStr("jev"),
+        classify_price_input_rub_per_1k=0.5,
     )
     return build_sentiment(
         settings,
@@ -74,7 +74,7 @@ def choice_for(
         client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
         prompts=PromptLibrary(PROMPTS),
         audit=audit,
-        provider="jev",
+        provider="decisions",
     )
 
 
@@ -85,7 +85,7 @@ async def test_a_run_reports_its_measured_spend() -> None:
     report = await evaluate(
         CASES,
         choice.classifier,
-        provider="jev",
+        provider="decisions",
         audit=audit,
         identity=choice,
     )
@@ -104,7 +104,7 @@ async def test_the_provider_reported_cost_is_the_number_that_is_reported() -> No
     report = await evaluate(
         CASES,
         choice.classifier,
-        provider="jev",
+        provider="decisions",
         audit=audit,
         identity=choice,
     )
@@ -123,7 +123,7 @@ async def test_a_provider_that_reports_no_cost_is_not_priced_by_arithmetic() -> 
     report = await evaluate(
         CASES,
         choice.classifier,
-        provider="jev",
+        provider="decisions",
         audit=audit,
         identity=choice,
     )
@@ -139,7 +139,7 @@ async def test_the_artifact_keeps_the_price_and_the_identity(tmp_path: Path) -> 
     report = await evaluate(
         CASES,
         choice.classifier,
-        provider="jev",
+        provider="decisions",
         audit=audit,
         identity=choice,
     )

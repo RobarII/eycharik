@@ -1,4 +1,4 @@
-"""The TypeSafe Jev adapter: rubric loading, strict probabilities, keyword fallback."""
+"""The decisions-model adapter: rubric loading, strict probabilities, keyword fallback."""
 
 from __future__ import annotations
 
@@ -14,11 +14,11 @@ from pydantic import SecretStr
 
 from onboarding.app.audit import NullAudit
 from onboarding.app.clock import FrozenClock
-from onboarding.app.llm.jev import (
-    JevFormatError,
-    JevSentimentClassifier,
-    JevUnavailableError,
-    parse_jev,
+from onboarding.app.llm.decisions import (
+    DecisionsClassifier,
+    DecisionsFormatError,
+    DecisionsUnavailableError,
+    parse_decisions,
 )
 from onboarding.app.llm.profiles import classify_profile
 from onboarding.app.llm.rubric import Rubric, RubricError, RubricLibrary
@@ -89,10 +89,10 @@ def classifier(
     profile: ClassifyProfile = PROFILE,
     breaker: CircuitBreaker | None = None,
     rub: Rubric | None = None,
-) -> tuple[JevSentimentClassifier, httpx.AsyncClient]:
+) -> tuple[DecisionsClassifier, httpx.AsyncClient]:
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     return (
-        JevSentimentClassifier(
+        DecisionsClassifier(
             client=client,
             endpoint="https://api.example.test/v1/systemone",
             api_key=SecretStr("secret"),
@@ -180,7 +180,7 @@ def test_a_selector_must_match_the_file_it_names(tmp_path: Path) -> None:
 
 
 def test_maps_a_verdict_to_sentiment_and_tags() -> None:
-    verdict = parse_jev(answers(), rubric())
+    verdict = parse_decisions(answers(), rubric())
 
     assert verdict.sentiment is Sentiment.NEGATIVE
     assert verdict.tags == (SignalTag.ACCESS, SignalTag.IT)
@@ -199,19 +199,19 @@ def test_drops_tags_below_the_threshold_and_caps_the_list() -> None:
         }
     )
 
-    verdict = parse_jev(body, rubric())
+    verdict = parse_decisions(body, rubric())
 
     assert verdict.tags == (SignalTag.ACCESS, SignalTag.MANAGER, SignalTag.COLLEAGUES)
 
 
 def test_keeps_the_most_likely_tag_when_all_are_below_the_threshold() -> None:
-    verdict = parse_jev(answers(noul={"tag_access": 0.3, "tag_it": 0.4}), rubric())
+    verdict = parse_decisions(answers(noul={"tag_access": 0.3, "tag_it": 0.4}), rubric())
 
     assert verdict.tags == (SignalTag.IT,)
 
 
 def test_confidence_defaults_to_the_winning_probability() -> None:
-    verdict = parse_jev(answers(confidence=None), rubric())
+    verdict = parse_decisions(answers(confidence=None), rubric())
 
     assert verdict.confidence == 0.80
 
@@ -233,8 +233,8 @@ def test_confidence_defaults_to_the_winning_probability() -> None:
     ],
 )
 def test_rejects_a_broken_response(body: dict[str, Any]) -> None:
-    with pytest.raises(JevFormatError):
-        parse_jev(body, rubric())
+    with pytest.raises(DecisionsFormatError):
+        parse_decisions(body, rubric())
 
 
 async def test_sends_the_systemone_request_and_audits_the_verdict() -> None:
@@ -260,7 +260,7 @@ async def test_sends_the_systemone_request_and_audits_the_verdict() -> None:
     assert signal.tags == (SignalTag.ACCESS, SignalTag.IT)
     assert audit.names() == ["sentiment_classified"]
     fields = audit.events[0][1]
-    assert fields["provider"] == "jev"
+    assert fields["provider"] == "decisions"
     assert fields["rubric"] == "sentiment-jev@1"
     assert fields["input_tokens"] == 100
     assert fields["cost_rub"] == pytest.approx(0.1 * 0.4)
@@ -303,7 +303,7 @@ async def test_a_server_error_is_retried_then_falls_back_to_keywords() -> None:
     assert signal.sentiment is Sentiment.NEGATIVE
     assert signal.tags == (SignalTag.ACCESS,)
     assert audit.names() == ["sentiment_fallback"]
-    assert audit.events[0][1]["reason"] == "jev_unavailable"
+    assert audit.events[0][1]["reason"] == "decisions_unavailable"
 
 
 async def test_a_malformed_answer_falls_back_on_the_same_text() -> None:
@@ -320,7 +320,7 @@ async def test_a_malformed_answer_falls_back_on_the_same_text() -> None:
 
     assert signal.sentiment is Sentiment.NEGATIVE
     assert audit.names() == ["sentiment_format_error", "sentiment_fallback"]
-    assert audit.events[-1][1]["reason"] == "jev_format"
+    assert audit.events[-1][1]["reason"] == "decisions_format"
 
 
 async def test_an_error_envelope_is_an_outage_not_a_format_error() -> None:
@@ -334,7 +334,7 @@ async def test_an_error_envelope_is_an_outage_not_a_format_error() -> None:
 
     assert signal.sentiment is Sentiment.NEGATIVE
     assert audit.names() == ["sentiment_fallback"]
-    assert audit.events[0][1]["reason"] == "jev_unavailable"
+    assert audit.events[0][1]["reason"] == "decisions_unavailable"
     assert "Access denied" in str(audit.events[0][1]["error"])
 
 
@@ -348,7 +348,7 @@ async def test_a_401_is_not_retried() -> None:
 
     subject, client = classifier(handler)
     async with client:
-        with pytest.raises(JevUnavailableError):
+        with pytest.raises(DecisionsUnavailableError):
             await subject._ask("текст")
 
     assert calls == 1
@@ -358,8 +358,8 @@ def test_the_profile_selects_the_model_and_the_rubric() -> None:
     settings = Settings(
         _env_file=None,
         classify_profile="jev-1.13.0",
-        jev_api_key=SecretStr("k"),
-        sentiment_provider="jev",
+        classify_api_key=SecretStr("k"),
+        sentiment_provider="decisions",
     )
 
     profile = classify_profile(settings)
@@ -375,9 +375,9 @@ def test_the_environment_can_override_the_rubric_and_the_envelope() -> None:
         _env_file=None,
         classify_profile="jev-1.13.0",
         sentiment_rubric="sentiment-jev@2",
-        jev_timeout_s=3.0,
-        jev_max_retries=0,
-        jev_price_input_rub_per_1k=0.25,
+        classify_timeout_s=3.0,
+        classify_max_retries=0,
+        classify_price_input_rub_per_1k=0.25,
     )
 
     profile = classify_profile(settings)
@@ -405,7 +405,7 @@ async def test_a_bad_key_degrades_without_a_second_request() -> None:
 
 
 def test_the_classifier_without_an_audit_does_not_need_one() -> None:
-    subject = JevSentimentClassifier(
+    subject = DecisionsClassifier(
         client=httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200))),
         endpoint="https://api.example.test/v1/systemone",
         api_key=SecretStr("secret"),

@@ -14,9 +14,9 @@ from fastapi.testclient import TestClient
 from onboarding.api.app import create_app
 from onboarding.app.settings import Settings
 
-CONFIRMATION_CODE = "8af44b85"  # noqa: S105 - a placeholder, not a credential
-VK_SECRET = "vk-secret"  # noqa: S105
-TELEGRAM_SECRET = "tg-secret"  # noqa: S105
+CONFIRMATION_CODE = "8af44b85"
+VK_SECRET = "vk-secret"
+TELEGRAM_SECRET = "tg-secret"
 
 
 def _client(channels: str = "vk,telegram") -> TestClient:

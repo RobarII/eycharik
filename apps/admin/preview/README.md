@@ -1,11 +1,11 @@
-# Local preview
+# Локальный предпросмотр
 
-`npm run preview:demo` starts Vite with a dev-only API on `/admin/api/*`, so the cabinet can be
-reviewed without PostgreSQL or a model provider.
+`npm run preview:demo` поднимает Vite с dev-API на `/admin/api/*`, поэтому кабинет можно смотреть
+без PostgreSQL и без провайдера модели.
 
-- The fixtures mirror the cohort described in `docs/product/demo-script.md`.
-- Tokens: `dev-recruiter-token` (recruiter `rec-1`) and `dev-hr-token` (HR, unscoped).
-- The plugin uses `apply: "serve"` and is imported only from `vite.config.ts`; `npm run build`
-  never ships it.
-- This is a design review tool, not evidence of data quality. The production cabinet still reads
-  the API in `docs/contracts/admin-api.md`.
+- Фикстуры повторяют когорту из `docs/product/demo-script.md`.
+- Токены: `dev-recruiter-token` (рекрутёр `rec-1`) и `dev-hr-token` (HR, без скоупа).
+- Плагин использует `apply: "serve"` и импортируется только из `vite.config.ts`; `npm run build`
+  его никогда не отдаёт.
+- Это инструмент ревью дизайна, а не доказательство качества данных. Боевой кабинет по-прежнему
+  читает API из `docs/contracts/admin-api.md`.

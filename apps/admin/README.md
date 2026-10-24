@@ -1,10 +1,11 @@
-# Recruiter cabinet (web)
+# Кабинет рекрутёра (веб)
 
-The human side of the MAX onboarding assistant. React 18 + TypeScript + Vite + TanStack Query.
-The cabinet reads the admin API, shows where each newcomer is, which answers need a person, and lets
-HR index a knowledge document. It never talks to MAX and it never sends chat messages.
+Человеческая сторона ассистента онбординга в MAX. React 18 + TypeScript + Vite + TanStack Query.
+Кабинет читает admin API, показывает, где сейчас каждый новичок, какие ответы требуют человека, и
+даёт HR проиндексировать документ базы знаний. С MAX он не разговаривает и сообщений в чат не
+отправляет.
 
-## Run
+## Запуск
 
 ```bash
 npm install
@@ -17,207 +18,211 @@ npm run test         # vitest, jsdom
 npm run e2e          # playwright against preview:demo, plus axe on every screen
 ```
 
-`npm run dev` is the real frontend: it needs the API and its PostgreSQL. `npm run preview:demo` is a
-design/review tool; see [Preview mode](#preview-mode). For the full Docker Compose flow (empty
-database, `demo-data`, `demo-data-del`), see [`../../README.md`](../../README.md).
+`npm run dev` — настоящий фронтенд: ему нужны API и его PostgreSQL. `npm run preview:demo` —
+инструмент дизайна и ревью, смотрите [Режим предпросмотра](#режим-предпросмотра). Полный сценарий
+через Docker Compose (пустая база, `demo-data`, `demo-data-del`) — в [`../../README.md`](../../README.md).
 
-## Routes
+## Маршруты
 
-The URL hash is the router; there is no router dependency.
+Роутер — хэш в URL, отдельной зависимости для роутинга нет.
 
-| Hash | Screen | Purpose |
+| Хэш | Экран | Назначение |
 |---|---|---|
-| `#/overview` | Overview | Seven-day snapshot, risks, queue, topics, new hires |
-| `#/runs` | Employees | Active and completed runs, search, filters |
-| `#/run/<run_id>` | Employee detail | Step, facts, questions, audit timeline |
-| `#/questions` | Questions | Queue by status and by owner (`&owner=me`, `&owner=unassigned`), reasons, citations, claim |
-| `#/risk` | Risks | Counters, weekly digest, risk topics |
-| `#/knowledge` | Knowledge | Upload, list, open and edit indexed documents |
+| `#/overview` | Обзор | Снимок за семь дней, риски, очередь, темы, новички |
+| `#/runs` | Сотрудники | Активные и завершённые прогоны, поиск, фильтры |
+| `#/run/<run_id>` | Карточка сотрудника | Шаг, факты, вопросы, таймлайн аудита |
+| `#/questions` | Вопросы | Очередь по статусу и по владельцу (`&owner=me`, `&owner=unassigned`), причины, цитаты, взятие в работу |
+| `#/risk` | Риски | Счётчики, недельный дайджест, темы рисков |
+| `#/knowledge` | База знаний | Загрузка, список, открытие и правка проиндексированных документов |
 
-The default route is `#/overview`. The gate is shown before any route when the session cookie is
-missing or expired. Filters live in the query string (`#/questions?status=answered`), so a screen is
-a link someone can send.
+Маршрут по умолчанию — `#/overview`. Если сессионной куки нет или она истекла, экран входа
+показывается раньше любого маршрута. Фильтры живут в строке запроса
+(`#/questions?status=answered`), поэтому экран — это ссылка, которую можно переслать.
 
-An address that names no section renders the not-found screen (`#/nonsense`), never the overview: a
-stale bookmark must not look like a working link. A section the role cannot read says so instead of
-rendering an empty main. Every navigation sets `document.title` and moves focus to `main`, because a
-hash change does not reload the page and a screen reader would otherwise stay on the old link.
+Адрес, который не называет ни одного раздела, показывает экран «не найдено» (`#/nonsense`), а не
+обзор: устаревшая закладка не должна выглядеть рабочей ссылкой. Раздел, который роль доступа читать
+не может, так и говорит, а не рисует пустой main. Каждая навигация ставит `document.title` и
+переносит фокус в `main`: смена хэша не перезагружает страницу, и скринридер иначе остался бы на
+старой ссылке.
 
-## Release and the open tab
+## Релиз и открытая вкладка
 
-`index.html` and `/version.json` are served `no-store`; `/assets/*` is content-addressed and cached
-for a year. A deploy therefore never breaks an open tab, but the tab keeps running the old code.
+`index.html` и `/version.json` отдаются с `no-store`; `/assets/*` адресуется по содержимому и
+кэшируется на год. Поэтому деплой не ломает открытую вкладку, но вкладка продолжает работать на
+старом коде.
 
-- `vite.config.ts` bakes `VITE_BUILD_ID` (default: `git rev-parse --short HEAD`) into the bundle as
-  `__BUILD_ID__` and emits `version.json` with the same value. The image context has no `.git`, so
-  `Dockerfile` takes the id as the `VITE_BUILD_ID` build argument and the release workflow passes
-  the released commit; without it every image would report `dev` and no tab could see a difference.
-- The shell polls `/version.json` every five minutes while the tab is focused and shows a banner
-  when the server reports a different build; the banner only offers a reload.
-- The build id is printed in the sidebar footer, so an incident report names the code that produced
-  it. `/version.json` is HTML-free JSON and inherits the same security headers as `index.html`.
-- A lost network shows a banner instead of a frozen screen; queries refetch on reconnect and on
-  focus.
+- `vite.config.ts` вшивает `VITE_BUILD_ID` (по умолчанию `git rev-parse --short HEAD`) в бандл как
+  `__BUILD_ID__` и печатает `version.json` с тем же значением. В образе нет `.git`, поэтому
+  `Dockerfile` принимает идентификатор как build-аргумент `VITE_BUILD_ID`, а workflow релиза
+  передаёт выпускаемый коммит; без этого каждый образ сообщал бы `dev` и ни одна вкладка не
+  увидела бы разницы.
+- Оболочка опрашивает `/version.json` каждые пять минут, пока вкладка в фокусе, и показывает баннер,
+  когда сервер сообщает другую сборку; баннер предлагает только перезагрузку.
+- Идентификатор сборки напечатан в подвале боковой панели, поэтому отчёт об инциденте называет код,
+  который его породил. `/version.json` — JSON без HTML, он наследует те же заголовки безопасности,
+  что `index.html`.
+- Потерянная сеть показывает баннер вместо замершего экрана; запросы перезапрашиваются при
+  переподключении и при возврате фокуса.
 
-There is no client-side error telemetry: a 5xx shows a Russian sentence and the crash boundary keeps
-the shell alive, but nothing leaves the browser. Wiring that up needs an endpoint in the admin API
-contract first.
+Клиентской телеметрии ошибок нет: `5xx` показывает русскую фразу, граница падения держит оболочку
+живой, но из браузера ничего не уходит. Чтобы это подключить, сначала нужен эндпоинт в контракте
+admin API.
 
-## Authentication and tokens
+## Аутентификация и токены
 
-The gate posts the token once and gets an HttpOnly cookie back
-([`docs/decisions/0018`](../../docs/decisions/0018-session-cookie-for-the-cabinet.md)); script cannot
-read the token afterwards and every later request carries the cookie:
+Экран входа отправляет токен один раз и получает назад HttpOnly-куку
+([`docs/decisions/0018`](../../docs/decisions/0018-session-cookie-for-the-cabinet.md)); после этого
+скрипт токен прочитать не может, а каждый следующий запрос несёт куку:
 
 ```http
 POST /admin/api/session   {"token": "…"}   → 204 Set-Cookie: onboarding_session=…
 GET  /admin/api/runs                        → cookie, no header
 ```
 
-A bearer header is still accepted, so `curl` and the tests keep working. The token is opaque: what a
-role may do is read from `GET /admin/api/me`, which returns `capabilities`, and the cabinet hides
-what it may not use.
+Bearer-заголовок по-прежнему принимается, поэтому `curl` и тесты работают. Токен непрозрачен: что
+роли разрешено, читается из `GET /admin/api/me`, который возвращает `capabilities`, и кабинет
+скрывает то, что использовать нельзя.
 
-The server maps tokens to `(role, subject)` from `ADMIN_TOKENS`, a comma-separated list of
-`token:role:subject` entries:
+Сервер сопоставляет токены паре `(role, subject)` из `ADMIN_TOKENS` — списка записей
+`token:role:subject`, разделённых запятой:
 
 ```dotenv
 ADMIN_TOKENS=dev-recruiter-token:recruiter:rec-1,dev-hr-token:hr_admin:hr-1
 ```
 
-| Role | Subject | Scope |
+| Роль | Subject | Скоуп |
 |---|---|---|
-| `recruiter` | recruiter id, e.g. `rec-1` | Employees whose `recruiter_id` equals the subject |
-| `hr_admin` | HR identity, e.g. `hr-1` | Every employee, every question, every knowledge document |
+| `recruiter` | id рекрутёра, например `rec-1` | Сотрудники, у которых `recruiter_id` равен subject |
+| `hr_admin` | идентичность HR, например `hr-1` | Все сотрудники, все вопросы, все документы базы знаний |
 
-`Settings.admin_principals` accepts all three. A `manager` token's subject is a department name
-(`ADMIN_TOKENS=dev-manager-token:manager:Производство`); the cabinet filters every list by that
-department in SQL.
+`Settings.admin_principals` принимает все три. У токена `manager` subject — имя подразделения
+(`ADMIN_TOKENS=dev-manager-token:manager:Производство`); кабинет фильтрует каждый список по этому
+подразделению в SQL.
 
-Status codes the frontend relies on:
+Коды статуса, на которые опирается фронтенд:
 
-| Code | Meaning | Frontend behaviour |
+| Код | Значение | Поведение фронтенда |
 |---|---|---|
-| `401` | Missing or unknown token | Clear `onboarding.admin.token`, show the gate |
-| `403` | Role may not perform the mutation | Say "недостаточно прав"; the UI should not have offered it |
-| `404` | Run does not exist **or** is outside the caller's scope | Show the detail; never guess that another recruiter's employee exists |
+| `401` | Токена нет или он неизвестен | Очистить `onboarding.admin.token`, показать экран входа |
+| `403` | Роль не может выполнить мутацию | Сказать «недостаточно прав»; интерфейс не должен был это предлагать |
+| `404` | Прогона нет **или** он вне скоупа вызывающего | Показать карточку; никогда не догадываться, что сотрудник другого рекрутёра существует |
 
-A run outside the scope is deliberately `404`, not `403`.
+Прогон вне скоупа намеренно отдаёт `404`, а не `403`.
 
-### Why the preview has two tokens
+### Почему в предпросмотре два токена
 
-They are not two factors for one HR. They are two different scopes:
+Это не два фактора для одного HR. Это два разных скоупа:
 
-- `dev-recruiter-token` — role `recruiter`, subject `rec-1`: sees only Anna and Peter.
-- `dev-hr-token` — role `hr_admin`: sees Maria as well, plus the `hr_only` document.
+- `dev-recruiter-token` — роль `recruiter`, subject `rec-1`: видит только Анну и Петра.
+- `dev-hr-token` — роль `hr_admin`: видит ещё и Марию, плюс документ `hr_only`.
 
-The second token exists to prove that scoping happens in SQL, not in the UI: sign in as the
-recruiter and Maria disappears. For ordinary HR work one token is enough.
+Второй токен нужен, чтобы доказать: скоуп режется в SQL, а не в интерфейсе. Войдите рекрутёром —
+Мария исчезает. Для обычной работы HR хватает одного токена.
 
-### Production tokens
+### Боевые токены
 
-Issue one token per person, not one shared token per role. A recruiter's subject must match
-`employees.recruiter_id`; an HR token is unscoped. Use long random values, rotate them with a
-deploy, and keep them in the server environment. Example generation:
+Выдавайте по токену на человека, а не один общий на роль. Subject рекрутёра должен совпадать с
+`employees.recruiter_id`; у токена HR скоупа нет. Берите длинные случайные значения, меняйте их
+вместе с деплоем и держите в окружении сервера. Пример генерации:
 
 ```bash
 openssl rand -hex 32
 ```
 
-The token is never stored in the page: it exists for the length of one form submit. The cookie is
-`HttpOnly`, `SameSite=Strict`, `Secure` outside local development, and scoped to `/admin/api`. A
-`401` (an expired token, a restarted server) drops the cabinet back to the gate.
+В странице токен не хранится: он живёт только на время отправки одной формы. Кука — `HttpOnly`,
+`SameSite=Strict`, `Secure` вне локальной разработки, со скоупом `/admin/api`. `401` (истёкший
+токен, перезапущенный сервер) возвращает кабинет на экран входа.
 
-### Token vs MAX bot token
+### Токен кабинета и токен бота MAX
 
-Do not confuse the two:
+Не путайте эти два:
 
-| Variable | Who uses it | Where it lives |
+| Переменная | Кто использует | Где живёт |
 |---|---|---|
-| `ADMIN_TOKENS` | recruiters and HR reading this cabinet | server env and the user's browser |
-| `MAX_BOT_TOKEN` | the API/worker sending messages to MAX | server env only, never the browser |
-| `MAX_WEBHOOK_SECRET` | MAX proving a webhook call | server env only |
+| `ADMIN_TOKENS` | Рекрутёры и HR, читающие этот кабинет | Окружение сервера и браузер пользователя |
+| `MAX_BOT_TOKEN` | API и воркер, отправляющие сообщения в MAX | Только окружение сервера, никогда браузер |
+| `MAX_WEBHOOK_SECRET` | MAX, доказывающий вызов вебхука | Только окружение сервера |
 
-The frontend has no MAX credentials at all.
+У фронтенда нет никаких учётных данных MAX.
 
-## API surface
+## Поверхность admin API
 
-The contract of record is [`docs/contracts/admin-api.md`](../../docs/contracts/admin-api.md). If a
-screen needs a field the contract does not have, change the contract and the server first; never
-guess a shape in the client.
+Контракт-источник правды — [`docs/contracts/admin-api.md`](../../docs/contracts/admin-api.md). Если
+экрану нужно поле, которого в контракте нет, сначала меняйте контракт и сервер; никогда не
+угадывайте форму в клиенте.
 
-| Method and path | Returns |
+| Метод и путь | Что возвращает |
 |---|---|
-| `GET /admin/api/runs?limit=50` | `{ items: RunSummary[] }`, newest activity first |
-| `GET /admin/api/runs/{run_id}` | `RunDetail`: summary + scenario, tone, step message, events, questions |
-| `GET /admin/api/questions?status=unanswered&limit=50&assignee=any` | `{ items: Question[], total, next_cursor }`; status is `unanswered`, `answered`, `all`; assignee is `any`, `me`, `unassigned` |
-| `PATCH /admin/api/questions/{id}/assignee` | `{ assignee }`: claim, hand over, or clear with `null` |
-| `GET /admin/api/analytics/overview` | Seven-day counters and `top_tags` |
+| `GET /admin/api/runs?limit=50` | `{ items: RunSummary[] }`, сверху самая свежая активность |
+| `GET /admin/api/runs/{run_id}` | `RunDetail`: сводка + сценарий, тон, сообщение шага, события, вопросы |
+| `GET /admin/api/questions?status=unanswered&limit=50&assignee=any` | `{ items: Question[], total, next_cursor }`; статус — `unanswered`, `answered`, `all`; исполнитель — `any`, `me`, `unassigned` |
+| `PATCH /admin/api/questions/{id}/assignee` | `{ assignee }`: взять вопрос, передать его или снять через `null` |
+| `GET /admin/api/analytics/overview` | Счётчики за семь дней и `top_tags` |
 | `GET /admin/api/digest/weekly?days=7` | `{ items: DigestItem[], since }` |
 | `GET /admin/api/v1/knowledge` | `{ items: KnowledgeDocument[] }` |
-| `GET /admin/api/v1/knowledge/{document_id}` | `KnowledgeDocumentDetail`: metadata plus source `text`; `hr_only` is a `404` for non-HR |
-| `POST /admin/api/v1/knowledge` | `202 { content_hash, status }`; `hr_admin` only |
-| `PUT /admin/api/v1/knowledge/{document_id}` | `202 { content_hash, status }`; `hr_admin` only, frontmatter `id` must match |
-| `POST /admin/api/v1/knowledge/files` | `202 { content_hash, status }`; PDF/PPTX, `hr_admin` only |
-| `GET /admin/api/v1/knowledge/files/{content_hash}` | extraction status, refusal reason included |
-| `GET /healthz`, `/readyz` | Liveness/readiness, no auth |
+| `GET /admin/api/v1/knowledge/{document_id}` | `KnowledgeDocumentDetail`: метаданные плюс исходный `text`; `hr_only` отдаёт `404` тем, кто не HR |
+| `POST /admin/api/v1/knowledge` | `202 { content_hash, status }`; только `hr_admin` |
+| `PUT /admin/api/v1/knowledge/{document_id}` | `202 { content_hash, status }`; только `hr_admin`, frontmatter `id` должен совпадать |
+| `POST /admin/api/v1/knowledge/files` | `202 { content_hash, status }`; PDF/PPTX, только `hr_admin` |
+| `GET /admin/api/v1/knowledge/files/{content_hash}` | Статус извлечения вместе с причиной отказа |
+| `GET /healthz`, `/readyz` | Живость и готовность, без авторизации |
 
-`limit` is bounded to `1..200`. There is no cursor pagination: the cabinet asks for the newest 50
-and the cohort is one hire batch. Add a cursor before raising the cap.
+`limit` ограничен диапазоном `1..200`. Курсорной пагинации нет: кабинет просит 50 самых свежих, а
+когорта — один набор найма. Добавьте курсор до того, как поднимать потолок.
 
-Timestamps are UTC ISO 8601 strings. `src/format.ts` formats them for the reader; the client never
-recomputes them.
+Метки времени — строки UTC ISO 8601. `src/format.ts` форматирует их для читателя; клиент их никогда
+не пересчитывает.
 
-## Knowledge documents
+## Документы базы знаний
 
-HR uploads markdown with YAML frontmatter or a PDF/deck; the API validates the metadata and queues
-indexing in the worker. Clicking an active document in the cabinet opens the exact source markdown
-the index was built from. HR can edit it in place; saving validates the frontmatter, requires the
-same `id`, and queues a re-index. A re-index replaces the document's chunks atomically, so the old
-and new versions are never retrievable at the same time.
+HR загружает markdown с YAML-frontmatter или PDF/презентацию; API проверяет метаданные и ставит
+индексацию в очередь воркера. Клик по активному документу в кабинете открывает тот самый исходный
+markdown, из которого собран индекс. HR правит его на месте; сохранение проверяет frontmatter,
+требует тот же `id` и ставит переиндексацию в очередь. Переиндексация атомарно заменяет фрагменты
+документа, поэтому старая и новая версии никогда не находятся одновременно.
 
 ### Frontmatter
 
-The schema is [`docs/contracts/doc.schema.json`](../../docs/contracts/doc.schema.json). Unknown
-fields are rejected (`additionalProperties: false`).
+Схема — [`docs/contracts/doc.schema.json`](../../docs/contracts/doc.schema.json). Неизвестные поля
+отклоняются (`additionalProperties: false`).
 
-| Field | Required | Type | Values |
+| Поле | Обязательно | Тип | Значения |
 |---|---|---|---|
-| `id` | yes | string | `^[a-z0-9][a-z0-9/_-]*$`, e.g. `hr/leave-policy` |
-| `title` | yes | string | Human title, minimum one character |
-| `type` | yes | string | Always `knowledge` |
-| `status` | yes | string | `draft`, `active`, `deprecated` |
-| `owner` | yes | string | `^[a-z][a-z0-9_-]*$`, e.g. `hr`, `it`; a team slug, not a person |
-| `audience` | yes | string[] | Non-empty, unique; each item is `all`, `hr_only`, or `dept:<slug>` |
-| `valid_from` | yes | date | `YYYY-MM-DD`; the first day the document applies |
-| `valid_to` | no | date or null | Last day the document applies; `null` means no end date |
-| `source_of_truth` | no | string | Link or reference to the canonical document |
-| `related` | no | string[] | Related document ids |
+| `id` | да | string | `^[a-z0-9][a-z0-9/_-]*$`, например `hr/leave-policy` |
+| `title` | да | string | Человеческий заголовок, минимум один символ |
+| `type` | да | string | Всегда `knowledge` |
+| `status` | да | string | `draft`, `active`, `deprecated` |
+| `owner` | да | string | `^[a-z][a-z0-9_-]*$`, например `hr`, `it`; слаг команды, а не человек |
+| `audience` | да | string[] | Непустой, без повторов; каждый элемент — `all`, `hr_only` или `dept:<slug>` |
+| `valid_from` | да | date | `YYYY-MM-DD`; первый день, когда документ действует |
+| `valid_to` | нет | date или null | Последний день, когда документ действует; `null` — без даты окончания |
+| `source_of_truth` | нет | string | Ссылка или указание на канонический документ |
+| `related` | нет | string[] | Id связанных документов |
 
-### What the values mean
+### Что значат значения
 
-`audience` is enforced twice: in the retrieval SQL and in the admin query. The bot must never see a
-document outside the employee's audience.
+`audience` проверяется дважды: в SQL-фильтре поиска и в admin-запросе. Бот не должен видеть документ
+вне аудитории сотрудника.
 
-| Audience | Who receives it |
+| Аудитория | Кто её получает |
 |---|---|
-| `all` | Every employee |
-| `dept:<slug>` | Employees whose directory audience contains the same department slug |
-| `hr_only` | HR only; the bot must never use it in an answer |
+| `all` | Каждый сотрудник |
+| `dept:<slug>` | Сотрудники, в аудитории справочника которых есть тот же слаг подразделения |
+| `hr_only` | Только HR; бот не должен использовать это в ответе |
 
-Use the directory's audience slug, not the Russian display name, in `dept:` values. Check the
-employee's `audience` in the directory before inventing one.
+В значениях `dept:` берите слаг аудитории из справочника, а не русское отображаемое имя. Прежде чем
+придумать слаг, посмотрите поле `audience` у сотрудника в справочнике.
 
-`status` controls indexing:
+`status` управляет индексацией:
 
-- `active` — loaded from `knowledge/`, indexed by upload, and eligible for retrieval.
-- `draft` and `deprecated` — valid in the schema, skipped by corpus loading, and rejected by the
-  upload endpoint (it requires `active`). Use them in the corpus for documents that are not ready.
+- `active` — загружается из `knowledge/`, индексируется при загрузке и попадает в поиск.
+- `draft` и `deprecated` — валидны по схеме, но загрузка корпуса их пропускает, и эндпоинт загрузки
+  их отклоняет (ему нужен `active`). Держите их в корпусе для документов, которые ещё не готовы.
 
-Validity is a retrieval predicate: `valid_from <= today` and (`valid_to is null` or
-`valid_to >= today`). A future `valid_from` is indexed but not used yet.
+Срок действия — предикат поиска: `valid_from <= today` и (`valid_to is null` или
+`valid_to >= today`). Документ с будущим `valid_from` проиндексирован, но пока не используется.
 
-### Upload contract
+### Контракт загрузки
 
 ```http
 POST /admin/api/knowledge
@@ -231,151 +236,156 @@ Authorization: Bearer <hr_admin token>
 {"id": "hr/sport-compensation", "title": "Компенсация спорта", "chunks": 1}
 ```
 
-- `201` means the document is indexed; the next answer can cite it as `hr/sport-compensation#0`.
-- `422` returns the exact failing field, e.g.
+- `201` значит, что документ проиндексирован; следующий ответ может сослаться на него как
+  `hr/sport-compensation#0`.
+- `422` возвращает конкретное непрошедшее поле, например
   `upload: owner: 'HR' does not match '^[a-z][a-z0-9_-]*$'`.
-- `403` means the caller is not `hr_admin`; the cabinet keeps the session and shows the detail.
-- A success is audited as `knowledge_ingested` with the document id, chunk count, and subject.
-- Chunking is deterministic and server-side; the response reports the number of chunks.
+- `403` значит, что вызывающий не `hr_admin`; кабинет сохраняет сессию и показывает деталь.
+- Успех пишется в аудит как `knowledge_ingested`, с id документа, числом фрагментов и subject.
+- Нарезка детерминированная и серверная; ответ сообщает число фрагментов.
 
-### Preview knowledge values
+### Значения в предпросмотре
 
-The preview fixtures mirror the documented cohort and use four documents:
+Фикстуры предпросмотра повторяют демонстрационную когорту и используют четыре документа:
 
-| `id` | `audience` | `owner` | Visible to recruiter |
+| `id` | `audience` | `owner` | Виден рекрутёру |
 |---|---|---|---|
-| `hr/leave-policy` | `all` | `hr` | yes |
-| `hr/benefits-dms` | `all` | `hr` | yes |
-| `it/access-and-equipment` | `all` | `it` | yes |
-| `hr/sick-leave` | `hr_only` | `hr` | no |
+| `hr/leave-policy` | `all` | `hr` | да |
+| `hr/benefits-dms` | `all` | `hr` | да |
+| `it/access-and-equipment` | `all` | `it` | да |
+| `hr/sick-leave` | `hr_only` | `hr` | нет |
 
-The real corpus lives in `knowledge/` and includes company policies, HR policies, and IT access
-instructions. Every file there also carries this frontmatter.
+Настоящий корпус лежит в `knowledge/` и включает политики компании, политики HR и инструкции по
+доступу от ИТ. Каждый файл там тоже несёт такой frontmatter.
 
-### Role scoping
+### Скоуп по роли доступа
 
-`GET /knowledge` and `GET /knowledge/{document_id}` apply the `hr_only` predicate in SQL. A
-recruiter opening an `hr_only` document gets a `404`, not a read-only view. Editing requires
-`knowledge.write`, which only `hr_admin` holds; the server re-checks the role on every `PUT`.
+`GET /knowledge` и `GET /knowledge/{document_id}` применяют предикат `hr_only` в SQL. Рекрутёр,
+открывающий документ `hr_only`, получает `404`, а не вид только на чтение. Правка требует
+`knowledge.write`, которое есть только у `hr_admin`; сервер заново проверяет роль на каждом `PUT`.
 
-## Preview mode
+## Режим предпросмотра
 
-`npm run preview:demo` starts Vite with a dev-only API on `/admin/api/*`, so the cabinet can be
-reviewed without PostgreSQL or a model provider.
+`npm run preview:demo` поднимает Vite с dev-API на `/admin/api/*`, поэтому кабинет можно смотреть
+без PostgreSQL и без провайдера модели.
 
-- The plugin is [`preview/plugin.ts`](preview/plugin.ts); the fixtures are
-  [`preview/data.ts`](preview/data.ts); the short note is [`preview/README.md`](preview/README.md).
-- The fixtures mirror the cohort in `docs/product/demo-script.md`, not production data.
-- Tokens: `dev-recruiter-token` (recruiter `rec-1`) and `dev-hr-token` (HR, unscoped).
-- Upload in preview changes the in-memory document list only. It does not reindex a vector store and
-  the bot cannot answer from it. In the real API the upload is indexed in the request.
-- The plugin uses `apply: "serve"` and is imported only by `vite.config.ts`; `npm run build` never
-  ships it.
-- This mode is for design and interaction review. It is not evidence of retrieval quality, model
-  quality, or production readiness.
+- Плагин — [`preview/plugin.ts`](preview/plugin.ts); фикстуры — [`preview/data.ts`](preview/data.ts);
+  короткая заметка — [`preview/README.md`](preview/README.md).
+- Фикстуры повторяют когорту из `docs/product/demo-script.md`, а не боевые данные.
+- Токены: `dev-recruiter-token` (рекрутёр `rec-1`) и `dev-hr-token` (HR, без скоупа).
+- Загрузка в предпросмотре меняет только список документов в памяти. Она не переиндексирует
+  векторное хранилище, и бот по ней ответить не может. В настоящем API загрузка индексируется в
+  самом запросе.
+- Плагин использует `apply: "serve"` и импортируется только из `vite.config.ts`; `npm run build`
+  его никогда не отдаёт.
+- Этот режим — для ревью дизайна и взаимодействия. Он не доказывает качество поиска, качество
+  модели или готовность к продакшену.
 
-`npm run dev` is the production-shaped setup: Vite proxies `/admin/api` to
-`VITE_PROXY_TARGET` (default `http://localhost:8000`). The Docker image serves the built `dist/`
-through nginx, which proxies `/admin/api` to the `api` service.
+`npm run dev` — конфигурация, близкая к боевой: Vite проксирует `/admin/api` на
+`VITE_PROXY_TARGET` (по умолчанию `http://localhost:8000`). Docker-образ отдаёт собранный `dist/`
+через nginx, а nginx проксирует `/admin/api` на сервис `api`.
 
-## UI system
+## Система интерфейса
 
-The cabinet has no component library and no chart library. `src/styles.css` owns the tokens and the
-few primitives; icons are inline SVG in `src/components/Icons.tsx`.
+В кабинете нет библиотеки компонентов и нет библиотеки графиков. `src/styles.css` держит токены и
+несколько примитивов; иконки — inline SVG в `src/components/Icons.tsx`.
 
-| Token | Value | Use |
+| Токен | Значение | Где используется |
 |---|---|---|
-| `--bg` | `#FAF7F2` | Page background |
-| `--surface` | `#FFFFFF` | Cards, sidebar, controls |
-| `--accent` | `#C56A43` | Accent fills, active indicators, primary button |
-| `--accent-deep` | `#9D4F2E` | Text-safe accent, gate panel |
-| `--accent-soft` | `#F5E4D9` | Highlight, active nav, high-risk card |
-| `--ink` | `#292524` | Primary text |
-| `--ink-2` | `#57534E` | Secondary text |
-| `--muted` | `#857C74` | Metadata |
-| `--line` | `#EEE7DF` | Borders |
+| `--bg` | `#FAF7F2` | Фон страницы |
+| `--surface` | `#FFFFFF` | Карточки, боковая панель, элементы управления |
+| `--accent` | `#C56A43` | Акцентные заливки, активные индикаторы, основная кнопка |
+| `--accent-deep` | `#9D4F2E` | Акцент для текста, панель входа |
+| `--accent-soft` | `#F5E4D9` | Подсветка, активный пункт навигации, карточка высокого риска |
+| `--ink` | `#292524` | Основной текст |
+| `--ink-2` | `#57534E` | Второстепенный текст |
+| `--muted` | `#857C74` | Метаданные |
+| `--line` | `#EEE7DF` | Границы |
 
-Rules of the system:
+Правила системы:
 
-- Cards are white on cream, with one subtle border and a very light shadow. No gradients or
-  decorative glass; the sticky topbar uses a light blur only for legibility.
-- Numbers are tabular. Headings use tighter letter spacing; body text stays at 1.5 line height.
-- Charts are CSS bars and a segmented progress rail; no canvas, no chart dependency.
-- The shell is viewport-height on desktop. The content column is the only scroll container; the page
-  itself never scrolls, so the sidebar and the rounded top and bottom corners stay in place.
-- The sidebar is 248 px; below 1024 px it becomes an icon rail; below 760 px it becomes a fixed
-  bottom navigation with the same five sections.
-- On mobile, long rows (name + reason pill + time) reflow to a two-line grid, and the body clips
-  horizontal overflow. This keeps the layout viewport at the device width and the fixed navigation
-  on screen.
-- Main lists have three distinct states: loading skeleton, explicit empty state, and an error with
-  a retry. "Nothing" and "failed" never look the same.
-- The gate is the only full-screen screen; the token is never prefilled.
-- The topbar has one refresh action, plus a logout icon on narrow screens. There is no "live data"
-  label and no footer with environment notes; the cabinet should look the same in demo and
-  production.
+- Карточки белые на кремовом, с одной тонкой границей и очень лёгкой тенью. Ни градиентов, ни
+  декоративного стекла; липкий топбар использует лёгкое размытие только ради читаемости.
+- Числа табличные. Заголовки идут с более плотным трекингом; основной текст остаётся с межстрочным
+  1.5.
+- Графики — CSS-столбики и сегментированная шкала прогресса; ни canvas, ни зависимости для графиков.
+- Оболочка занимает высоту вьюпорта на десктопе. Единственный контейнер прокрутки — колонка
+  контента; сама страница не скроллится, поэтому боковая панель и скруглённые верхний и нижний углы
+  остаются на месте.
+- Боковая панель — 248 px; ниже 1024 px она становится рейлом иконок; ниже 760 px — фиксированной
+  нижней навигацией с теми же пятью разделами.
+- На мобильном длинные строки (имя + пилюля причины + время) перестраиваются в сетку из двух строк,
+  а body обрезает горизонтальное переполнение. Так вьюпорт остаётся в ширину устройства, а
+  фиксированная навигация — на экране.
+- Главные списки имеют три разных состояния: скелетон загрузки, явное пустое состояние и ошибка с
+  повтором. «Ничего» и «не удалось» никогда не выглядят одинаково.
+- Экран входа — единственный полноэкранный экран; токен никогда не подставляется заранее.
+- В топбаре одно действие обновления плюс иконка выхода на узких экранах. Метки «живые данные» нет,
+  подвала с заметками об окружении тоже нет; кабинет должен выглядеть одинаково в демо и в
+  продакшене.
 
-Accessibility is part of the definition of done: a skip link, real buttons and labels, `aria-current`
-on navigation, `aria-live` on counts, visible focus rings, and `prefers-reduced-motion` support.
+Доступность входит в определение готовности: skip-ссылка, настоящие кнопки и подписи, `aria-current`
+на навигации, `aria-live` на счётчиках, видимые кольца фокуса и поддержка `prefers-reduced-motion`.
 
-## File map
+## Карта файлов
 
-| Path | Responsibility |
+| Путь | Ответственность |
 |---|---|
-| `src/App.tsx` | Shell, session bootstrap, capability-filtered navigation, global refresh |
-| `src/route.ts` | Hash router: parse, build, and the URL as screen state; unknown paths become `notFound` |
-| `src/version.ts` | Build id, `/version.json` check, stale-build banner state |
-| `src/useOnline.ts` | Browser online/offline signal for the banner |
-| `src/session.ts` | Session context and `can(capability)` |
-| `src/errors.ts` | Status codes to Russian, conflict detection |
-| `src/config.ts` | Tenant name, scenario labels, refresh intervals |
-| `src/api.ts` | Fetch wrapper, session cookie, `Unauthorized`, typed endpoints |
-| `src/types.ts` | API response types; mirrors the contract |
-| `src/format.ts` | Dates, Russian plurals, reason/event/step/tag labels, initials |
-| `src/styles.css` | `@import`s the files below in cascade order |
-| `src/styles/base.css` | Tokens, reset, focus, shell, sidebar, top bar, tab-level banner |
-| `src/styles/gate.css` | The token gate |
-| `src/styles/layout.css` | Page scaffolding, controls, cards |
-| `src/styles/dashboard.css` | KPI, cohort charts, digest, pills |
-| `src/styles/screens.css` | Runs, detail, risk, questions, knowledge, states |
-| `src/styles/responsive.css` | Breakpoints, reduced motion, print — always last |
-| `src/components/Icons.tsx` | Inline SVG icon set and logo mark |
-| `src/components/KnowledgeDocumentDialog.tsx` | Read and edit one active knowledge document |
-| `src/components/TokenGate.tsx` | Login by token |
-| `src/components/Boundary.tsx` | Keeps a crashed screen from becoming a white page; remounted per route so the shell survives |
-| `src/components/UpdateBanner.tsx` | Offline and stale-build strip above the shell |
-| `src/components/Pills.tsx` | Status, answer, reason pills |
-| `src/components/Progress.tsx` | Step progress |
-| `src/components/States.tsx` | Empty, error, skeleton |
-| `src/pages/OverviewPage.tsx` | Dashboard |
-| `src/pages/RunsPage.tsx` | Employee list and filters |
-| `src/pages/RunDetailPage.tsx` | Employee card and audit timeline |
-| `src/pages/QuestionsPage.tsx` | Question queue |
-| `src/pages/RiskPage.tsx` | Risk counters and weekly digest |
-| `src/pages/KnowledgePage.tsx` | Knowledge upload, list, document viewer/editor |
-| `src/pages/NotFoundPage.tsx` | An address the cabinet cannot read |
-| `preview/` | Dev-only API and fixtures; never in a production build |
+| `src/App.tsx` | Оболочка, подъём сессии, навигация с фильтром по capabilities, глобальное обновление |
+| `src/route.ts` | Хэш-роутер: разбор, сборка и URL как состояние экрана; неизвестные пути становятся `notFound` |
+| `src/version.ts` | Id сборки, проверка `/version.json`, состояние баннера устаревшей сборки |
+| `src/useOnline.ts` | Браузерный сигнал online/offline для баннера |
+| `src/session.ts` | Контекст сессии и `can(capability)` |
+| `src/errors.ts` | Коды статуса в русский текст, обнаружение конфликта |
+| `src/config.ts` | Имя тенанта, подписи сценариев, интервалы обновления |
+| `src/api.ts` | Обёртка над fetch, сессионная кука, `Unauthorized`, типизированные эндпоинты |
+| `src/types.ts` | Типы ответов API; повторяют контракт |
+| `src/format.ts` | Даты, русские склонения, подписи причин, событий, шагов и тегов, инициалы |
+| `src/styles.css` | `@import` файлов ниже в порядке каскада |
+| `src/styles/base.css` | Токены, сброс, фокус, оболочка, боковая панель, топбар, баннер уровня вкладки |
+| `src/styles/gate.css` | Экран ввода токена |
+| `src/styles/layout.css` | Каркас страницы, элементы управления, карточки |
+| `src/styles/dashboard.css` | KPI, графики когорты, дайджест, пилюли |
+| `src/styles/screens.css` | Прогоны, карточка, риски, вопросы, база знаний, состояния |
+| `src/styles/responsive.css` | Брейкпоинты, reduced motion, печать — всегда последним |
+| `src/components/Icons.tsx` | Набор inline SVG-иконок и логотип |
+| `src/components/KnowledgeDocumentDialog.tsx` | Чтение и правка одного активного документа базы знаний |
+| `src/components/TokenGate.tsx` | Вход по токену |
+| `src/components/Boundary.tsx` | Не даёт упавшему экрану стать белой страницей; монтируется заново на каждом маршруте, чтобы оболочка выжила |
+| `src/components/UpdateBanner.tsx` | Полоса offline и устаревшей сборки над оболочкой |
+| `src/components/Pills.tsx` | Пилюли статуса, ответа, причины |
+| `src/components/Progress.tsx` | Прогресс шага |
+| `src/components/States.tsx` | Пусто, ошибка, скелетон |
+| `src/pages/OverviewPage.tsx` | Дашборд |
+| `src/pages/RunsPage.tsx` | Список сотрудников и фильтры |
+| `src/pages/RunDetailPage.tsx` | Карточка сотрудника и таймлайн аудита |
+| `src/pages/QuestionsPage.tsx` | Очередь вопросов |
+| `src/pages/RiskPage.tsx` | Счётчики рисков и недельный дайджест |
+| `src/pages/KnowledgePage.tsx` | Загрузка в базу знаний, список, просмотр и правка документов |
+| `src/pages/NotFoundPage.tsx` | Адрес, который кабинет прочитать не может |
+| `preview/` | Dev-API и фикстуры; никогда не попадают в боевую сборку |
 
-## Limits and next mutations
+## Ограничения и что дальше
 
-- Writes: resolve a question, publish a markdown document, upload a PDF or a deck (queued, then
-  polled), offboard an employee. Manual messages to an employee are still not implemented.
-- Escalation resolution and assignment are not implemented; the human action happens in MAX and
-  the decision is tracked outside the cabinet.
-- Lists are keyset-paged: a screen asks for the next page with the cursor the server returned, and
-  the header prints `shown of total`. `limit` is capped at 200.
-- The knowledge list hides `hr_only` documents from non-HR callers, but a recruiter still sees the
-  titles of the rest: the corpus is shared, the audience is not a secret.
-- No in-app notifications, exports, saved views, or assignment. Those are product decisions that
-  need a contract change first.
-- UI copy is Russian. Documentation is English, per the workspace rules.
+- Записи: закрыть вопрос, опубликовать markdown-документ, загрузить PDF или презентацию (в очередь,
+  потом опрос), удалить сотрудника из справочника. Ручные сообщения сотруднику всё ещё не сделаны.
+- Закрытие эскалации и назначение не сделаны; человек действует в MAX, а решение учитывается вне
+  кабинета.
+- Списки листаются по keyset: экран просит следующую страницу с курсором, который вернул сервер, а
+  заголовок печатает `shown of total`. `limit` ограничен 200.
+- Список базы знаний скрывает документы `hr_only` от тех, кто не HR, но заголовки остальных рекрутёр
+  всё равно видит: корпус общий, аудитория не секрет.
+- Уведомлений внутри приложения, экспорта, сохранённых представлений и назначения нет. Это
+  продуктовые решения, которым сначала нужна правка контракта.
+- Тексты интерфейса и документация — на русском.
 
-## When changing the frontend
+## Как менять фронтенд
 
-1. Read `docs/contracts/admin-api.md` and the relevant product doc before changing a screen.
-2. If a field is missing, change the contract and the server first; do not invent a shape in `types.ts`.
-3. Run `npm run lint`, `npm run typecheck` and `npm run test`; `make check` does all of it.
-4. Keep the three list states and the accessibility rules.
-5. If the change is a product claim or a measured number, add the command, environment, and commit
-   to `docs/measurements/`; the preview is not a measurement.
-6. Never add a MAX bot token, provider key, or real admin token to this app.
+1. Прочитайте `docs/contracts/admin-api.md` и нужный продуктовый документ, прежде чем менять экран.
+2. Если поля не хватает, сначала меняйте контракт и сервер; не выдумывайте форму в `types.ts`.
+3. Запустите `npm run lint`, `npm run typecheck` и `npm run test`; `make check` делает всё это.
+4. Держите три состояния списков и правила доступности.
+5. Если изменение — продуктовое утверждение или измеренное число, добавьте команду, окружение и
+   коммит в `docs/measurements/`; предпросмотр не измерение.
+6. Никогда не добавляйте в это приложение токен бота MAX, ключ провайдера или настоящий
+   admin-токен.

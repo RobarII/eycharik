@@ -1,12 +1,12 @@
-# Knowledge metadata
+# Метаданные базы знаний
 
-There is no separate ACL file. The frontmatter of each document is the single source of truth:
+Отдельного файла ACL нет. Единственный источник правды — frontmatter каждого документа:
 
-- `audience` — who may retrieve the document: `all`, `dept:<name>`, `hr_only`.
-- `valid_from` / `valid_to` — the validity window; expired documents are never retrieved.
-- `owner` — who reviews the document; the staleness report groups by owner.
-- `status` — `draft` is not indexed, `deprecated` is not indexed, `active` is.
+- `audience` — кто может найти документ: `all`, `dept:<name>`, `hr_only`.
+- `valid_from` / `valid_to` — окно действия; просроченные документы не находятся никогда.
+- `owner` — кто проверяет документ; отчёт об устаревании группирует по owner.
+- `status` — `draft` не индексируется, `deprecated` не индексируется, `active` индексируется.
 
-Adding a document means adding a row to the owner's review queue. The ingestion job validates each
-file against `docs/contracts/doc.schema.json` and fails the whole batch on one invalid file, so a
-half-indexed corpus cannot happen.
+Добавить документ — значит добавить строку в очередь проверки его owner. Задача индексации проверяет
+каждый файл по `docs/contracts/doc.schema.json` и роняет всю пачку на одном невалидном файле, поэтому
+наполовину проиндексированного корпуса не бывает.

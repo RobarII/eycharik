@@ -1,33 +1,34 @@
-# Recruiter cabinet
+# Кабинет рекрутёра
 
-React 18 + TypeScript + Vite + TanStack Query. No router library: the URL hash is the router.
-No component library: `styles.css` holds the tokens and the few primitives the cabinet needs.
+React 18 + TypeScript + Vite + TanStack Query. Библиотеки роутера нет: роутер — хэш в URL.
+Библиотеки компонентов нет: `styles.css` держит токены и несколько примитивов, которые нужны
+кабинету.
 
-Read [`README.md`](README.md) before the first change: screens, tokens and their scopes, the
-knowledge document schema, the preview mode, and the known limits.
+Прочитайте [`README.md`](README.md) до первой правки: экраны, токены и их скоупы, схема документа
+базы знаний, режим предпросмотра и известные ограничения.
 
-## Rules
+## Правила
 
-1. Writes are the five the contract allows: claim or release a question, resolve it, publish a
-   knowledge document, upload a PDF or a deck, and offboard an employee. The cabinet calls
-   `/admin/api/*` and never MAX; a reply is queued through the outbox in the same transaction that
-   closes the question.
-2. The token never lives in the page. It is exchanged on the gate for an HttpOnly cookie
-   (`docs/decisions/0018`) and is not readable by script afterwards. A `401` returns to the gate.
-   What a role may see is decided by `capabilities` from `GET /admin/api/me`, never by the client.
-3. Every list shows an explicit empty state and an explicit error with a retry. "Nothing" and
-   "failed" must never look the same.
-4. Timestamps arrive as UTC ISO strings and are formatted for the reader, never recomputed.
-5. A question always shows whose it is. A queue without names is a queue nobody works: the card
-   says "Ваш вопрос" or names the owner, and the owner filter is a server query, never a
-   client-side `filter()` over one page.
-6. Accessibility is not decoration: real buttons, labels, `aria-live` counts, focus rings,
-   reduced-motion support. `npm run e2e` runs axe on every screen; a `critical` or `serious`
-   violation fails it.
-7. A contrast fix is not a taste fix: small text needs 4.5:1, and `prefers-reduced-motion` must
-   turn animations off, not just shorten them.
+1. Записи — те пять, что разрешает контракт: взять вопрос в работу или освободить его, закрыть
+   вопрос, опубликовать документ базы знаний, загрузить PDF или презентацию, удалить сотрудника из
+   справочника. Кабинет ходит в `/admin/api/*` и никогда в MAX; ответ ставится в очередь через
+   `outbox` в той же транзакции, которая закрывает вопрос.
+2. Токен никогда не живёт в странице. На экране входа он меняется на HttpOnly-куку
+   (`docs/decisions/0018`) и дальше скрипту недоступен. `401` возвращает на экран входа. Что роль
+   может видеть, решают `capabilities` из `GET /admin/api/me`, а не клиент.
+3. Каждый список показывает явное пустое состояние и явную ошибку с повтором. «Ничего» и «не
+   удалось» не должны выглядеть одинаково.
+4. Метки времени приходят строками UTC ISO и форматируются для читателя, а не пересчитываются.
+5. Вопрос всегда показывает, чей он. Очередь без имён — очередь, которую никто не разбирает:
+   карточка пишет «Ваш вопрос» или называет владельца, а фильтр по владельцу — запрос на сервер, а
+   не клиентский `filter()` по одной странице.
+6. Доступность — не украшение: настоящие кнопки, подписи, счётчики с `aria-live`, кольца фокуса,
+   поддержка reduced motion. `npm run e2e` гоняет axe на каждом экране; нарушение `critical` или
+   `serious` его роняет.
+7. Правка контраста — не правка вкуса: мелкому тексту нужно 4.5:1, а `prefers-reduced-motion`
+   должен выключать анимации, а не только укорачивать их.
 
-## Commands
+## Команды
 
 ```bash
 npm install
@@ -42,5 +43,5 @@ npm run e2e          # playwright + axe against the demo API (make admin-e2e)
 
 ## API
 
-`docs/contracts/admin-api.md` is the contract. If a field is missing, change the contract and the
-server first; do not guess a shape in the client.
+`docs/contracts/admin-api.md` — контракт. Если поля не хватает, сначала меняйте контракт и сервер;
+не угадывайте форму в клиенте.

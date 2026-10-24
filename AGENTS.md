@@ -1,97 +1,116 @@
 # AGENTS.md
 
-Workspace rules for coding agents and humans. Read this before the first edit.
+Правила работы в репозитории для людей и агентов. Прочитать до первой правки.
 
-## What this workspace is
+## Что это за проект
 
-One product: an onboarding assistant for the MAX messenger.
+Один продукт: ассистент адаптации сотрудников в мессенджере MAX.
 
-- `apps/api/` — webhook API, scenario engine, retrieval, answer generation, admin API.
-- `apps/admin/` — the recruiter cockpit. Not a chatbot; it reads the admin API.
-- `knowledge/` — the non-public company corpus that the assistant may answer from. Data, not code.
-- `docs/` — the specification of record: architecture, contracts, decisions, runbooks, evals.
+- `apps/api/` — вебхук, движок сценариев, поиск, генерация ответа, admin API.
+- `apps/admin/` — кабинет рекрутёра. Не чатбот: читает admin API.
+- `knowledge/` — закрытый корпус компании, по которому ассистент отвечает. Данные, не код.
+- `docs/` — спецификация: архитектура, контракты, решения, прогоны, оценки.
 
-The repository is the only source of truth. A fact that lives only in a chat message does not exist.
+Единственный источник правды — репозиторий. Факта, который живёт только в переписке, не существует.
 
-## Read before editing
+## Что прочитать перед правкой
 
-| About to touch | Read first |
+| Собираетесь трогать | Сначала прочитайте |
 |---|---|
-| anything | this file, `docs/README.md` |
-| scenario steps or timers | `docs/product/scenarios.md`, `docs/contracts/scenario.schema.json` |
-| retrieval, chunking, citations | `docs/architecture.md`, `docs/decisions/0003-hybrid-retrieval.md` |
-| prompts, tone, refusals | `docs/prompts/`, `docs/product/answer-policy.md`, `docs/evals/README.md` |
-| webhook, MAX payloads | `docs/contracts/max-api.md`, `docs/decisions/0002-async-webhook.md` |
-| admin API or cockpit | `docs/contracts/admin-api.md`, `docs/product/roles.md` |
-| the database | `apps/api/onboarding/app/db/`, `docs/runbooks/migrate.md` |
-| a deployment | `docs/runbooks/deploy.md` |
-| a claim about quality | `docs/evals/README.md`, `docs/measurements/` |
+| что угодно | этот файл, `docs/README.md` |
+| шаги сценария или таймеры | `docs/product/scenarios.md`, `docs/contracts/scenario.schema.json` |
+| поиск, чанкинг, цитаты | `docs/architecture.md`, `docs/decisions/0003-hybrid-retrieval.md` |
+| промпты, тон, отказы | `docs/prompts/`, `docs/product/answer-policy.md`, `docs/evals/README.md` |
+| вебхук, payload MAX | `docs/contracts/max-api.md`, `docs/decisions/0002-async-webhook.md` |
+| admin API или кабинет | `docs/contracts/admin-api.md`, `docs/product/roles.md` |
+| базу данных | `apps/api/onboarding/app/db/`, `docs/runbooks/migrate.md` |
+| деплой | `docs/runbooks/deploy.md` |
+| утверждение о качестве | `docs/evals/README.md`, `docs/measurements/` |
 
-## Hard rules
+## Жёсткие правила
 
-1. **`core/` has no I/O.** No `httpx`, no SQLAlchemy, no `datetime.now`, no `random`, no logging
-   inside `apps/api/onboarding/core/`. Time, network, and storage arrive as arguments or ports.
-2. **`knowledge/` is data.** Never edit it in the same commit as code. Every document keeps a
-   frontmatter block with `id`, `owner`, `audience`, `valid_from`.
-3. **Contracts precede code.** Schemas live in `docs/contracts/`. If the code needs a field the
-   schema does not have, change the schema first.
-4. **Prompts are versioned files.** No prompt string in Python. A prompt change is a new version
-   plus an eval run recorded in `docs/measurements/`.
-5. **Never invent a number.** A measurement needs a command, an environment, and a commit.
-   `--offline` proves the contract, not the quality.
-6. **No secrets in git.** `.env.local`, bot tokens, provider keys, and the webhook secret stay out.
-   Error messages must not echo them either.
-7. **One repository.** No nested `.git`, no submodules.
-8. **Docs are English.** `knowledge/` and user-facing copy are Russian. Raw inputs keep their
-   original language. Conversation with the user follows the user.
+1. **В `core/` нет ввода-вывода.** Ни `httpx`, ни SQLAlchemy, ни `datetime.now`, ни `random`, ни
+   логирования внутри `apps/api/onboarding/core/`. Время, сеть и хранилище приходят аргументами
+   или портами.
+2. **`knowledge/` — данные.** Не править в одном коммите с кодом. У каждого документа есть
+   frontmatter с `id`, `owner`, `audience`, `valid_from`.
+3. **Контракт раньше кода.** Схемы лежат в `docs/contracts/`. Если коду нужно поле, которого нет в
+   схеме, сначала меняется схема.
+4. **Промпт — версионированный файл.** Строки промпта в Python нет. Правка промпта — новая версия
+   плюс прогон оценки, записанный в `docs/measurements/`.
+5. **Число не выдумывается.** У измерения есть команда, окружение и коммит. `--offline`
+   доказывает контракт, а не качество.
+6. **Секретов в git нет.** `.env.local`, токены ботов, ключи провайдеров и секрет вебхука
+   остаются снаружи. Сообщения об ошибках их тоже не печатают.
+7. **Один репозиторий.** Без вложенных `.git` и сабмодулей.
+8. **Документация — русский язык.** Код, идентификаторы, команды и коммиты — английский.
+   `knowledge/` и пользовательские тексты — русский. Сырые входные данные сохраняют свой язык.
+   С человеком говорят на его языке.
 
-## Commands
+## Документация
+
+1. У каждого файла `docs/**/*.md` есть frontmatter по
+   [`docs/_meta/frontmatter.schema.json`](docs/_meta/frontmatter.schema.json): `title`, `summary`,
+   `kind`, `owner`, `status`, `last_verified`. Без него `make docs` падает.
+2. `docs/README.md` и `docs/glossary.md` генерируются. Править руками нельзя: `make docs-index`
+   перезаписывает, `make docs` падает при расхождении. Новый термин идёт в `docs/glossary.yaml`.
+3. Измерение — сводка не длиннее 200 строк с полями `- команда:`, `- коммит:`, `- окружение:`.
+   Кейсы по одному лежат в `.jsonl` рядом, а не в markdown.
+4. Числа живут только в `docs/measurements/`. Другой документ ссылается на измерение, а не
+   переписывает его цифры.
+5. Тело промпта в `docs/prompts/**/vN.md` читает код: frontmatter туда не добавляется, файл не
+   переводится и не переформатируется.
+6. Решения не переписываются: принятое решение заменяется новым ADR с `supersedes`.
+7. Ссылки, пути к коду, цели `make` и маршруты API проверяет `make docs`. Ссылка на удалённый
+   файл — ошибка сборки, а не пожелание.
+
+## Команды
 
 ```bash
-make install                       # uv sync, creates .venv
-make check                         # ruff, mypy, pytest, docs link check
-make eval                          # retrieval, generation, escalation on the golden set
-make eval-retrieval                # retrieval only, no provider key needed
-make run                           # uvicorn on :8000
-make up / make down                # docker compose stack
-make docs                          # docs index completeness and dead-link check
+make install                       # uv sync, создаёт .venv
+make check                         # ruff, mypy, pytest, docs, admin
+make eval                          # поиск, генерация, эскалация на golden set
+make eval-retrieval                # только поиск, ключ провайдера не нужен
+make run                           # uvicorn на :8000
+make up / make down                # docker compose
+make docs                          # индекс, глоссарий, мёртвые ссылки, маршруты
+make docs-index                    # перегенерировать docs/README.md и docs/glossary.md
 make eval-sentiment                # PROVIDER=keyword|prompt|jev SPLIT=dev|test REPEAT=n
 ```
 
-## Network
+## Сеть
 
-Every provider call leaves through a SOCKS tunnel; a direct request fails before it reaches the
-provider. Export it for anything that calls a model, an embedder, or a reranker:
+Каждый вызов провайдера идёт через SOCKS-туннель; прямой запрос не доходит. Экспортируйте его
+для всего, что зовёт модель, эмбеддер или реранкер:
 
 ```bash
 export HTTPS_PROXY=socks5h://127.0.0.1:1080
 ```
 
-`httpx` reads that variable on its own (`socksio` is installed), so application code needs no proxy
-setting and no proxy argument. `curl` needs `--proxy socks5h://127.0.0.1:1080`.
+`httpx` читает переменную сам (`socksio` установлен), поэтому коду не нужны ни настройка, ни
+аргумент прокси. `curl` нужен `--proxy socks5h://127.0.0.1:1080`.
 
-Measured on 2026-10-23: without the tunnel, `openrouter.ai` answers `403 Access denied by security
-policy` for `/systemone`, `/key`, `/rerank`, and `/chat/completions` alike, and `httpx` raises
-`ProxyError 503`. That is this machine's egress, not the provider and not the adapter: the same key
-returns `200` through the tunnel. Treat a `403` in a measurement log as a missing tunnel, then look
-at the provider.
+Измерено 2026-10-23: без туннеля `openrouter.ai` отвечает `403 Access denied by security policy`
+на `/systemone`, `/key`, `/rerank` и `/chat/completions` одинаково, а `httpx` поднимает
+`ProxyError 503`. Это выход этой машины, а не провайдер и не адаптер: тот же ключ через туннель
+возвращает `200`. `403` в журнале измерения — сначала ищите туннель, потом провайдера.
 
-## Where changes go
+## Куда что класть
 
-| Change | Home |
+| Изменение | Дом |
 |---|---|
-| behaviour of the bot | `apps/api/onboarding/` |
-| a new scenario | `docs/product/scenarios.md` + `apps/api/scenarios/` |
-| a new answer rule | `docs/product/answer-policy.md` + a prompt version |
-| a decision that reverses an accepted one | a new ADR in `docs/decisions/`, never an edit |
-| a new fact about MAX | `docs/contracts/max-api.md` with the source URL |
-| a measured result | `docs/measurements/` with command, environment, commit |
-| a failure and its fix | `docs/incidents/` with the proof the fix works |
+| поведение бота | `apps/api/onboarding/` |
+| новый сценарий | `docs/product/scenarios.md` + `apps/api/scenarios/` |
+| новое правило ответа | `docs/product/answer-policy.md` + новая версия промпта |
+| решение, отменяющее принятое | новый ADR в `docs/decisions/`, не правка старого |
+| новый факт о MAX | `docs/contracts/max-api.md` со ссылкой на источник |
+| измеренный результат | `docs/measurements/` с командой, окружением и коммитом |
+| сбой и его исправление | `docs/incidents/` с доказательством, что исправление работает |
 
-## Definition of done
+## Определение готовности
 
-1. `make check` passes.
-2. New behaviour has a test in `apps/api/tests/` or an eval case in `docs/evals/golden.yaml`.
-3. The affected doc is updated, and new docs are listed in `docs/README.md`.
-4. Accepted ADRs are untouched; supersede them instead.
-5. The commit is Conventional Commits, English, header only, ≤72 characters.
+1. `make check` проходит.
+2. У нового поведения есть тест в `apps/api/tests/` или кейс в `docs/evals/golden.yaml`.
+3. Затронутый документ обновлён; новый документ попал в индекс через frontmatter, а не руками.
+4. Принятые ADR не тронуты — они заменены новыми.
+5. Коммит — Conventional Commits, английский, только заголовок, ≤72 символов.

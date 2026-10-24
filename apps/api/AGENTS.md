@@ -1,27 +1,27 @@
 # apps/api/AGENTS.md
 
-Narrows the root `AGENTS.md`. On a conflict this file wins.
+Сужает корневой `AGENTS.md`. При конфликте побеждает этот файл.
 
-## Boundaries
+## Границы
 
-- `onboarding/core/` — pure. Standard library and sibling `core` imports only.
-- `onboarding/ports.py` — protocols only; no implementations, no imports from `app/`.
-- `onboarding/app/` — every effect: HTTP, SQL, model calls, clock, logging.
-- `onboarding/api/` — FastAPI routers; no business rules beyond request mapping.
+- `onboarding/core/` — чистый. Только стандартная библиотека и импорты соседнего `core`.
+- `onboarding/ports.py` — только протоколы; ни реализаций, ни импортов из `app/`.
+- `onboarding/app/` — любые эффекты: HTTP, SQL, вызовы модели, часы, логирование.
+- `onboarding/api/` — роутеры FastAPI; никаких бизнес-правил сверх отображения запроса.
 
-## Rules
+## Правила
 
-1. A new effect is a port plus an implementation. Do not import `app/` from `core/`.
-2. SQL only in `app/db/`. Repositories accept domain types and return domain types.
-3. Every production model call goes through `app/llm/gateway.py`: timeout, one retry, circuit
-   breaker, cost. `app/llm/extractive.py` is the offline exception (ADR 0007): it may serve the
-   local demo, including the webhook path, but `Settings` refuses to boot with it when
+1. Новый эффект — это порт плюс реализация. Не импортируйте `app/` из `core/`.
+2. SQL только в `app/db/`. Репозитории принимают доменные типы и возвращают доменные типы.
+3. Каждый боевой вызов модели идёт через `app/llm/gateway.py`: таймаут, один повтор,
+   предохранитель, стоимость. `app/llm/extractive.py` — офлайновое исключение (ADR 0007): он может
+   обслуживать локальное демо, включая путь вебхука, но `Settings` отказывается стартовать с ним при
    `ENVIRONMENT=production`.
-4. Every outbound MAX message is written to the outbox before it is sent.
-5. A prompt is loaded by name and version; a string literal prompt is a review blocker.
-6. Tests for `core/` use no fixtures beyond data. Tests with Postgres are `-m integration`.
+4. Каждое исходящее сообщение в MAX пишется в outbox до отправки.
+5. Промпт загружается по имени и версии; строковый литерал вместо промпта — блокер ревью.
+6. Тесты для `core/` не берут фикстур, кроме данных. Тесты с Postgres идут с `-m integration`.
 
-## Commands
+## Команды
 
 ```bash
 cd apps/api

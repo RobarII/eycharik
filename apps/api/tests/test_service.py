@@ -561,7 +561,34 @@ async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
     assert next(iter(runs.runs.values())).scheduled is None
 
 
-async def test_a_message_while_scheduled_gets_a_stage_status() -> None:
+async def test_a_question_while_scheduled_reaches_the_assistant() -> None:
+    service, runs, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
+    )
+    stored = next(iter(runs.runs.values()))
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="А что будет дальше?"),
+    )
+
+    assert result.handled
+    assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
+    assert answerer.calls == [("А что будет дальше?", NOW.date())]
+    assert messaging.sent[-1].text == "Ответ ассистента"
+
+
+async def test_a_button_while_scheduled_gets_a_stage_status() -> None:
     service, runs, messaging, _, _ = build()
     await service.start(EMPLOYEE, ADDRESS)
     await service.handle(
@@ -574,18 +601,16 @@ async def test_a_message_while_scheduled_gets_a_stage_status() -> None:
         ADDRESS,
         Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Отправил"),
     )
-    before = len(messaging.sent)
     stored = next(iter(runs.runs.values()))
 
     result = await service.handle(
         EMPLOYEE,
         ADDRESS,
-        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Ты работаешь?"),
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="ready"),
     )
 
     assert result.handled
     assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
-    assert len(messaging.sent) == before + 1
     assert messaging.sent[-1].text.startswith("Сейчас ещё не время следующего этапа")
 
 

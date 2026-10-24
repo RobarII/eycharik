@@ -31,7 +31,14 @@ from onboarding.core.models import (
     Transition,
 )
 from onboarding.core.risk import assess, keyword_signal, scale_signal
-from onboarding.core.transitions import advance, jump, replay, resume_scheduled, start
+from onboarding.core.transitions import (
+    advance,
+    is_confirmation,
+    jump,
+    replay,
+    resume_scheduled,
+    start,
+)
 from onboarding.ports import (
     AuditLog,
     Clock,
@@ -159,7 +166,7 @@ class OnboardingService:
             )
         return ServiceResult(handled=True)
 
-    async def handle(  # noqa: PLR0911 - explicit command branches are easier to audit
+    async def handle(  # noqa: PLR0911, PLR0912 - command routing is explicit here
         self,
         employee_id: EmployeeId,
         address: Address,
@@ -217,15 +224,27 @@ class OnboardingService:
             )
             return ServiceResult(handled=True)
         if stored.scheduled is not None:
-            # The user wrote or pressed while the next stage is waiting for its due time. Reply with
-            # the stage and due date instead of silently swallowing the event: a dead-sounding bot
-            # is indistinguishable from a broken one.
+            # The next stage is waiting for its due time. A free-text question must still reach
+            # Answerer/QuestionLog; otherwise the person sees "not yet" and HR never gets a row.
             await self._audit.record(
                 "event_while_scheduled",
                 employee_id=str(employee_id),
                 step=stored.scheduled.step_id,
                 event=event.kind.value,
             )
+            if (
+                event.kind is EventKind.MESSAGE_RECEIVED
+                and event.text
+                and not is_confirmation(event.text)
+            ):
+                await self._act(
+                    (Action(kind=ActionKind.ANSWER),),
+                    address,
+                    employee_id,
+                    now.date(),
+                    question=event.text,
+                )
+                return ServiceResult(handled=True)
             await self._ack_scheduled(
                 scenario,
                 stored.scheduled,

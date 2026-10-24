@@ -120,7 +120,11 @@ async def test_answer_calls_the_assistant_with_the_employee_context() -> None:
     await executor.execute(action, context)
 
     assert answerer.calls == [("Сколько дней отпуска?", date(2026, 10, 23))]
-    assert messaging.sent[0].text == "Ответ ассистента"
+    # The short "searching" line arrives first so the wait is not silent, the answer second.
+    assert [message.text for message in messaging.sent] == [
+        "Секунду, ищу ответ в базе знаний…",
+        "Ответ ассистента",
+    ]
 
 
 async def test_answer_without_a_question_is_skipped_and_recorded() -> None:
@@ -171,3 +175,26 @@ async def test_a_repeated_question_explains_what_is_wrong() -> None:
     text = messaging.sent[0].text
     assert text.startswith("Оцените доступность руководителя от 1 до 10")
     assert COPY.answer_hint("scale") in text
+
+
+async def test_a_survey_question_carries_its_position_and_the_answer_is_acknowledged() -> None:
+    executor, messaging, _, _ = build()
+    asked = Action(kind=ActionKind.SEND, text="Как встретили коллеги?", note="survey:ask:2:9")
+    ack = Action(kind=ActionKind.SEND, text="9", note="survey:ack")
+    context = ActionContext(address=ADDRESS, on_date=date(2026, 10, 23))
+
+    await executor.execute(asked, context)
+    await executor.execute(ack, context)
+
+    assert messaging.sent[0].text == "Вопрос 2 из 9\n\nКак встретили коллеги?"
+    assert messaging.sent[1].text == "Записал: 9"
+
+
+async def test_an_open_answer_is_acknowledged_without_a_value() -> None:
+    executor, messaging, _, _ = build()
+    await executor.execute(
+        Action(kind=ActionKind.SEND, text="", note="survey:ack"),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 23)),
+    )
+
+    assert messaging.sent[0].text == "Записал, спасибо."

@@ -42,8 +42,14 @@ steps:
       Осталось собрать документы: паспорт, СНИЛС, ИНН, диплом, фотография, реквизиты счёта.
       Пришли их файлами в этот чат или напиши, если что-то уже отдал рекрутёру.
     expects: message
+    keyboard:
+      - - id: docs_done
+          text: Готово
+        - id: docs_ask
+          text: Задать вопрос
     routes:
       default: day_before
+      docs_done: day_before
     timeout:
       after_hours: 48
       action: remind
@@ -77,8 +83,14 @@ steps:
       Напишите вопрос, который остался перед первым днём. Я отвечу по базе знаний или передам
       его HR. Когда будете готовы продолжить, отправьте «готово» или /nextStage.
     expects: message
+    keyboard:
+      - - id: questions_done
+          text: Готово
+        - id: questions_ask
+          text: Задать вопрос
     routes:
       default: first_day
+      questions_done: first_day
     timeout:
       after_hours: 24
       action: remind
@@ -127,8 +139,14 @@ steps:
       Напишите, пожалуйста, что именно не открывается и какую ошибку видите. Я передам вопрос
       в HR и поддержку и вернусь с ответом.
     expects: message
+    keyboard:
+      - - id: access_done
+          text: Готово
+        - id: access_ask
+          text: Задать вопрос
     routes:
       default: territory_map
+      access_done: territory_map
     timeout:
       after_hours: 3
       action: escalate

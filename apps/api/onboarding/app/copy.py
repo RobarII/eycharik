@@ -5,6 +5,7 @@ Copy is reviewed with the answer policy, so it lives in a data file, not in Pyth
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,34 @@ class Copy:
     stage_waiting: str = ""
     invalid_answer: dict[str, str] | None = None
     not_understood: str = ""
+    searching: str = ""
+    file_received: str = ""
+    source_one: str = ""
+    source_many: str = ""
+    survey_progress: str = ""
+    survey_ack: str = ""
+    survey_ack_open: str = ""
+    stage_progress: str = ""
+
+    def source_line(self, names: Sequence[str]) -> str:
+        """A human-readable source line instead of the raw ``[doc#chunk]`` markers.
+
+        Live 2026-10-24: the employee saw ``[company/workspace-rules#0]`` in the chat, which reads
+        as an internal leak. The chunk id still reaches the audit and the question log.
+        """
+        unique = tuple(dict.fromkeys(name for name in names if name))
+        if not unique:
+            return ""
+        template = self.source_one if len(unique) == 1 else self.source_many
+        return template.format(names=", ".join(unique))
+
+    def survey_question(self, index: int, total: int) -> str:
+        return self.survey_progress.format(index=index, total=total)
+
+    def survey_acknowledgement(self, value: str | None) -> str:
+        if not value:
+            return self.survey_ack_open
+        return self.survey_ack.format(value=value)
 
     def escalation_for(self, reason: EscalationReason) -> str:
         try:
@@ -78,6 +107,14 @@ def load_copy(path: Path) -> Copy:
         stage_waiting=_text(raw, "stage_waiting", path),
         invalid_answer=_hints(raw, path),
         not_understood=_text(raw, "not_understood", path),
+        searching=_text(raw, "searching", path),
+        file_received=_text(raw, "file_received", path),
+        source_one=_text(raw, "source_one", path),
+        source_many=_text(raw, "source_many", path),
+        survey_progress=_text(raw, "survey_progress", path),
+        survey_ack=_text(raw, "survey_ack", path),
+        survey_ack_open=_text(raw, "survey_ack_open", path),
+        stage_progress=_text(raw, "stage_progress", path),
     )
 
 

@@ -634,7 +634,9 @@ async def test_a_document_with_a_question_while_scheduled_reaches_the_assistant(
     assert result.handled
     assert answerer.calls == [("Это паспорт. А когда зарплата?", NOW.date())]
     assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
-    assert len(messaging.sent) == sent_before + 1
+    # The searching line plus the answer, and no receipt: a captioned question is a question.
+    assert len(messaging.sent) == sent_before + 2
+    assert messaging.sent[-1].text == "Ответ ассистента"
     assert messaging.sent[-1].text == "Ответ ассистента"
 
 
@@ -889,3 +891,40 @@ async def test_a_stale_button_while_scheduled_does_not_repeat_the_notice() -> No
     assert after_own == notices + 1
     assert after_stale == after_own
     assert next(iter(runs.runs.values())).scheduled is not None
+
+
+async def test_a_document_at_the_documents_step_is_acknowledged_in_words() -> None:
+    service, _, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    sent_before = len(messaging.sent)
+
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.FILE_RECEIVED, at=NOW, text=None),
+    )
+
+    assert messaging.sent[sent_before].text.startswith("Файл получил")
+
+
+async def test_the_ask_button_on_a_step_replies_with_the_ask_prompt() -> None:
+    service, _, messaging, _, _ = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_formal"),
+    )
+    sent_before = len(messaging.sent)
+
+    result = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="docs_ask")
+    )
+
+    assert result.handled
+    assert messaging.sent[sent_before].text == COPY.ask_question

@@ -214,12 +214,9 @@ class OnboardingService:
                 question=None,
             )
             return ServiceResult(handled=True)
-        if event.kind is EventKind.BUTTON_PRESSED and event.button_id in {
-            "hr_continue",
-            "hr_ask",
-        }:
-            if event.button_id == "hr_continue":
-                return await self.next_stage(employee_id, address)
+        if event.kind is EventKind.BUTTON_PRESSED and event.button_id == "hr_continue":
+            return await self.next_stage(employee_id, address)
+        if event.kind is EventKind.BUTTON_PRESSED and _asks_a_question(event.button_id):
             await self._act(
                 (Action(kind=ActionKind.SEND, text=self._executor.ask_question_text()),),
                 address,
@@ -352,6 +349,14 @@ class OnboardingService:
         escalated = await self._assess_survey(
             scenario, stored.state, transition, employee_id
         )
+        if event.kind is EventKind.FILE_RECEIVED and not (event.text and is_question(event.text)):
+            await self._act(
+                (Action(kind=ActionKind.SEND, text=self._executor.file_received_text()),),
+                address,
+                employee_id,
+                effective.at.date(),
+                question=None,
+            )
         await self._act(
             transition.actions,
             address,
@@ -666,6 +671,11 @@ class OnboardingService:
         )
         for action in actions:
             await self._executor.execute(action, context)
+
+
+def _asks_a_question(button_id: str | None) -> bool:
+    """The "ask a question" button carries a per-step id, so one keyboard cannot repeat another."""
+    return button_id == "hr_ask" or bool(button_id and button_id.endswith("_ask"))
 
 
 def _button_belongs(step: Step, button_id: str | None) -> bool:

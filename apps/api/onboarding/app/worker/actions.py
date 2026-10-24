@@ -116,11 +116,20 @@ class ActionExecutor:
             case ActionKind.IGNORE:
                 await self._audit.record("action_ignored", employee_id=_employee(context))
 
+    def file_received_text(self) -> str:
+        return self._copy.file_received
+
     def _resolve(self, action: Action) -> str:
-        """Attach a hint to a repeated survey question so the person learns what went wrong."""
+        """Attach the position, the hint or the acknowledgement the copy file words."""
         assert action.text is not None
         if action.note == "reminder":
             return self._copy.reminder(action.text)
+        if action.note == "survey:ack":
+            return self._copy.survey_acknowledgement(action.text)
+        if action.note is not None and action.note.startswith("survey:ask:"):
+            _, _, index, total = action.note.split(":")
+            progress = self._copy.survey_question(int(index), int(total))
+            return f"{progress}\n\n{action.text}"
         if action.note is not None and action.note.startswith("survey:repeat"):
             kind = action.note.rpartition(":")[2]
             hint = self._copy.answer_hint(kind)
@@ -135,6 +144,12 @@ class ActionExecutor:
                 reason="no_profile_or_question",
             )
             return
+        # A long wait with no reaction reads as a broken bot (live 2026-10-24: 4.5 s average, 10.7 s
+        # worst). One short line buys patience; the answer follows as its own message.
+        if self._copy.searching:
+            await self._messaging.send(
+                OutboundMessage(address=context.address, text=self._copy.searching)
+            )
         outcome = await self._answerer.answer(context.question, context.profile, context.on_date)
         if self._questions is not None:
             await self._questions.record_question(

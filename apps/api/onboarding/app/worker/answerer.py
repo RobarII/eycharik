@@ -18,6 +18,7 @@ from onboarding.app.llm.output import AnswerFormatError, parse_answer
 from onboarding.app.observability import metrics
 from onboarding.app.prompts import PromptLibrary
 from onboarding.app.settings import Settings
+from onboarding.app.worker.render import render_answer
 from onboarding.core.grounding import judge, with_citations
 from onboarding.core.models import (
     ChunkId,
@@ -212,8 +213,11 @@ class Answerer:
         )
 
         if verdict.accepted and not draft.escalate:
+            titled = await self._titles(verdict.citations)
             return AnswerOutcome(
-                text=with_citations(verdict.answer, verdict.citations),
+                text=render_answer(
+                    with_citations(verdict.answer, verdict.citations), titled, self._copy
+                ),
                 escalated=False,
                 reason=verdict.reason,
                 citations=verdict.citations,
@@ -230,6 +234,23 @@ class Answerer:
             retrieved=retrieved,
             completion=completion,
         )
+
+    async def _titles(self, citations: tuple[ChunkId, ...]) -> tuple[str, ...]:
+        """Human names of the cited documents, in citation order.
+
+        The knowledge port owns the titles; a fake without them still answers, it just omits the
+        source line instead of printing an internal id.
+        """
+        lookup = getattr(self._knowledge, "titles", None)
+        if lookup is None or not citations:
+            return ()
+        doc_ids = tuple(dict.fromkeys(citation.partition("#")[0] for citation in citations))
+        try:
+            found = await lookup(doc_ids)
+        except (KnowledgeUnavailableError, KeyError, TypeError):
+            log.warning("knowledge_titles_failed", extra={"documents": len(doc_ids)})
+            return ()
+        return tuple(found[doc] for doc in doc_ids if doc in found)
 
     def _report(self, outcome: AnswerOutcome, timings: dict[str, float]) -> AnswerOutcome:
         """Record one answer without touching what the employee receives."""

@@ -23,7 +23,7 @@ last_verified: 2026-10-24
 
 | # | задача | почему | файлы | гейт |
 |---|---|---|---|---|
-| 0.1 | Убрать служебные маркеры из ответа: `[company/workspace-rules#0]` → «Источник: Правила офиса» (1–2 источника) | в живом чате человек видит внутренние id (`[hr/remote-work#0]`, `[company/workspace-rules#0]`) — выглядит как утечка и мешает читать | `core/grounding.py`, `app/worker/render.py`, `docs/product/answer-policy.md` | `test_grounding.py`, пять живых вопросов |
+| 0.1 | ~~Убрать служебные маркеры~~ сделано из ответа: `[company/workspace-rules#0]` → «Источник: Правила офиса» (1–2 источника) | в живом чате человек видит внутренние id (`[hr/remote-work#0]`, `[company/workspace-rules#0]`) — выглядит как утечка и мешает читать | `core/grounding.py`, `app/worker/render.py`, `docs/product/answer-policy.md` | `test_grounding.py`, пять живых вопросов |
 | 0.2 | Мгновенный отклик на долгий ответ: сразу «Секунду, ищу в базе…», затем правка этого сообщения готовым ответом через `edit` | тишина 4–11 с воспринимается как поломка (`avg 4471 ms`, `max 10676 ms`) | `app/worker/answerer.py`, `app/db/outbox.py`, `docs/contracts/max-api.md` | `test_integration_db.py` (edit-путь), живой замер |
 | 0.3 | Прогресс и навигация в каждом этапе: «Шаг 3 из 21 · Документы · следующий через 24 ч» + кнопка «Дальше» | человек не понимает, где он и сколько осталось | `core/transitions.py`, `docs/contracts/scenario.schema.json`, `scenarios/*.yaml` | `test_transitions.py`, живой прогон |
 | 0.4 | Кнопки вместо угадывания слов: «Готово», «Задать вопрос», «Позвать HR» на каждом ожидающем шаге | сейчас надо догадаться написать «отправил» или «готово» | `scenarios/*.yaml`, `core/transitions.py` | `test_scenario.py`, живой прогон |

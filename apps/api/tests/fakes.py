@@ -67,10 +67,15 @@ class ScriptedLLM:
 class FakeKnowledgeBase:
     chunks: tuple[ScoredChunk, ...] = ()
     queries: list[SearchQuery] = field(default_factory=list)
+    named: dict[str, str] = field(default_factory=dict)
 
     async def search(self, query: SearchQuery) -> tuple[ScoredChunk, ...]:
         self.queries.append(query)
         return self.chunks
+
+    async def titles(self, doc_ids: object) -> dict[str, str]:
+        wanted = list(doc_ids)  # type: ignore[call-overload]
+        return {doc: title for doc, title in self.named.items() if doc in wanted}
 
 
 @dataclass

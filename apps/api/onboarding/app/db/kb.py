@@ -51,6 +51,17 @@ class PostgresKnowledgeBase:
         self._bm25_available: bool | None = None
         self._index_checked = False
 
+    async def titles(self, doc_ids: Sequence[DocId]) -> dict[DocId, str]:
+        """Document names for the source line of an answer; the ids stay internal."""
+        wanted = tuple(dict.fromkeys(doc_ids))
+        if not wanted:
+            return {}
+        async with self._database.session() as session:
+            rows = await session.execute(
+                select(DocumentRow.id, DocumentRow.title).where(DocumentRow.id.in_(wanted))
+            )
+            return {DocId(row.id): row.title for row in rows}
+
     async def search(self, query: SearchQuery) -> tuple[ScoredChunk, ...]:
         if not query.text.strip():
             return ()

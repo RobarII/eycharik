@@ -200,7 +200,7 @@ def _enter(
                         image=step.image,
                     )
                 )
-            actions.append(_ask(step.questions[0]))
+            actions.append(_ask(step.questions[0], 1, len(step.questions)))
             reminder = _schedule(step, now)
             return Transition(
                 state=replace(current, completed_steps=tuple(completed)),
@@ -234,12 +234,13 @@ def _schedule(step: Step, now: datetime) -> ReminderPlan:
     )
 
 
-def _ask(question: Question) -> Action:
+def _ask(question: Question, index: int, total: int) -> Action:
+    # The position rides on the note so the copy file keeps the wording: the core owns the order.
     return Action(
         kind=ActionKind.SEND,
         text=question.prompt,
         keyboard=_question_keyboard(question),
-        note=f"survey:{question.id}",
+        note=f"survey:ask:{index}:{total}",
     )
 
 
@@ -290,6 +291,25 @@ def _record_answer(scenario: Scenario, state: StepState, event: Event, step: Ste
     return _continue_survey(scenario, answered, step, event)
 
 
+def _ack(question: Question, answer: SurveyAnswer) -> Action:
+    """One short "recorded" message so nine ratings in a row do not feel like a void."""
+    return Action(
+        kind=ActionKind.SEND,
+        text=_ack_value(question, answer),
+        note="survey:ack",
+    )
+
+
+def _ack_value(question: Question, answer: SurveyAnswer) -> str:
+    if answer.score is not None:
+        return str(answer.score)
+    if answer.option_id is not None:
+        for option in question.options:
+            if option.id == answer.option_id:
+                return option.text
+    return ""
+
+
 def _ask_reason(state: StepState, step: Step) -> Transition:
     reason_prompt = step.questions[state.question_index].reason_prompt
     if reason_prompt is None:
@@ -311,9 +331,10 @@ def _continue_survey(
             raise ScenarioRunError(f"survey step {step.id!r} has no next step")
         return _leave(scenario, cleared, step.next_step, event.at)
     advanced = replace(state, question_index=next_index, pending_reason=None)
+    following = _ask(step.questions[next_index], next_index + 1, len(step.questions))
     return Transition(
         state=advanced,
-        actions=(_ask(step.questions[next_index]),),
+        actions=(_ack(step.questions[next_index - 1], state.answers[-1]), following),
         reminder=KeepReminder(),
     )
 
@@ -406,9 +427,19 @@ def _on_timeout(scenario: Scenario, state: StepState, event: Event) -> Transitio
 
 def _on_button(scenario: Scenario, state: StepState, event: Event) -> Transition:
     step = scenario.step(state.step_id)
-    if step.expects is not Expects.BUTTON:
+    # A step that waits for a message accepts a button too: "готово" as a button is the same
+    # acknowledgement as the word, and it is easier than guessing the word at the right moment.
+    if step.expects not in {Expects.BUTTON, Expects.MESSAGE}:
         return _idle(state, ActionKind.IGNORE)
-    target = step.routes.get(event.button_id or "") or step.routes.get("default")
+    if step.expects is Expects.MESSAGE:
+        # Only a declared button counts here: an unknown id must not borrow the default route and
+        # skip the stage.
+        declared = {button.id for row in step.keyboard for button in row}
+        if event.button_id not in declared:
+            return _idle(state, ActionKind.IGNORE)
+        target = step.routes.get(event.button_id or "")
+    else:
+        target = step.routes.get(event.button_id or "") or step.routes.get("default")
     if target is None:
         return _idle(state, ActionKind.IGNORE)
     chosen = step.tone_routes.get(event.button_id or "")

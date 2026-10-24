@@ -18,7 +18,7 @@ _INLINE_CITATION = re.compile(r"\[([^\[\]\s]+)\]")
 def inline_citations(answer: str) -> tuple[str, ...]:
     """Document ids the model wrote inside the answer text, in order, without duplicates."""
     tokens = (match.group(1) for match in _INLINE_CITATION.finditer(answer))
-    return tuple(dict.fromkeys(token for token in tokens if "#" in token or "/" in token))
+    return tuple(dict.fromkeys(token for token in tokens if _is_citation(token)))
 
 
 def with_citations(answer: str, citations: Collection[ChunkId]) -> str:
@@ -34,6 +34,23 @@ def with_citations(answer: str, citations: Collection[ChunkId]) -> str:
         return answer
     suffix = " ".join(f"[{citation}]" for citation in missing)
     return f"{answer.rstrip()} {suffix}"
+
+
+def strip_citations(answer: str) -> str:
+    """Remove the internal ``[doc#chunk]`` markers from the text the employee reads.
+
+    The markers stay in the audit trail and the question log; the chat shows a named source line
+    instead. A raw ``[company/workspace-rules#0]`` in the message looked like a leak.
+    """
+    without = _INLINE_CITATION.sub(
+        lambda match: "" if _is_citation(match.group(1)) else match.group(0), answer
+    )
+    tightened = re.sub(r"[ \t]+([.,;:!?])", r"\1", without)
+    return re.sub(r"[ \t]{2,}", " ", tightened).strip()
+
+
+def _is_citation(token: str) -> bool:
+    return "#" in token or "/" in token
 
 
 def judge(

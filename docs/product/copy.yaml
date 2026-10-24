@@ -40,3 +40,13 @@ invalid_answer:
   open: "Напишите ответ текстом — одной фразы достаточно."
 not_understood: >-
   Не понял сообщение. Напишите вопрос словами — я найду ответ в базе знаний или передам его HR.
+
+searching: "Секунду, ищу ответ в базе знаний…"
+file_received: >-
+  Файл получил. Если это все документы — нажмите «Готово», если нет — пришлите остальные.
+source_one: "Источник: {names}"
+source_many: "Источники: {names}"
+survey_progress: "Вопрос {index} из {total}"
+survey_ack: "Записал: {value}"
+survey_ack_open: "Записал, спасибо."
+stage_progress: "Шаг {index} из {total}."

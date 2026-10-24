@@ -328,7 +328,9 @@ async def test_a_citation_missing_from_the_answer_text_is_appended() -> None:
     outcome = await answerer.answer("leave", profile(), ON_DATE)
 
     assert not outcome.escalated
-    assert outcome.text == "The answer is 28 days. [hr/leave-policy#0]"
+    # The chunk id stays in the outcome for the question log, not in the text the person reads.
+    assert outcome.citations == ("hr/leave-policy#0",)
+    assert outcome.text == "The answer is 28 days."
 
 
 async def test_an_inline_citation_is_not_duplicated() -> None:
@@ -336,7 +338,20 @@ async def test_an_inline_citation_is_not_duplicated() -> None:
 
     outcome = await answerer.answer("leave", profile(), ON_DATE)
 
-    assert outcome.text.count("[hr/leave-policy#0]") == 1
+    assert "[hr/leave-policy#0]" not in outcome.text
+    assert outcome.text == "Отпуск — 28 дней"
+
+
+async def test_a_named_source_replaces_the_internal_marker() -> None:
+    answerer, _, knowledge, _ = build(
+        [answer_json("hr/leave-policy#0")],
+        (scored_chunk(),),
+    )
+    knowledge.named = {"hr/leave-policy": "Политика отпусков"}
+
+    outcome = await answerer.answer("leave", profile(), ON_DATE)
+
+    assert outcome.text == "Отпуск — 28 дней\n\nИсточник: Политика отпусков"
 
 
 async def test_reranker_receives_the_expanded_search_query() -> None:

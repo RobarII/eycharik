@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import timedelta
+from types import MappingProxyType
 
 import pytest
 
 from onboarding.core.models import (
     ActionKind,
+    Button,
     CancelReminder,
     EscalationReason,
     Event,
@@ -487,8 +489,9 @@ def test_reason_is_stored_and_the_next_question_is_asked(survey: Scenario) -> No
     assert transition.state.answers[-1] == SurveyAnswer(
         question_id="manager_available", text="Руководитель в командировке"
     )
-    assert transition.actions[0].text == "Как встретили коллеги?"
-    assert len(transition.actions[0].keyboard[0]) == 2
+    assert transition.actions[0].note == "survey:ack"
+    assert transition.actions[1].text == "Как встретили коллеги?"
+    assert len(transition.actions[1].keyboard[0]) == 2
 
 
 def test_comfortable_score_moves_to_the_next_question(survey: Scenario) -> None:
@@ -498,7 +501,9 @@ def test_comfortable_score_moves_to_the_next_question(survey: Scenario) -> None:
 
     assert transition.state.question_index == 1
     assert transition.state.pending_reason is None
-    assert transition.actions[0].note == "survey:colleagues"
+    assert transition.actions[0].note == "survey:ack"
+    assert transition.actions[0].text == "9"
+    assert transition.actions[1].note == "survey:ask:2:3"
 
 
 def test_choice_is_read_from_the_button_id(survey: Scenario) -> None:
@@ -724,3 +729,21 @@ def test_has_words() -> None:
     assert has_words("123")
 
 
+
+
+def test_a_done_button_acknowledges_a_message_step(scenario: Scenario, state: StepState) -> None:
+    keyboard = ((Button(id="docs_done", text="Готово"),),)
+    routes = MappingProxyType({"default": "done", "docs_done": "done"})
+    step = replace(scenario.step("documents"), keyboard=keyboard, routes=routes)
+    scenario = replace(scenario, steps={**scenario.steps, "documents": step})
+    doc_state = replace(state, step_id="documents")
+
+    pressed = advance(
+        scenario, doc_state, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="docs_done")
+    )
+    stray = advance(
+        scenario, doc_state, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="whatever")
+    )
+
+    assert pressed.state.step_id == "done"
+    assert [action.kind for action in stray.actions] == [ActionKind.IGNORE]

@@ -1,12 +1,21 @@
 name: release
 
-# Build immutable images from a tag or a manually chosen ref and push them to GHCR.
-# The deploy workflow consumes the commit SHA tag; `latest` is deliberately not published.
+# Build immutable images from a tag, from `main`, or from a manually chosen ref and push them to
+# GHCR.
+#
+# A push to `main` releases itself. `version` decides the version, `build` publishes both images
+# under the commit SHA, and only after they exist does `tag` create the release tag. The tag is
+# therefore a promise that the images are pullable, and a failed build leaves no tag behind.
+#
+# A tag pushed by hand, or a manual dispatch, publishes the ref it was given and creates no tag.
+#
+# `latest` is deliberately not published: the deploy workflow consumes the commit SHA, and a
+# release that cannot name its commit cannot be rolled back.
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
     inputs:
       ref:
@@ -15,7 +24,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write
 
@@ -27,7 +36,35 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.decide.outputs.version }}
+      sha: ${{ steps.rev.outputs.sha }}
+      short: ${{ steps.rev.outputs.short }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+      - name: Resolve the checked-out commit
+        id: rev
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Decide the version
+        id: decide
+        env:
+          REF_TYPE: ${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.ref_type }}
+          REF_NAME: ${{ github.event.inputs.ref || github.ref_name }}
+        run: |
+          version=$(python3 scripts/next_release.py --ref-type "$REF_TYPE" --ref-name "$REF_NAME")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "releasing $REF_NAME as $version"
+
   build:
+    needs: version
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
@@ -39,17 +76,10 @@ jobs:
           - name: admin
             context: apps/admin
             file: apps/admin/Dockerfile
-            build-args: |
-              VITE_BUILD_ID=${{ steps.rev.outputs.short }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
-      - name: Resolve the checked-out commit
-        id: rev
-        run: |
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          ref: ${{ needs.version.outputs.sha }}
       - name: Lowercase the image prefix
         id: image
         run: echo "prefix=$(printf '%s' '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
@@ -70,10 +100,38 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          build-args: ${{ matrix.build-args }}
+          # The cabinet's context has no `.git`, so the commit arrives as a build argument.
+          build-args: |
+            VITE_BUILD_ID=${{ needs.version.outputs.short }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ steps.rev.outputs.sha }}
-            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ needs.version.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
           tags: |
-            ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}-${{ matrix.name }}:${{ steps.rev.outputs.sha }}
+            ${{ env.REGISTRY }}/${{ steps.image.outputs.prefix }}-${{ matrix.name }}:${{ needs.version.outputs.sha }}
+
+  tag:
+    needs: [version, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+      - name: Tag the released commit
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          SHA: ${{ needs.version.outputs.sha }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "not a release version: $VERSION" >&2
+            exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
+            echo "$VERSION already exists; the images for $SHA stay reachable by its SHA"
+            exit 0
+          fi
+          git tag -a "$VERSION" -m "Release $VERSION" "$SHA"
+          git push origin "refs/tags/$VERSION"

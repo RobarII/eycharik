@@ -49,7 +49,24 @@ describe("the admin image", () => {
 
   it("receives the released commit from the workflow", () => {
     expect(release).toContain("short=$(git rev-parse --short HEAD)");
-    expect(release).toMatch(/VITE_BUILD_ID=\$\{\{ steps\.rev\.outputs\.short \}\}/);
-    expect(release).toMatch(/build-args: \$\{\{ matrix\.build-args \}\}/);
+    expect(release).toMatch(/build-args: \|\n\s+VITE_BUILD_ID=\$\{\{ needs\.version\.outputs\.short \}\}/);
+  });
+
+  it("is built from the commit the version job resolved, not from a moving branch", () => {
+    expect(release).toMatch(/ref: \$\{\{ needs\.version\.outputs\.sha \}\}/);
+    expect(release).toMatch(/-\$\{\{ matrix\.name \}\}:\$\{\{ needs\.version\.outputs\.sha \}\}/);
+  });
+
+  it("tags the push to main only after both images were pushed", () => {
+    expect(release).toContain("branches: [main]");
+    expect(release).toContain("needs: [version, build]");
+    expect(release).toContain(
+      "if: github.event_name == 'push' && github.ref == 'refs/heads/main'",
+    );
+    expect(release).toContain('git push origin "refs/tags/$VERSION"');
+  });
+
+  it("leaves an existing tag alone, so a re-run does not invent a version", () => {
+    expect(release).toMatch(/if git rev-parse -q --verify "refs\/tags\/\$VERSION"/);
   });
 });

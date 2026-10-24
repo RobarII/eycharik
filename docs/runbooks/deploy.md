@@ -74,16 +74,32 @@ Put the output in `DEPLOY_KNOWN_HOSTS`. Do not use `StrictHostKeyChecking=no` in
 
 ## Release
 
-A tag starts the release workflow:
+A push to `main` releases and deploys itself. Nothing has to be tagged by hand:
+
+1. `version` runs `scripts/next_release.py` and picks the next patch after the highest `v*` tag
+   (`v0.1.3` -> `v0.1.4`); a commit that already carries a release tag reuses that tag instead of
+   inventing a second version.
+2. `build` checks out that exact commit and pushes both images under the commit SHA, with
+   provenance and an SBOM, plus `org.opencontainers.image.version` set to the version.
+3. `tag` creates the annotated `vX.Y.Z` tag on that commit and pushes it, and only runs after both
+   images are in the registry: a failed build leaves no tag behind, and a re-run is a no-op.
+4. The deploy workflow then calls `scripts/deploy-remote.sh <sha>` over SSH, waiting for the
+   `production` environment approval when the plan supports it.
+
+The release workflow needs `contents: write` to push the tag. Tags pushed by `GITHUB_TOKEN` do not
+trigger workflows, which is why the deploy follows the release run rather than the tag event: one
+push to `main` means one release and one deploy, never a second pass over the tag.
+
+A tag or a manual dispatch still work when the commit must not move `main`:
 
 ```bash
 git tag v1.2.3
 git push origin v1.2.3
+gh workflow run release.yml -f ref=<tag-or-sha>
 ```
 
-It builds both images, publishes provenance and an SBOM, and pushes the commit-SHA tag. The deploy
-workflow runs after a successful release, waits for the `production` environment approval when the
-plan supports it, and calls `scripts/deploy-remote.sh <sha>` over SSH.
+Both publish the ref they were given and create no tag. Manual dispatches do not auto-deploy; run
+`deploy.yml` with the SHA afterwards.
 
 The remote script, in order:
 

@@ -80,8 +80,7 @@ class GatewayLLM(LLM):
         timeout = request.timeout_s if request.timeout_s is not None else self._profile.timeout_s
         try:
             return await self._transport.call(
-                prepare=lambda: self._provider.prepare(self._transport.client),
-                payload=payload,
+                prepare=lambda: self._provider.prepare(self._transport.client, payload),
                 timeout_s=timeout,
                 max_retries=self._max_retries,
                 parse=self._parse,

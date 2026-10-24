@@ -219,8 +219,7 @@ class DecisionsClassifier:
         }
         try:
             payload, elapsed_s = await self._transport.call(
-                prepare=lambda: self._prepare(headers),
-                payload=self._body(state),
+                prepare=lambda: self._prepare(headers, self._body(state)),
                 timeout_s=self._profile.timeout_s,
                 max_retries=self._profile.max_retries,
                 parse=self._parse,
@@ -233,8 +232,10 @@ class DecisionsClassifier:
             raise DecisionsUnavailableError(f"decisions request failed: {error}") from None
         return payload, elapsed_s
 
-    async def _prepare(self, headers: dict[str, str]) -> PreparedRequest:
-        return PreparedRequest(url=self._endpoint, headers=headers)
+    async def _prepare(
+        self, headers: dict[str, str], body: dict[str, object]
+    ) -> PreparedRequest:
+        return PreparedRequest(url=self._endpoint, headers=headers, body=body)
 
     def _body(self, state: str) -> dict[str, object]:
         return {

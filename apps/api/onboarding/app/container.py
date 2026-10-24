@@ -119,7 +119,7 @@ def build_container(settings: Settings) -> Container:
     )
 
     llm = build_llm(settings, common.clock, http)
-    embedder = build_embedder(settings, http)
+    embedder = build_embedder(settings, http, clock=common.clock)
     assert_embedding_width(embedder.dim)
     knowledge = PostgresKnowledgeBase(common.database, embedder, bm25=settings.bm25_enabled)
     prompts = PromptLibrary(settings.prompts_dir)
@@ -168,7 +168,7 @@ def build_container(settings: Settings) -> Container:
         key=load_key(settings.inbound_files_key.get_secret_value()),
         max_bytes=settings.inbound_files_max_bytes,
     )
-    reranker = build_reranker(settings, http)
+    reranker = build_reranker(settings, http, clock=common.clock)
     answerer = Answerer(
         knowledge=knowledge,
         llm=llm,

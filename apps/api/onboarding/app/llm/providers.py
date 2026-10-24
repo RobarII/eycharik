@@ -1,7 +1,8 @@
 """Provider adapters: what to call and how to authenticate.
 
-Both providers speak the OpenAI chat-completions dialect. The difference is authentication and the
-base URL, so a provider is a small object that produces a request, not a second gateway.
+Both providers speak the OpenAI chat-completions dialect. The difference is authentication, the
+base URL and the envelope, so a provider is a small object that produces a request — URL, headers,
+body — and never a second gateway.
 """
 
 from __future__ import annotations
@@ -24,10 +25,13 @@ class ProviderError(RuntimeError):
 class PreparedRequest:
     url: str
     headers: dict[str, str]
+    body: dict[str, object]
 
 
 class Provider(Protocol):
-    async def prepare(self, client: httpx.AsyncClient) -> PreparedRequest: ...
+    async def prepare(
+        self, client: httpx.AsyncClient, body: dict[str, object]
+    ) -> PreparedRequest: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,7 +40,9 @@ class OpenAICompatibleProvider:
     api_key: SecretStr
     extra_headers: Mapping[str, str] = field(default_factory=dict)
 
-    async def prepare(self, client: httpx.AsyncClient) -> PreparedRequest:
+    async def prepare(
+        self, client: httpx.AsyncClient, body: dict[str, object]
+    ) -> PreparedRequest:
         del client
         return PreparedRequest(
             url=f"{self.base_url.rstrip('/')}/chat/completions",
@@ -45,6 +51,7 @@ class OpenAICompatibleProvider:
                 "Authorization": f"Bearer {self.api_key.get_secret_value()}",
                 "Content-Type": "application/json",
             },
+            body=body,
         )
 
 
@@ -60,7 +67,9 @@ class GigaChatProvider:
     _token: str | None = field(default=None, init=False)
     _expires_at: float = field(default=0.0, init=False)
 
-    async def prepare(self, client: httpx.AsyncClient) -> PreparedRequest:
+    async def prepare(
+        self, client: httpx.AsyncClient, body: dict[str, object]
+    ) -> PreparedRequest:
         return PreparedRequest(
             url=f"{self.base_url.rstrip('/')}/chat/completions",
             headers={
@@ -68,6 +77,7 @@ class GigaChatProvider:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
             },
+            body=body,
         )
 
     async def authorization(self, client: httpx.AsyncClient) -> str:

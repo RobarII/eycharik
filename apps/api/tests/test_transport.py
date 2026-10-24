@@ -19,7 +19,11 @@ from onboarding.core.breaker import CircuitBreaker
 
 from .conftest import NOW
 
-PREPARED = PreparedRequest(url="https://model.test/v1/call", headers={"Authorization": "Bearer k"})
+PREPARED = PreparedRequest(
+    url="https://model.test/v1/call",
+    headers={"Authorization": "Bearer k"},
+    body={"state": "x"},
+)
 
 
 def handler_returning(
@@ -57,7 +61,6 @@ async def send(
 ) -> object:
     return await transport.call(
         prepare=_prepared,
-        payload={"state": "x"},
         timeout_s=timeout_s,
         max_retries=max_retries,
         parse=parse or (lambda response, _elapsed: response.status_code),

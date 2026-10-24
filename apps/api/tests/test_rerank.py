@@ -105,14 +105,13 @@ async def test_retries_once_when_the_gateway_is_busy() -> None:
     assert len(attempts) == 2
 
 
+async def _advance(now: list[float], seconds: float) -> None:
+    now[0] += seconds
+
+
 async def test_the_deadline_bounds_the_stage_instead_of_the_attempt_count() -> None:
     """Three attempts at an 8 s timeout reach 32 s; the user waits, so the stage has a budget."""
     now = [0.0]
-    slept: list[float] = []
-
-    async def sleep(seconds: float) -> None:
-        slept.append(seconds)
-        now[0] += seconds
 
     def handler(request: httpx.Request) -> httpx.Response:
         now[0] += 8.0  # the free endpoint consumes the whole attempt timeout
@@ -126,14 +125,12 @@ async def test_the_deadline_bounds_the_stage_instead_of_the_attempt_count() -> N
             model="nvidia/nemotron-3.5-rerank-8b:free",
             timeout_s=8.0,
             deadline_s=6.0,
-            clock=lambda: now[0],
-            sleep=sleep,
+            monotonic=lambda: now[0],
         )
         with pytest.raises(RerankUnavailableError, match="deadline"):
             await reranker.rerank("вопрос", ("один",), top_n=1)
 
     assert now[0] == pytest.approx(8.0)
-    assert slept == []
 
 
 async def test_a_deadline_never_stops_a_successful_first_attempt() -> None:
@@ -147,17 +144,13 @@ async def test_a_deadline_never_stops_a_successful_first_attempt() -> None:
             api_key="secret",
             model="cohere/rerank-v3.5",
             deadline_s=0.001,
-            clock=lambda: 100.0,
+            monotonic=lambda: 100.0,
         )
         assert await reranker.rerank("вопрос", ("один",), top_n=1) == (0,)
 
 
 async def test_a_retry_still_happens_inside_the_budget() -> None:
     now = [0.0]
-
-    async def sleep(seconds: float) -> None:
-        now[0] += seconds
-
     attempts: list[int] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -173,8 +166,8 @@ async def test_a_retry_still_happens_inside_the_budget() -> None:
             api_key="secret",
             model="cohere/rerank-v3.5",
             deadline_s=6.0,
-            clock=lambda: now[0],
-            sleep=sleep,
+            monotonic=lambda: now[0],
+            sleep=lambda seconds: _advance(now, seconds),
         )
         assert await reranker.rerank("вопрос", ("один",), top_n=1) == (0,)
 

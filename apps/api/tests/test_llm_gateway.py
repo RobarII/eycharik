@@ -132,7 +132,7 @@ async def test_openai_provider_merges_extra_headers() -> None:
         extra_headers={"x-opencode-session": "onboarding"},
     )
 
-    prepared = await provider.prepare(client)
+    prepared = await provider.prepare(client, {"model": "m"})
 
     assert prepared.headers["x-opencode-session"] == "onboarding"
     assert prepared.headers["Authorization"] == "Bearer sk-test"

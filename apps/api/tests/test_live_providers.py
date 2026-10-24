@@ -49,7 +49,7 @@ async def test_the_answer_model_answers_json(settings: Settings) -> None:
 
 async def test_the_embedder_returns_the_column_width(settings: Settings) -> None:
     async with httpx.AsyncClient(timeout=60.0) as client:
-        embedder = build_embedder(settings, client)
+        embedder = build_embedder(settings, client, clock=SystemClock())
         vectors = await embedder.embed(["Отпуск без сохранения заработной платы", "Пропуск в офис"])
 
     assert len(vectors) == 2
@@ -60,7 +60,7 @@ async def test_the_reranker_orders_by_relevance(settings: Settings) -> None:
     if not settings.rerank_model:
         pytest.skip("RERANK_MODEL is not set")
     async with httpx.AsyncClient(timeout=60.0) as client:
-        reranker = build_reranker(settings, client)
+        reranker = build_reranker(settings, client, clock=SystemClock())
         order = await reranker.rerank(
             "отпуск без сохранения зарплаты",
             [

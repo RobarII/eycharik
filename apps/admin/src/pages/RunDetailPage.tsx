@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { fetchRun, offboardEmployee } from "../api";
+import { fetchRun, fileUrl, offboardEmployee } from "../api";
 import { ArrowLeftIcon } from "../components/Icons";
 import { StatusPill } from "../components/Pills";
 import { Progress } from "../components/Progress";
@@ -10,6 +10,8 @@ import {
   countLabel,
   describeEvent,
   eventLabel,
+  fileStatusLabel,
+  formatBytes,
   formatDate,
   formatDateTime,
   initials,
@@ -167,6 +169,41 @@ export function RunDetailPage({
 
           <section className="card">
             <div className="card-head">
+              <h2>Документы</h2>
+              <span className="card-note">
+                {countLabel(query.data.files.length, "файл", "файла", "файлов")}
+              </span>
+            </div>
+            {query.data.files.length === 0 ? (
+              <p className="muted">Документов пока нет.</p>
+            ) : (
+              <ul className="file-list">
+                {query.data.files.map((file) => (
+                  <li key={file.file_id}>
+                    <div>
+                      <p className="file-name">{file.filename}</p>
+                      <p className="question-meta">
+                        <span
+                          className={`pill ${file.status === "stored" ? "pill-done" : "pill-warn"}`}
+                        >
+                          {fileStatusLabel(file.status)}
+                        </span>
+                        {formatBytes(file.size)} · {formatDateTime(file.created_at)}
+                      </p>
+                    </div>
+                    {file.status === "stored" ? (
+                      <a className="button button-quiet" href={fileUrl(runId, file.file_id)} download>
+                        Скачать
+                      </a>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="card-head">
               <h2>Хронология</h2>
               <span className="card-note">
                 {countLabel(query.data.events.length, "событие", "события", "событий")}
@@ -225,12 +262,14 @@ function OffboardButton({
   useUnauthorized(mutation.error, onUnauthorized);
 
   if (mutation.isSuccess) {
-    const { questions_deleted: questions, messages_deleted: messages } = mutation.data;
+    const { questions_deleted: questions, messages_deleted: messages, files_deleted: files } =
+      mutation.data;
     return (
       <div className="note note-ok" role="status">
         <p>
           {name} офборджен: удалено {countLabel(questions, "вопрос", "вопроса", "вопросов")},{" "}
-          {countLabel(messages, "сообщение", "сообщения", "сообщений")}.
+          {countLabel(messages, "сообщение", "сообщения", "сообщений")},{" "}
+          {countLabel(files, "файл", "файла", "файлов")}.
         </p>
         <button type="button" className="link-button" onClick={onBack}>
           К списку сотрудников

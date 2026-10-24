@@ -113,6 +113,14 @@ export function fetchRun(runId: string): Promise<RunDetail> {
   return request(`/admin/api/v1/runs/${encodeURIComponent(runId)}`);
 }
 
+/**
+ * The document download is a plain link: the session cookie rides along, the browser saves the
+ * file with the name the server chose, and the script never holds a passport in memory.
+ */
+export function fileUrl(runId: string, fileId: string): string {
+  return `${BASE}/admin/api/v1/runs/${encodeURIComponent(runId)}/files/${encodeURIComponent(fileId)}`;
+}
+
 /** `me` and `unassigned` are resolved by the server: the page never filters an assignee in the browser. */
 export type QuestionOwner = "any" | "me" | "unassigned";
 

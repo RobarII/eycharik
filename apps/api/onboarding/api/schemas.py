@@ -266,6 +266,7 @@ class OffboardedEmployee(BaseModel):
     messages_deleted: int
     runs_closed: int
     audit_redacted: int
+    files_deleted: int
 
 
 class RunList(BaseModel):
@@ -276,12 +277,27 @@ class RunList(BaseModel):
     total: int
 
 
+class RunFile(BaseModel):
+    """One document a person sent. The bytes are a separate, audited download."""
+
+    model_config = ConfigDict(frozen=True)
+
+    file_id: str
+    filename: str
+    media_type: str
+    size: int
+    status: str
+    error: str | None
+    created_at: datetime
+
+
 class RunDetail(RunSummary):
     step_message: str | None
     scenario: str
     scenario_version: int
     tone: str
     channels: list[EmployeeChannel]
+    files: list[RunFile]
     events: list[AuditEvent]
     questions: list[Question]
 

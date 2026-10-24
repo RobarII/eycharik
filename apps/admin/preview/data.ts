@@ -374,6 +374,7 @@ export function runDetail(role: Role, runId: string) {
           },
         ]
       : [],
+    files: DEMO_FILES[run.employee_id] ?? [],
     events,
     questions: questions(role, "all", "any", 20).items.filter(
       (question) => question.employee_id === run.employee_id,
@@ -382,6 +383,30 @@ export function runDetail(role: Role, runId: string) {
 }
 
 /** A demo person's MAX account, so the run card can name it instead of an HR id. */
+/** A demo passport pair: one readable file and one the CDN refused, so the cabinet shows both. */
+const DEMO_FILES: Record<string, Array<Record<string, unknown>>> = {
+  "1002": [
+    {
+      file_id: "6f1a5f0e-0f1e-4a99-9c6f-6d0f4a1c2b11",
+      filename: "passport.jpg",
+      media_type: "image/jpeg",
+      size: 842_137,
+      status: "stored",
+      error: null,
+      created_at: ago(16, 3),
+    },
+    {
+      file_id: "9b3c1a44-2c7e-4d2a-b0a1-0d3f7e5c9a22",
+      filename: "diploma.pdf",
+      media_type: "application/pdf",
+      size: 1_204_388,
+      status: "failed",
+      error: "FileFetchError: status_404",
+      created_at: ago(15, 2),
+    },
+  ],
+};
+
 const MAX_ACCOUNTS: Record<string, string> = {
   "1002": "502781191",
   "1003": "778812304",

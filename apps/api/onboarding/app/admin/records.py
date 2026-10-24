@@ -36,6 +36,20 @@ class IdentityRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class InboundFileRecord:
+    """One document a person sent. The bytes are fetched separately, by ``file_id``."""
+
+    file_id: str
+    employee_id: str
+    filename: str
+    media_type: str
+    size: int
+    status: str
+    error: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class RunRecord:
     run_id: str
     employee_id: str

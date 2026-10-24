@@ -48,6 +48,17 @@ class InboundMessage:
     sender: str              # the messenger's user id, as a string
     event: Event
     starts_run: bool         # a first contact button, not a reply
+    files: tuple[InboundFile, ...] = ()
+```
+
+```python
+@dataclass(frozen=True, slots=True)
+class InboundFile:
+    token: str               # the messenger's id: the dedupe key inside one chat
+    url: str | None          # where the worker downloads the bytes, never the webhook
+    filename: str | None
+    media_type: str | None   # a hint; the intake sniffs the bytes instead of trusting it
+    size: int | None
 ```
 
 Правила:
@@ -56,6 +67,7 @@ class InboundMessage:
 2. `dedupe_key` — `f"{channel}:{external_event_id}"`. Это первичный ключ `events`, поэтому повторную доставку отбрасывает база, а не код приложения.
 3. `starts_run` истинно только для события первого контакта: `bot_started` или текст, начинающийся с `/start`, в MAX, `/start` в Telegram, `message_new` с текстом `/start` в VK. Всё остальное — ответ внутри существующего прогона. Повторный старт не сбрасывает прогресс: он переигрывает текущий шаг, чтобы человек получил клавиатуру заново.
 4. `parse` не трогает базу, часы и сеть.
+5. `files` — только описание, без байтов. Скачивание делает `FileFetcher` в воркере, поэтому вебхук отвечает 200 до загрузки. Пустой кортеж означает, что вложений не было или канал их не разбирает; канал, который их не разбирает, обязан сказать это флагом в smoke-скрипте, а не молча ждать таймаута.
 
 ## Исходящее
 

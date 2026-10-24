@@ -21,6 +21,13 @@ export function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? "—" : dateOnly.format(date);
 }
 
+/** A size a recruiter can judge: "842 КБ" is a photo, "12 МБ" is a scan. */
+export function formatBytes(size: number): string {
+  if (size < 1024) return `${size} Б`;
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} КБ`;
+  return `${(size / (1024 * 1024)).toFixed(1).replace(".", ",")} МБ`;
+}
+
 export function daysSince(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
@@ -60,6 +67,20 @@ export const eventLabels: Record<string, string> = {
   sentiment_classified: "Настроение оценено",
   knowledge_ingested: "Документ проиндексирован",
 };
+
+/** Why a document cannot be downloaded, in the cabinet's words rather than a status code. */
+export function fileStatusLabel(status: string): string {
+  switch (status) {
+    case "rejected":
+      return "не принят";
+    case "failed":
+      return "не получен";
+    case "unavailable":
+      return "без файла";
+    default:
+      return status;
+  }
+}
 
 export function reasonLabel(reason: string): string {
   return reasonLabels[reason] ?? reason;

@@ -11,6 +11,7 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -63,6 +64,7 @@ from onboarding.api.schemas import (
     ResolvedQuestion,
     ResolveQuestion,
     RunDetail,
+    RunFile,
     RunList,
     RunSummary,
     SessionRequest,
@@ -73,6 +75,7 @@ from onboarding.app.admin.records import (
     EmployeeCursor,
     EmployeeRecord,
     IdentityRecord,
+    InboundFileRecord,
     QuestionCursor,
     QuestionRecord,
     RunCursor,
@@ -158,14 +161,11 @@ async def close_session(request: Request, response: Response) -> None:
 
 @router.get("/runs", response_model=RunList)
 async def list_runs(  # noqa: PLR0917 - the query parameters are the endpoint's interface
-
     request: Request,
     principal: Admin,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
-    status_filter: Annotated[
-        Literal["active", "completed", "all"], Query(alias="status")
-    ] = "all",
+    status_filter: Annotated[Literal["active", "completed", "all"], Query(alias="status")] = "all",
     q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> RunList:
     catalog = request.app.state.container.catalog
@@ -210,6 +210,7 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
 
     events = await admin.events(record.employee_id)
     channels = await admin.identities(record.employee_id)
+    files = await admin.inbound_files(record.employee_id)
     questions = await admin.questions(
         recruiter_id=_scope(principal),
         department=_department(principal),
@@ -224,10 +225,44 @@ async def run_detail(request: Request, principal: Admin, run_id: str) -> RunDeta
         scenario_version=record.scenario_version,
         tone=record.tone,
         channels=_channel_links(channels),
-        events=[
-            AuditEvent(name=event.name, at=event.at, fields=event.fields) for event in events
-        ],
+        files=[_run_file(file) for file in files],
+        events=[AuditEvent(name=event.name, at=event.at, fields=event.fields) for event in events],
         questions=[_question(question) for question in questions],
+    )
+
+
+@router.get("/runs/{run_id}/files/{file_id}")
+async def download_file(request: Request, principal: Admin, run_id: str, file_id: str) -> Response:
+    """The document itself, decrypted on the way out.
+
+    The route re-checks the run scope, so a guessed file id outside the caller's employees answers
+    404 exactly like an unknown run. Every download is audited: a passport has a reader's name.
+    """
+    container = request.app.state.container
+    record = await container.admin.run(
+        run_id, recruiter_id=_scope(principal), department=_department(principal)
+    )
+    if record is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "run not found")
+    found = await container.admin.inbound_file(record.employee_id, file_id)
+    if found is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "file not found")
+    file, content = found
+    await container.audit.record(
+        "file_downloaded",
+        employee_id=record.employee_id,
+        file_id=file.file_id,
+        by=principal.subject,
+    )
+    disposition = f"attachment; filename*=UTF-8''{quote(file.filename)}"
+    return Response(
+        content=content,
+        media_type=file.media_type,
+        headers={
+            "Content-Disposition": disposition,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -237,9 +272,7 @@ async def list_employees(  # noqa: PLR0917 - the query parameters are the endpoi
     principal: Admin,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query()] = None,
-    status_filter: Annotated[
-        Literal["active", "left", "all"], Query(alias="status")
-    ] = "all",
+    status_filter: Annotated[Literal["active", "left", "all"], Query(alias="status")] = "all",
     q: Annotated[str | None, Query(max_length=120)] = None,
 ) -> EmployeeList:
     """The directory, newest first, scoped like every other list.
@@ -272,9 +305,7 @@ async def list_employees(  # noqa: PLR0917 - the query parameters are the endpoi
 
 
 @router.get("/employees/{employee_id}", response_model=Employee)
-async def employee_detail(
-    request: Request, principal: Admin, employee_id: str
-) -> Employee:
+async def employee_detail(request: Request, principal: Admin, employee_id: str) -> Employee:
     admin = request.app.state.container.admin
     record = await admin.employee(
         employee_id, recruiter_id=_scope(principal), department=_department(principal)
@@ -289,9 +320,7 @@ async def employee_detail(
     response_model=Employee,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_employee(
-    request: Request, principal: Admin, body: EmployeeCreate
-) -> Employee:
+async def create_employee(request: Request, principal: Admin, body: EmployeeCreate) -> Employee:
     """Add a hire. The id is the one the company already uses, so a retry is a 409, not a twin."""
     _require_hr(principal, "create an employee")
     record = await request.app.state.container.admin.create_employee(
@@ -329,7 +358,6 @@ async def sync_employees(
 
 @router.get("/questions", response_model=QuestionList)
 async def list_questions(  # noqa: PLR0917 - the query parameters are the endpoint's interface
-
     request: Request,
     principal: Admin,
     status: Annotated[Literal["unanswered", "answered", "all"], Query()] = "unanswered",
@@ -460,15 +488,14 @@ async def offboard_employee(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="only hr_admin may offboard an employee",
         )
-    result = await request.app.state.container.admin.offboard(
-        employee_id, actor=principal.subject
-    )
+    result = await request.app.state.container.admin.offboard(employee_id, actor=principal.subject)
     return OffboardedEmployee(
         employee_id=result.employee_id,
         questions_deleted=result.questions_deleted,
         messages_deleted=result.messages_deleted,
         runs_closed=result.runs_closed,
         audit_redacted=result.audit_redacted,
+        files_deleted=result.files_deleted,
     )
 
 
@@ -562,18 +589,14 @@ def _next_question_cursor(records: tuple[QuestionRecord, ...], has_more: bool) -
     if not has_more or not records:
         return None
     last = records[-1]
-    return encode(
-        {"answered": last.answered, "asked_at": last.asked_at.isoformat(), "id": last.id}
-    )
+    return encode({"answered": last.answered, "asked_at": last.asked_at.isoformat(), "id": last.id})
 
 
 def _next_employee_cursor(records: tuple[EmployeeRecord, ...], has_more: bool) -> str | None:
     if not has_more or not records:
         return None
     last = records[-1]
-    return encode(
-        {"created_at": last.created_at.isoformat(), "employee_id": last.employee_id}
-    )
+    return encode({"created_at": last.created_at.isoformat(), "employee_id": last.employee_id})
 
 
 def _fields(body: EmployeeCreate) -> EmployeeFields:
@@ -603,6 +626,18 @@ def _employee(record: EmployeeRecord, channels: tuple[IdentityRecord, ...]) -> E
         left_at=record.left_at,
         created_at=record.created_at,
         channels=_channel_links(channels),
+    )
+
+
+def _run_file(file: InboundFileRecord) -> RunFile:
+    return RunFile(
+        file_id=file.file_id,
+        filename=file.filename,
+        media_type=file.media_type,
+        size=file.size,
+        status=file.status,
+        error=file.error,
+        created_at=file.created_at,
     )
 
 

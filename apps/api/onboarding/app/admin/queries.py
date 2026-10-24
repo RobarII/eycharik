@@ -28,6 +28,7 @@ from onboarding.app.admin.records import (
     EmployeeRecord,
     EventRecord,
     IdentityRecord,
+    InboundFileRecord,
     KnowledgeRecord,
     OverviewRecord,
     QuestionCursor,
@@ -40,10 +41,25 @@ from onboarding.app.db.models import (
     ChannelIdentityRow,
     DocumentRow,
     EmployeeRow,
+    InboundFileRow,
     QuestionRow,
     RunRow,
 )
 from onboarding.app.db.session import Database
+
+
+def inbound_file_record(row: InboundFileRow) -> InboundFileRecord:
+    return InboundFileRecord(
+        file_id=str(row.id),
+        employee_id=row.employee_id,
+        filename=row.filename,
+        media_type=row.media_type,
+        size=row.size,
+        status=row.status,
+        error=row.error,
+        created_at=row.created_at,
+    )
+
 
 __all__ = [
     "AdminQueries",
@@ -52,6 +68,7 @@ __all__ = [
     "EmployeeRecord",
     "EventRecord",
     "IdentityRecord",
+    "InboundFileRecord",
     "KnowledgeRecord",
     "OverviewRecord",
     "QuestionCursor",
@@ -195,6 +212,28 @@ class AdminQueries:
                 )
                 for row in rows
             )
+
+    async def inbound_files(self, employee_id: str) -> tuple[InboundFileRecord, ...]:
+        async with self._database.session() as session:
+            rows = await session.scalars(
+                select(InboundFileRow)
+                .where(InboundFileRow.employee_id == employee_id)
+                .order_by(desc(InboundFileRow.created_at))
+            )
+            return tuple(inbound_file_record(row) for row in rows)
+
+    async def inbound_file(
+        self, employee_id: str, file_id: str
+    ) -> tuple[InboundFileRecord, bytes | None] | None:
+        try:
+            key = uuid.UUID(file_id)
+        except ValueError:
+            return None
+        async with self._database.session() as session:
+            row = await session.get(InboundFileRow, key)
+            if row is None or row.employee_id != employee_id:
+                return None
+            return inbound_file_record(row), row.content
 
     async def events(self, employee_id: str, *, limit: int = 50) -> tuple[EventRecord, ...]:
         async with self._database.session() as session:

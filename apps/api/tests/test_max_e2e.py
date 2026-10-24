@@ -10,6 +10,7 @@ Skipped unless ``ONBOARDING_TEST_DATABASE`` points at a disposable database.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -25,6 +26,7 @@ from sqlalchemy import func, select, text, update
 
 from onboarding.api.app import create_app
 from onboarding.app.channels.max.client import MaxClient
+from onboarding.app.channels.max.files import MaxFiles
 from onboarding.app.composition import SCENARIO_ASSETS_DIR
 from onboarding.app.container import Container, build_container
 from onboarding.app.db.models import (
@@ -32,11 +34,14 @@ from onboarding.app.db.models import (
     ChannelIdentityRow,
     EmployeeRow,
     EventRow,
+    InboundFileRow,
     JobRow,
     MessageRow,
     RunRow,
 )
 from onboarding.app.db.session import Database
+from onboarding.app.files.crypto import decrypt
+from onboarding.app.files.intake import InboundFileIntake
 from onboarding.app.settings import Settings
 from onboarding.app.worker.jobs import JobRunner
 from onboarding.core.models import Address, Button, Channel, ChatId
@@ -50,6 +55,9 @@ TOKEN = "bot-token"
 CHAT = 7000001
 EMPLOYEE = "1001"
 UNLINKED_CHAT = 7000099
+FILE_KEY = bytes(range(32))
+FILE_KEY_B64 = base64.urlsafe_b64encode(FILE_KEY).decode()
+JPEG = b"\xff\xd8\xff\xe0" + b"passport-scan" * 10
 
 
 def database_url() -> str:
@@ -79,6 +87,7 @@ class FakeMax:
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
         self.violations: list[str] = []
+        self.downloads: list[str] = []
         self.uploads = 0
         self.uploaded_bytes = 0
         self.uploaded_files: list[str] = []
@@ -106,6 +115,9 @@ class FakeMax:
                 if not name.endswith(".jpg"):
                     self.violations.append(f"upload is not a jpeg: {name}")
             return httpx.Response(200, json={"token": f"media-{self.uploads}"})
+        if request.method == "GET" and request.url.path.startswith("/files/"):
+            self.downloads.append(request.url.path)
+            return httpx.Response(200, headers={"content-length": str(len(JPEG))}, content=JPEG)
         if request.method == "POST" and request.url.path == "/messages":
             return self._send(request)
         self.violations.append(f"unexpected {request.method} {request.url.path}")
@@ -175,7 +187,8 @@ async def database() -> AsyncIterator[Database]:
         await session.execute(
             text(
                 "TRUNCATE messages, jobs, events, questions, audit_log, runs, employees, "
-                "channel_identities, kb_chunks, kb_documents, kb_files, kb_extractions "
+                "channel_identities, inbound_files, kb_chunks, kb_documents, kb_files, "
+                "kb_extractions "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -192,9 +205,7 @@ async def database() -> AsyncIterator[Database]:
             )
         )
         await session.flush()
-        session.add(
-            ChannelIdentityRow(channel="max", external_id=str(CHAT), employee_id=EMPLOYEE)
-        )
+        session.add(ChannelIdentityRow(channel="max", external_id=str(CHAT), employee_id=EMPLOYEE))
     yield db
     await db.dispose()
 
@@ -245,6 +256,7 @@ async def pump(container: Container, *, ticks: int = 8) -> None:
         audit=container.audit,
         extractor=container.extractor,
         indexer=container.indexer,
+        files=container.files,
     )
     for _ in range(ticks):
         handled = await runner.run_once()
@@ -310,12 +322,54 @@ async def test_a_bot_start_becomes_a_delivered_welcome(database: Database) -> No
         await container.aclose()
 
 
+async def _assert_cabinet(app: FastAPI, run_id: str, file_id: object, database: Database) -> None:
+    """The cabinet lists the document and hands back exactly the bytes it stored."""
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            detail = await client.get(
+                f"/admin/api/v1/runs/{run_id}",
+                headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+            )
+            download = await client.get(
+                f"/admin/api/v1/runs/{run_id}/files/{file_id}",
+                headers={"Authorization": f"Bearer {ADMIN_TOKEN}"},
+            )
+    assert detail.status_code == 200
+    assert detail.json()["files"][0]["filename"] == "passport.jpg"
+    assert detail.json()["files"][0]["status"] == "stored"
+    assert download.status_code == 200
+    assert download.content == JPEG
+    assert download.headers["content-disposition"] == ("attachment; filename*=UTF-8''passport.jpg")
+    assert download.headers["cache-control"] == "no-store"
+    assert download.headers["x-content-type-options"] == "nosniff"
+    async with database.session() as session:
+        audited = await session.scalar(
+            select(func.count()).select_from(AuditRow).where(AuditRow.name == "file_downloaded")
+        )
+    assert audited == 1
+
+
 async def test_a_photo_is_a_receipt_at_the_documents_step(database: Database) -> None:
     fake = FakeMax()
-    config = settings()
+    config = settings(
+        inbound_files_key=FILE_KEY_B64, admin_tokens_raw=f"{ADMIN_TOKEN}:hr_admin:hr-1"
+    )
     app = create_app(config)
     container = build_container(config)
     container.senders[Channel.MAX] = max_client(fake)
+    container.files = InboundFileIntake(
+        database=container.database,
+        fetcher=MaxFiles(
+            client=httpx.AsyncClient(transport=fake.transport()),
+            token=SecretStr(TOKEN),
+            platform_host="max.test",
+            max_bytes=1024 * 1024,
+        ),
+        audit=container.audit,
+        key=FILE_KEY,
+        max_bytes=1024 * 1024,
+    )
     try:
         async with app.router.lifespan_context(app):
             assert await post(app, start_payload()) == 200
@@ -342,7 +396,15 @@ async def test_a_photo_is_a_receipt_at_the_documents_step(database: Database) ->
                             "body": {
                                 "mid": "mid-photo",
                                 "attachments": [
-                                    {"type": "image", "payload": {"token": "photo-token-1"}}
+                                    {
+                                        "type": "image",
+                                        "payload": {
+                                            "token": "photo-token-1",
+                                            "url": "https://max.test/files/photo-token-1",
+                                            "filename": "passport.jpg",
+                                            "size": len(JPEG),
+                                        },
+                                    }
                                 ],
                             },
                         },
@@ -354,13 +416,24 @@ async def test_a_photo_is_a_receipt_at_the_documents_step(database: Database) ->
 
         async with database.session() as session:
             run = await session.scalar(select(RunRow))
-            files = await session.scalar(
+            events = await session.scalar(
                 select(func.count()).select_from(EventRow).where(EventRow.key == "max:mid-photo")
             )
+            stored = await session.scalar(select(InboundFileRow))
+            run_id = run.id if run is not None else None
         assert run is not None
         assert run.step_id == "day_before"
-        assert files == 1
+        assert events == 1
+        assert fake.downloads == ["/files/photo-token-1"]
+        assert stored is not None
+        assert stored.filename == "passport.jpg"
+        assert stored.status == "stored"
+        assert stored.content is not None
+        assert b"passport-scan" not in stored.content
+        assert decrypt(FILE_KEY, stored.content) == JPEG
         assert fake.violations == []
+
+        await _assert_cabinet(app, run_id, stored.id, database)
     finally:
         await container.aclose()
 

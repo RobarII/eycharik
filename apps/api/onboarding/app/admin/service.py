@@ -30,6 +30,7 @@ from onboarding.app.admin.records import (
     EmployeeRecord,
     EventRecord,
     IdentityRecord,
+    InboundFileRecord,
     KnowledgeRecord,
     OverviewRecord,
     QuestionCursor,
@@ -38,6 +39,7 @@ from onboarding.app.admin.records import (
     RunRecord,
 )
 from onboarding.app.db.session import Database
+from onboarding.app.files.crypto import EncryptionError, decrypt, load_key
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.settings import Settings
 from onboarding.app.use_cases.knowledge import SubmitKnowledge
@@ -177,6 +179,24 @@ class AdminService:
 
     async def events(self, employee_id: str, *, limit: int = 50) -> tuple[EventRecord, ...]:
         return await self._queries.events(employee_id, limit=limit)
+
+    async def inbound_files(self, employee_id: str) -> tuple[InboundFileRecord, ...]:
+        return await self._queries.inbound_files(employee_id)
+
+    async def inbound_file(
+        self, employee_id: str, file_id: str
+    ) -> tuple[InboundFileRecord, bytes] | None:
+        """The decrypted document, or ``None`` when the row has no bytes to give."""
+        found = await self._queries.inbound_file(employee_id, file_id)
+        if found is None:
+            return None
+        record, blob = found
+        if blob is None:
+            return None
+        key = load_key(self.settings.inbound_files_key.get_secret_value())
+        if key is None:
+            raise EncryptionError("INBOUND_FILES_KEY is not configured")
+        return record, decrypt(key, blob)
 
     async def questions(
         self,

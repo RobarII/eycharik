@@ -54,12 +54,23 @@ export interface MessengerLink {
   linked_at: string;
 }
 
+export interface RunFile {
+  file_id: string;
+  filename: string;
+  media_type: string;
+  size: number;
+  status: "stored" | "rejected" | "failed" | "unavailable";
+  error: string | null;
+  created_at: string;
+}
+
 export interface RunDetail extends RunSummary {
   step_message: string | null;
   scenario: string;
   scenario_version: number;
   tone: "formal" | "informal";
   channels: MessengerLink[];
+  files: RunFile[];
   events: AuditEvent[];
   questions: Question[];
 }
@@ -180,4 +191,5 @@ export interface OffboardedEmployee {
   messages_deleted: number;
   runs_closed: number;
   audit_redacted: number;
+  files_deleted: number;
 }

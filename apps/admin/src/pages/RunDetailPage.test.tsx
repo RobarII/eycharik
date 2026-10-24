@@ -8,7 +8,11 @@ import type { Capability, RunDetail } from "../types";
 import { SessionProvider, sessionFor } from "../session";
 import { RunDetailPage } from "./RunDetailPage";
 
-vi.mock("../api", () => ({ fetchRun: vi.fn(), offboardEmployee: vi.fn() }));
+vi.mock("../api", () => ({
+  fetchRun: vi.fn(),
+  offboardEmployee: vi.fn(),
+  fileUrl: (runId: string, fileId: string) => `/admin/api/v1/runs/${runId}/files/${fileId}`,
+}));
 
 const run: RunDetail = {
   run_id: "run-1",
@@ -28,6 +32,26 @@ const run: RunDetail = {
   scenario_version: 2,
   tone: "formal",
   channels: [{ channel: "max", external_id: "4242", linked_at: "2026-10-20T08:55:00Z" }],
+  files: [
+    {
+      file_id: "file-1",
+      filename: "passport.jpg",
+      media_type: "image/jpeg",
+      size: 842_137,
+      status: "stored",
+      error: null,
+      created_at: "2026-10-20T09:10:00Z",
+    },
+    {
+      file_id: "file-2",
+      filename: "diploma.pdf",
+      media_type: "application/pdf",
+      size: 2048,
+      status: "failed",
+      error: "FileFetchError: status_404",
+      created_at: "2026-10-20T09:11:00Z",
+    },
+  ],
   events: [
     {
       at: "2026-10-20T09:05:00Z",
@@ -87,6 +111,19 @@ describe("RunDetailPage", () => {
     expect(await screen.findByText("не привязан")).toBeInTheDocument();
   });
 
+  it("lists the documents and links only the ones it actually has", async () => {
+    renderPage(["runs.read"]);
+
+    expect(await screen.findByText("passport.jpg")).toBeInTheDocument();
+    expect(screen.getByText(/822 КБ/)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Скачать" });
+    expect(link).toHaveAttribute("href", "/admin/api/v1/runs/run-1/files/file-1");
+    expect(link).toHaveAttribute("download");
+    // A file the CDN refused is named as such, not offered as a broken download.
+    expect(screen.getByText("не получен")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Скачать" })).toHaveLength(1);
+  });
+
   it("does not offer offboarding to a recruiter", async () => {
     renderPage(["runs.read"]);
 
@@ -101,6 +138,7 @@ describe("RunDetailPage", () => {
       messages_deleted: 9,
       runs_closed: 1,
       audit_redacted: 3,
+      files_deleted: 2,
     });
     renderPage(["runs.read", "employees.offboard"]);
 
@@ -110,7 +148,7 @@ describe("RunDetailPage", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Да, офбордить" }));
 
-    expect(await screen.findByText(/удалено 2 вопроса, 9 сообщений/)).toBeInTheDocument();
+    expect(await screen.findByText(/удалено 2 вопроса, 9 сообщений, 2 файла/)).toBeInTheDocument();
     expect(offboardEmployee).toHaveBeenCalledWith("3001");
   });
 

@@ -428,6 +428,9 @@ async def _drive(
                 raise SystemExit(f"demo run for {employee} ended before {target}")
             return
         if stored.state.step_id == target:
+            if stored.scheduled is not None:
+                await service.next_stage(employee, address)
+                continue
             return
         if stored.scheduled is not None:
             # The demo driver is a fast-forward: do not wait for the real delay_hours.

@@ -10,8 +10,16 @@ x-local-demo: &local-demo
   MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-demo-token}
   MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-dev-secret}
   LLM_PROVIDER: ${LLM_PROVIDER:-extractive}
+  LLM_PROFILE: ${LLM_PROFILE:-}
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
   EMBED_PROVIDER: ${EMBED_PROVIDER:-hashing}
   EMBED_PROFILE: ${EMBED_PROFILE:-local-hashing}
+  EMBED_BASE_URL: ${EMBED_BASE_URL:-}
+  EMBED_API_KEY: ${EMBED_API_KEY:-}
+  RERANK_PROFILE: ${RERANK_PROFILE:-}
+  RERANK_BASE_URL: ${RERANK_BASE_URL:-}
+  RERANK_API_KEY: ${RERANK_API_KEY:-}
   EMBED_DIM: ${EMBED_DIM:-1024}
   EXTRACTION_PROFILE: ${EXTRACTION_PROFILE:-native}
   SENTIMENT_PROVIDER: ${SENTIMENT_PROVIDER:-prompt}
@@ -26,7 +34,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-onboarding}
       POSTGRES_DB: ${POSTGRES_DB:-onboarding}
     ports:
-      - "127.0.0.1:5432:5432"
+      # 55432 on the host: 5432 is taken by the local Postgres from docs/product/demo-script.md
+      # and by the pgvector container used by the integration tier.
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:

@@ -193,6 +193,7 @@ class OnboardingService:
             return await self._after_run(employee_id, address, event, command)
 
         scenario = self._catalog.get(stored.state.scenario_id, stored.state.scenario_version)
+        stored = await self._drop_started_stage(stored, employee_id, scenario)
         # Reminders are scheduled from processing time, never from a delivery timestamp: a retried
         # update can be hours old, and a timeout due in the past would escalate immediately.
         if command == "/nextstage":
@@ -369,6 +370,25 @@ class OnboardingService:
                 scenario, scheduled, address, employee_id, effective.at.date()
             )
         return ServiceResult(handled=True, escalated=escalated, completed=completed)
+
+    async def _drop_started_stage(
+        self, stored: StoredRun, employee_id: EmployeeId, scenario: Scenario
+    ) -> StoredRun:
+        """Forget the schedule once a survey is asking its questions.
+
+        A wait step with a delay *is* the schedule: it has not sent anything yet. A survey that
+        moved into its own scheduled slot has already asked the first question. Live 2026-10-24:
+        the entry stayed "scheduled", so a text answer to "Вопрос 2 из 3" went to the knowledge
+        base instead of being recorded.
+        """
+        if stored.scheduled is None or stored.scheduled.step_id != stored.state.step_id:
+            return stored
+        if scenario.step(stored.state.step_id).kind is not StepKind.SURVEY:
+            return stored
+        await self._audit.record(
+            "stage_started", employee_id=str(employee_id), step=stored.state.step_id
+        )
+        return replace(stored, scheduled=None)
 
     async def _after_run(
         self,

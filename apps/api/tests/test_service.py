@@ -20,6 +20,7 @@ from onboarding.core.models import (
     Event,
     EventKind,
     RiskSignal,
+    ScheduledEntry,
     ScheduleReminder,
     Sentiment,
     SignalTag,
@@ -749,6 +750,34 @@ async def test_a_problem_report_does_not_skip_the_timeline() -> None:
     current = next(iter(runs.runs.values()))
     assert result.handled
     assert current.state.step_id == "access_help"
+    assert current.scheduled is None
+
+
+async def test_a_text_answer_to_a_running_survey_is_recorded_not_answered() -> None:
+    """The survey slot stays "scheduled" after its first question; an answer is still an answer."""
+    service, runs, messaging, _, answerer = build()
+    await service.start(EMPLOYEE, ADDRESS)
+    stored = next(iter(runs.runs.values()))
+    # A survey that already asks questions still carries the schedule it was entered with.
+    running = replace(
+        stored,
+        state=replace(stored.state, step_id="day_three_survey", question_index=1),
+        scheduled=ScheduledEntry(
+            step_id="day_three_survey", due_at=NOW + timedelta(hours=1)
+        ),
+    )
+    runs.runs[stored.state.run_id] = running
+
+    result = await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="9")
+    )
+
+    current = next(iter(runs.runs.values()))
+    assert result.handled
+    assert answerer.calls == []
+    assert current.state.answers[-1].score == 9
+    assert current.state.question_index == 2
+    assert "Записал: 9" in [message.text for message in messaging.sent]
     assert current.scheduled is None
 
 

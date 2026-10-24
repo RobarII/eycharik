@@ -6,8 +6,8 @@
  * capability lists — are never duplicated here.
  */
 export const TENANT = {
-  name: "ПОЛИПЛАСТИК",
-  subtitle: "Онбординг в MAX",
+  name: "Эйчарик",
+  subtitle: "ПОЛИПЛАСТИК · Онбординг в MAX",
 } as const;
 
 /** Scenario ids come from `apps/api/onboarding/scenarios/`; an unknown id prints as-is. */

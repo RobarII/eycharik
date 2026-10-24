@@ -118,7 +118,7 @@ describe("App", () => {
     renderApp();
 
     await screen.findByRole("button", { name: /Обзор/ });
-    expect(document.title).toBe("Обзор — ПОЛИПЛАСТИК");
+    expect(document.title).toBe("Обзор — Эйчарик");
   });
 
   it("shows a not-found screen instead of the overview for a dead link", async () => {
@@ -128,7 +128,7 @@ describe("App", () => {
     renderApp();
 
     expect(await screen.findByRole("heading", { name: "Такой страницы нет" })).toBeInTheDocument();
-    expect(document.title).toBe("Страница не найдена — ПОЛИПЛАСТИК");
+    expect(document.title).toBe("Страница не найдена — Эйчарик");
   });
 
   it("says a section is closed instead of rendering it blank", async () => {

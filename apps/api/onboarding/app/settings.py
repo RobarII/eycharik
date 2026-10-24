@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     rerank_api_key: SecretStr = SecretStr("")
     rerank_model: str = ""
     rerank_timeout_s: float | None = None
+    rerank_deadline_s: float | None = None
 
     sentiment_provider: Literal["prompt", "jev"] = "prompt"
     classify_profile: str = ""
@@ -184,6 +185,14 @@ class Settings(BaseSettings):
             )
         if self.rerank_timeout_s is not None and self.rerank_timeout_s <= 0:
             raise ValueError("RERANK_TIMEOUT_S must be positive")
+        if self.rerank_deadline_s is not None and self.rerank_deadline_s <= 0:
+            raise ValueError("RERANK_DEADLINE_S must be positive")
+        if (
+            self.rerank_deadline_s is not None
+            and self.rerank_timeout_s is not None
+            and self.rerank_deadline_s < self.rerank_timeout_s
+        ):
+            raise ValueError("RERANK_DEADLINE_S must not be shorter than one attempt")
         if self.embed_timeout_s is not None and self.embed_timeout_s <= 0:
             raise ValueError("EMBED_TIMEOUT_S must be positive")
 

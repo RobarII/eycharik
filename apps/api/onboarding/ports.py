@@ -121,6 +121,10 @@ class RerankProfile:
     model: str
     family: Literal["cohere-rerank"] = "cohere-rerank"
     timeout_s: float = 3.0
+    deadline_s: float = 6.0
+    """The whole stage, retries included. A free endpoint answers 429 in bursts, and three spaced
+    attempts at an 8 s timeout reach 32 s, which turns a ranking improvement into a latency
+    incident. The budget stops the retrying, not the answering: a failure keeps the hybrid order."""
 
 
 @dataclass(frozen=True, slots=True)

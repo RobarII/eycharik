@@ -11,8 +11,9 @@ pipeline used before this stage existed.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
+from time import monotonic
 
 import httpx
 
@@ -32,6 +33,9 @@ class RemoteReranker:
     api_key: str
     model: str
     timeout_s: float = 3.0
+    deadline_s: float = 6.0
+    clock: Callable[[], float] = field(default=monotonic, compare=False)
+    sleep: Callable[[float], Awaitable[None]] = field(default=asyncio.sleep, compare=False)
 
     async def rerank(
         self, query: str, documents: Sequence[str], *, top_n: int
@@ -47,12 +51,18 @@ class RemoteReranker:
         self, query: str, documents: Sequence[str], top_n: int
     ) -> httpx.Response:
         last = "no attempt"
-        # The free endpoint answers 429 in bursts; a single 0.2 s retry never clears one. Three
-        # spaced attempts turn a burst into a slow rerank instead of a silent fallback to the
-        # fused order, which is what an eval would then measure by accident.
+        started = self.clock()
+        # The free endpoint answers 429 in bursts; a single 0.2 s retry never clears one. Spaced
+        # attempts turn a burst into a slow rerank, but the retries spend the user's wait: the
+        # deadline bounds the stage, and a failure after it keeps the fused order, which is what
+        # the pipeline did before this stage existed.
         for attempt in range(3):
             if attempt:
-                await asyncio.sleep(_BACKOFF[attempt - 1])
+                if self.clock() - started >= self.deadline_s:
+                    raise RerankUnavailableError(
+                        f"{last}; rerank deadline of {self.deadline_s}s spent"
+                    )
+                await self.sleep(_BACKOFF[attempt - 1])
             try:
                 response = await self.client.post(
                     f"{self.base_url.rstrip('/')}/rerank",
@@ -92,6 +102,7 @@ def build_reranker(settings: Settings, client: httpx.AsyncClient) -> RemoteReran
         api_key=settings.rerank_api_key.get_secret_value(),
         model=profile.model,
         timeout_s=profile.timeout_s,
+        deadline_s=profile.deadline_s,
     )
 
 

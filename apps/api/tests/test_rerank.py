@@ -103,3 +103,79 @@ async def test_retries_once_when_the_gateway_is_busy() -> None:
 
     assert order == (0,)
     assert len(attempts) == 2
+
+
+async def test_the_deadline_bounds_the_stage_instead_of_the_attempt_count() -> None:
+    """Three attempts at an 8 s timeout reach 32 s; the user waits, so the stage has a budget."""
+    now = [0.0]
+    slept: list[float] = []
+
+    async def sleep(seconds: float) -> None:
+        slept.append(seconds)
+        now[0] += seconds
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        now[0] += 8.0  # the free endpoint consumes the whole attempt timeout
+        return httpx.Response(429)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        reranker = RemoteReranker(
+            client=client,
+            base_url="https://example.test",
+            api_key="secret",
+            model="nvidia/nemotron-3.5-rerank-8b:free",
+            timeout_s=8.0,
+            deadline_s=6.0,
+            clock=lambda: now[0],
+            sleep=sleep,
+        )
+        with pytest.raises(RerankUnavailableError, match="deadline"):
+            await reranker.rerank("вопрос", ("один",), top_n=1)
+
+    assert now[0] == pytest.approx(8.0)
+    assert slept == []
+
+
+async def test_a_deadline_never_stops_a_successful_first_attempt() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload((0, 0.7)))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        reranker = RemoteReranker(
+            client=client,
+            base_url="https://example.test",
+            api_key="secret",
+            model="cohere/rerank-v3.5",
+            deadline_s=0.001,
+            clock=lambda: 100.0,
+        )
+        assert await reranker.rerank("вопрос", ("один",), top_n=1) == (0,)
+
+
+async def test_a_retry_still_happens_inside_the_budget() -> None:
+    now = [0.0]
+
+    async def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    attempts: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        if len(attempts) == 1:
+            return httpx.Response(503)
+        return httpx.Response(200, json=payload((0, 0.9)))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        reranker = RemoteReranker(
+            client=client,
+            base_url="https://example.test",
+            api_key="secret",
+            model="cohere/rerank-v3.5",
+            deadline_s=6.0,
+            clock=lambda: now[0],
+            sleep=sleep,
+        )
+        assert await reranker.rerank("вопрос", ("один",), top_n=1) == (0,)
+
+    assert attempts == [1, 1]

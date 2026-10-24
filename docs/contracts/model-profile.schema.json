@@ -223,7 +223,14 @@
         "timeout_s": {
           "type": "number",
           "exclusiveMinimum": 0,
-          "maximum": 120
+          "maximum": 120,
+          "description": "One attempt. A reranker outage keeps the hybrid order, so an attempt is bounded and not fatal."
+        },
+        "deadline_s": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "description": "The whole stage, retries and backoff included. A free endpoint answers 429 in bursts; retries must not spend more of the user's wait than the ranking is worth."
         }
       }
     }

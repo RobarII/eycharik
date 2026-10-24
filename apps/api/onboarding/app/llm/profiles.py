@@ -188,7 +188,9 @@ def rerank_profile(settings: Settings) -> RerankProfile | None:
     if settings.rerank_profile:
         profile = library(settings).rerank(settings.rerank_profile)
         return replace(
-            profile, timeout_s=_env_float(settings.rerank_timeout_s, profile.timeout_s)
+            profile,
+            timeout_s=_env_float(settings.rerank_timeout_s, profile.timeout_s),
+            deadline_s=_env_float(settings.rerank_deadline_s, profile.deadline_s),
         )
     if not settings.rerank_model:
         raise ProfileError("RERANK_MODEL or RERANK_PROFILE is required when RERANK_BASE_URL is set")
@@ -196,6 +198,7 @@ def rerank_profile(settings: Settings) -> RerankProfile | None:
         name="env",
         model=settings.rerank_model,
         timeout_s=_env_float(settings.rerank_timeout_s, _RERANK.timeout_s),
+        deadline_s=_env_float(settings.rerank_deadline_s, _RERANK.deadline_s),
     )
 
 
@@ -258,6 +261,7 @@ def _rerank(data: dict[str, Any]) -> RerankProfile:
         model=_text(data, "model"),
         family=_family(data, ("cohere-rerank",), "cohere-rerank"),
         timeout_s=_number(data, "timeout_s", _RERANK.timeout_s),
+        deadline_s=_number(data, "deadline_s", _RERANK.deadline_s),
     )
 
 

@@ -141,7 +141,7 @@ that reads a document says how that document was made.
 | Model provider 5xx, timeout, or open breaker | one retry, then an escalation with `unavailable` copy |
 | Model returns ungrounded or malformed JSON | answer rejected, escalation, `answer_rejected` audit row |
 | Embedder or database fails during retrieval | escalation with `unavailable` copy |
-| Reranker fails or answers nonsense | hybrid order stands, `rerank_failed` in the audit |
+| Reranker fails or answers nonsense | hybrid order stands, `rerank_failed` in the audit; the stage has a `deadline_s` budget, so retries cannot spend more of the user's wait than a fallback is worth |
 | Knowledge is stale | `valid_to` excludes the document; the question escalates |
 | Worker backlog | jobs wait; the webhook keeps accepting; state is not lost |
 | Postgres unavailable | webhook answers 503; the messenger retries |
@@ -164,7 +164,7 @@ and the reranker read it and never branch on a model name.
 |---|---|---|
 | `answer` | dialect, json mode, token field, reasoning effort, temperature, token cap, timeout, retries, prices | base URL, key, breaker, static headers |
 | `embed` | dialect, model id, vector width, timeout | base URL, key |
-| `rerank` | model id, timeout | base URL, key, whether the stage runs at all |
+| `rerank` | model id, timeout, deadline | base URL, key, whether the stage runs at all |
 
 Resolution order for every value: an explicit environment value, then the profile, then the
 default. An invalid or missing profile stops the process at startup, like an invalid scenario.

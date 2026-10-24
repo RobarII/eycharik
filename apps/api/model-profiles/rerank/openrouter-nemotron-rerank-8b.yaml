@@ -5,3 +5,6 @@ family: cohere-rerank
 model: nvidia/nemotron-3.5-rerank-8b:free
 # A free endpoint is slower than a paid one; the rerank timeout is not fatal, it degrades to fusion.
 timeout_s: 8.0
+# Three attempts at 8 s are 32 s of the user's wait for a ranking improvement. Measured on
+# 2026-10-24: 151 of 1114 rerank calls failed, and the p95 answer carried the retries.
+deadline_s: 6.0

@@ -9,8 +9,11 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from onboarding.app.knowledge.ingest import load_corpus
 from onboarding.app.settings import Settings
+from onboarding.evals import acl
 from onboarding.evals.acl import (
     VIEWERS,
     CorpusDocument,
@@ -19,6 +22,7 @@ from onboarding.evals.acl import (
     principal_audiences,
     visible,
 )
+from onboarding.evals.runner import Report
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -111,3 +115,69 @@ def test_every_audience_the_corpus_names_has_a_viewer() -> None:
     assert audiences_in(documents) <= set(VIEWERS), (
         "a new audience reached knowledge/ without a viewer in the ACL matrix"
     )
+
+
+def test_the_question_is_the_first_readable_line_of_the_body() -> None:
+    text = "# Отпуска\n\nЕжегодный оплачиваемый отпуск — 28 календарных дней."
+
+    assert acl._question(text) == "Ежегодный оплачиваемый отпуск — 28 календарных дней."
+
+
+def test_the_loaded_corpus_carries_a_question_for_every_document() -> None:
+    documents = acl.loaded_documents(Settings(_env_file=None, embed_provider="hashing"))
+
+    assert documents
+    assert all(document.question.strip() for document in documents)
+    assert all(document.audience for document in documents)
+
+
+def test_a_corpus_without_documents_is_a_refusal_not_an_empty_report(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(acl, "loaded_documents", lambda settings: ())
+
+    assert acl.main([]) == 2
+    assert "no active documents" in capsys.readouterr().err
+
+
+def test_an_audience_without_a_viewer_stops_the_matrix(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        acl,
+        "loaded_documents",
+        lambda settings: (CorpusDocument("hr/x", "X", ("dept:legal",), "текст документа"),),
+    )
+
+    assert acl.main([]) == 2
+    assert "audiences without a viewer" in capsys.readouterr().err
+
+
+def test_a_pass_renders_and_writes_its_measurement(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    async def passing_run(
+        cases: tuple[object, ...], settings: Settings, on_date: date
+    ) -> Report:
+        del cases, settings, on_date
+        return Report(
+            metrics={"recall_at_5": 1.0, "mrr": 1.0, "leak_rate": 0.0},
+            results=(),
+            generated=False,
+        )
+
+    monkeypatch.setattr(acl, "run", passing_run)
+
+    code = acl.main(["--write", "--out-dir", str(tmp_path), "--label", "unit"])
+
+    assert code == 0
+    written = sorted(path.name for path in tmp_path.iterdir())
+    assert len(written) == 2
+    assert any(name.endswith(".jsonl") for name in written)
+
+
+def test_the_commit_is_a_short_sha_or_the_honest_unknown() -> None:
+    commit = acl._commit()
+
+    valid = len(commit) == 7 and all(char in "0123456789abcdef" for char in commit)
+    assert commit == "unknown" or valid

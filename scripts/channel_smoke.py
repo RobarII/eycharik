@@ -6,11 +6,18 @@ header — and then reads the database: an event, a job, a step transition, an o
 message id the messenger returned. An ``ok`` here means the message reached the messenger, not
 merely that the worker queued it.
 
-Environment: ``TELEGRAM_WEBHOOK_SECRET`` (or ``VK_WEBHOOK_SECRET`` with ``VK_GROUP_ID``),
-``DATABASE_URL``, and ``HTTPS_PROXY`` or ``ALL_PROXY`` when ``api.telegram.org`` is not reachable
-directly.
+Environment: ``MAX_WEBHOOK_SECRET`` (or ``TELEGRAM_WEBHOOK_SECRET``, or ``VK_WEBHOOK_SECRET``
+with ``VK_GROUP_ID``), ``DATABASE_URL``, and ``HTTPS_PROXY`` or ``ALL_PROXY`` when the messenger
+API is not reachable directly.
+
+MAX has no inbound files today (``docs/contracts/max-api.md`` covers outbound only), so drive a
+scenario without a file step: ``--scenario onboarding_plant``, which is also the default.
 
 Example::
+
+    MAX_WEBHOOK_SECRET=... DATABASE_URL=... \\
+        uv run python scripts/channel_smoke.py --channel max \\
+        --base-url https://host --chat-id 7000001 --reset
 
     TELEGRAM_WEBHOOK_SECRET=... DATABASE_URL=... \\
         uv run python scripts/channel_smoke.py \\
@@ -51,7 +58,6 @@ from onboarding.core.models import (  # noqa: E402
     StepKind,
 )
 
-SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"  # noqa: S105 - a header name
 SETTLE_SECONDS = 25.0
 POLL_SECONDS = 0.4
 MAX_TURNS = 80
@@ -82,6 +88,9 @@ class Updates:
 
     channel = "telegram"
     text_limit = 4096
+    secret_header = "X-Telegram-Bot-Api-Secret-Token"  # noqa: S105 - a header name
+    # A message can carry a document, so a step that waits for a file is drivable here.
+    supports_files = True
     # Telegram authenticates with a header, so a body that is not JSON reaches the parser and is
     # named as such. VK carries the secret inside the body and cannot do that (see ``VkUpdates``).
     non_json_status = 400
@@ -121,7 +130,7 @@ class Updates:
         self, payload: dict[str, Any], *, secret: str | None = None, raw: bytes | None = None
     ) -> httpx.Response:
         self.sent += 1
-        headers = {SECRET_HEADER: secret if secret is not None else self._secret}
+        headers = {self.secret_header: secret if secret is not None else self._secret}
         body = raw if raw is not None else None
         return await self._http.post(
             self._url,
@@ -195,6 +204,9 @@ class VkUpdates:
 
     channel = "vk"
     text_limit = 4096
+    # The secret travels inside the payload, so there is no header to present.
+    secret_header = ""
+    supports_files = True
     # The secret lives in the payload, so a body that is not JSON cannot be verified at all: the
     # refusal is a 401, not a 400.
     non_json_status = 401
@@ -314,7 +326,132 @@ class VkUpdates:
         return await self.post(self.payload_button(button_id))
 
 
-UpdatesLike = Updates | VkUpdates
+class MaxUpdates:
+    """Posts MAX Bot API updates: one shared secret header, millisecond timestamps, body ids.
+
+    The secret rides in ``X-Max-Bot-Api-Secret``, so an unparseable body still proves itself and
+    is named as invalid JSON (400) rather than refused as unauthenticated. Timestamps are strictly
+    increasing: ``bot_started`` carries no message id, so its dedupe key is the hash of the whole
+    payload, and two starts in the same millisecond would look like one redelivery.
+    """
+
+    channel = "max"
+    text_limit = 4000
+    secret_header = "X-Max-Bot-Api-Secret"  # noqa: S105 - a header name
+    # MAX inbound attachments are not parsed yet: docs/contracts/max-api.md pins outbound only.
+    # A scenario step that waits for a file therefore cannot be driven through this channel, and
+    # ``drive`` reports that gap instead of waiting for a timeout that names nothing.
+    supports_files = False
+    non_json_status = 400
+
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        url: str,
+        secret: str,
+        chat_id: int,
+    ) -> None:
+        self._http = http
+        self._url = url
+        self._secret = secret
+        self._chat_id = chat_id
+        self._ids = itertools.count(int(time.time()) * 1000)
+        self._last_ms = int(time.time() * 1000)
+        self.sent = 0
+
+    @property
+    def http(self) -> httpx.AsyncClient:
+        return self._http
+
+    @property
+    def url(self) -> str:
+        return self._url
+
+    @property
+    def secret(self) -> str:
+        return self._secret
+
+    def _tick(self) -> int:
+        self._last_ms = max(int(time.time() * 1000), self._last_ms + 1)
+        return self._last_ms
+
+    def sender(self) -> dict[str, Any]:
+        return {"user_id": self._chat_id, "name": "Smoke"}
+
+    def recipient(self) -> dict[str, Any]:
+        return {"chat_id": self._chat_id}
+
+    def envelope(self, update_type: str, **fields: Any) -> dict[str, Any]:
+        return {
+            "update_type": update_type,
+            "timestamp": self._tick(),
+            "chat_id": self._chat_id,
+            **fields,
+        }
+
+    def message_object(self, text: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"mid": f"mid-{next(self._ids)}"}
+        if text is not None:
+            body["text"] = text
+        return {"sender": self.sender(), "recipient": self.recipient(), "body": body}
+
+    def payload_start(self) -> dict[str, Any]:
+        return self.envelope("bot_started", user=self.sender())
+
+    def payload_message(self, value: str) -> dict[str, Any]:
+        return self.envelope(
+            "message_created", user=self.sender(), message=self.message_object(value)
+        )
+
+    def payload_document(self) -> dict[str, Any]:
+        raise NotImplementedError("MAX does not deliver inbound files; see supports_files")
+
+    def payload_button(self, button_id: str) -> dict[str, Any]:
+        return self.envelope(
+            "message_callback",
+            user=self.sender(),
+            callback={
+                "callback_id": f"cb-{next(self._ids)}",
+                "payload": button_id,
+                "user": self.sender(),
+            },
+            message=self.message_object(),
+        )
+
+    async def post(
+        self, payload: dict[str, Any], *, secret: str | None = None, raw: bytes | None = None
+    ) -> httpx.Response:
+        self.sent += 1
+        presented = self._secret if secret is None else secret
+        headers = {"content-type": "application/json"}
+        if presented:
+            # An empty secret is a delivery with the header absent, not with an empty one.
+            headers[self.secret_header] = presented
+        return await self._http.post(
+            self._url,
+            headers=headers,
+            json=payload if raw is None else None,
+            content=raw,
+        )
+
+    def with_chat(self, chat_id: int) -> MaxUpdates:
+        """A different dialog: used to probe an unlinked account."""
+        return MaxUpdates(self._http, self._url, self._secret, chat_id)
+
+    async def start(self) -> httpx.Response:
+        return await self.post(self.payload_start())
+
+    async def message(self, value: str) -> httpx.Response:
+        return await self.post(self.payload_message(value))
+
+    async def document(self) -> httpx.Response:
+        return await self.post(self.payload_document())
+
+    async def button(self, button_id: str) -> httpx.Response:
+        return await self.post(self.payload_button(button_id))
+
+
+UpdatesLike = Updates | VkUpdates | MaxUpdates
 
 
 def _now_ts() -> int:
@@ -393,9 +530,18 @@ def _answer_payload(question: Question) -> tuple[str, str]:
 
 
 async def _answer(
-    step: Step, run: dict[str, Any], updates: UpdatesLike, chat_id: int, *, trouble: bool = False
-) -> tuple[str, str]:
-    """Send the event this step is waiting for. Returns a label and the outbound call."""
+    step: Step,
+    run: dict[str, Any],
+    updates: UpdatesLike,
+    chat_id: int,
+    reporter: Reporter,
+    *,
+    trouble: bool = False,
+) -> tuple[str, str] | None:
+    """Send the event this step is waiting for. Returns a label and the outbound call.
+
+    ``None`` means the channel cannot produce the event at all, and the gap has been reported.
+    """
     if step.kind is StepKind.SURVEY:
         index = int(run["question_index"])
         question = step.questions[min(index, len(step.questions) - 1)]
@@ -407,6 +553,13 @@ async def _answer(
         return f"survey/{question.id}", "text"
 
     if step.expects is Expects.FILE:
+        if not updates.supports_files:
+            reporter.check(
+                False,
+                f"{step.id} <- document",
+                f"{updates.channel} does not deliver inbound files",
+            )
+            return None
         await updates.document()
         return "document", "passport.pdf"
     buttons = _buttons(step)
@@ -439,7 +592,10 @@ async def drive(
             await asyncio.sleep(POLL_SECONDS)
             continue
         marker = (step.id, int(run["question_index"]))
-        label, _value = await _answer(step, run, updates, chat_id, trouble=trouble)
+        answer = await _answer(step, run, updates, chat_id, reporter, trouble=trouble)
+        if answer is None:
+            return
+        label, _value = answer
 
         async def moved(marker: tuple[str, int] = marker) -> bool:
             now = await _active_run(engine, updates.channel, chat_id)
@@ -522,7 +678,10 @@ async def check_cross_channel(
     )
 
     step = scenario.step(step_before)
-    label, _value = await _answer(step, moved or run, alt, alt_chat)
+    answer = await _answer(step, moved or run, alt, alt_chat, reporter)
+    if answer is None:
+        return False
+    label, _value = answer
 
     async def advanced() -> bool:
         row = await _run_by_id(engine, run_id)
@@ -675,7 +834,10 @@ async def http_post_raw(
     if not path:
         return await updates.post({}, raw=body)
     base = updates.url.rsplit("/webhook/", 1)[0]
-    return await updates.http.post(f"{base}{path}", headers={SECRET_HEADER: header}, content=body)
+    # A channel that carries its secret in the body has no header to present, and its route must be
+    # reached without one: the raw body is the thing under test.
+    headers = {updates.secret_header: header} if updates.secret_header and header else {}
+    return await updates.http.post(f"{base}{path}", headers=headers, content=body)
 
 
 async def check_dedupe(
@@ -754,6 +916,8 @@ def _updates_for(
     url = f"{args.base_url.rstrip('/')}/webhook/{channel}"
     if channel == "vk":
         return VkUpdates(http, url, secrets["vk"], chat_id, args.group_id)
+    if channel == "max":
+        return MaxUpdates(http, url, secrets["max"], chat_id)
     return Updates(http, url, secrets["telegram"], chat_id)
 
 
@@ -855,10 +1019,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="end-to-end smoke for one messenger channel")
     parser.add_argument("--base-url", required=True, help="public origin, e.g. https://host")
     parser.add_argument("--chat-id", type=int, required=True, help="the linked chat to drive")
-    parser.add_argument("--channel", choices=["telegram", "vk"], default="telegram")
+    parser.add_argument("--channel", choices=["max", "telegram", "vk"], default="telegram")
     parser.add_argument(
         "--switch-to",
-        choices=["telegram", "vk"],
+        choices=["max", "telegram", "vk"],
         default=None,
         help="prove the run follows the person into this messenger and back",
     )
@@ -886,7 +1050,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    variables = {"telegram": "TELEGRAM_WEBHOOK_SECRET", "vk": "VK_WEBHOOK_SECRET"}
+    variables = {
+        "max": "MAX_WEBHOOK_SECRET",
+        "telegram": "TELEGRAM_WEBHOOK_SECRET",
+        "vk": "VK_WEBHOOK_SECRET",
+    }
     secrets = {channel: os.environ.get(name, "") for channel, name in variables.items()}
     database_url = os.environ.get("DATABASE_URL", "")
     if not database_url:

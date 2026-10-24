@@ -19,7 +19,8 @@ from onboarding.app.db.models import EMBEDDING_DIM, ChunkRow, DocumentRow, Index
 from onboarding.app.db.predicates import acl_clause
 from onboarding.app.db.session import Database
 from onboarding.core.models import Chunk, ChunkId, DocId, ScoredChunk
-from onboarding.core.ranking import LEXICAL_WEIGHT, reciprocal_rank_fusion
+from onboarding.core.ranking import reciprocal_rank_fusion
+from onboarding.core.retrieval import RetrievalPolicy
 from onboarding.ports import (
     Embedder,
     KnowledgeDocumentRecord,
@@ -29,8 +30,6 @@ from onboarding.ports import (
 
 log = logging.getLogger(__name__)
 
-OVERFETCH = 40
-
 
 class PostgresKnowledgeBase:
     def __init__(
@@ -38,12 +37,12 @@ class PostgresKnowledgeBase:
         database: Database,
         embedder: Embedder,
         *,
-        overfetch: int = OVERFETCH,
+        policy: RetrievalPolicy | None = None,
         bm25: bool = False,
     ) -> None:
         self._database = database
         self._embedder = embedder
-        self._overfetch = overfetch
+        self._policy = policy or RetrievalPolicy()
         # An experiment switch, not a feature flag: ADR 0012 keeps BM25 out of the request path
         # until a measurement on a larger corpus says otherwise.
         self._bm25_enabled = bm25
@@ -65,12 +64,13 @@ class PostgresKnowledgeBase:
                     # Enabled but unavailable is a configuration mistake, not a runtime failure:
                     # the two-list fusion is still correct, so the turn must not fail.
                     log.warning("bm25_enabled_but_pg_search_is_missing")
-            semantic = await _semantic_ids(session, query, vector, self._overfetch)
-            lexical = await _lexical_ids(session, query, self._overfetch)
+            policy = self._policy
+            semantic = await _semantic_ids(session, query, vector, policy.overfetch)
+            lexical = await _lexical_ids(session, query, policy, policy.overfetch)
             rankings = [semantic, lexical]
-            weights = [1.0, LEXICAL_WEIGHT]
+            weights = [1.0, policy.lexical_weight]
             if self._bm25_enabled and self._bm25_available:
-                rankings.append(await _bm25_ids(session, query, self._overfetch))
+                rankings.append(await _bm25_ids(session, query, policy.overfetch))
                 weights.append(1.0)
             fused = reciprocal_rank_fusion(rankings, weights=weights, limit=query.limit)
             if not fused:
@@ -238,9 +238,11 @@ def _coverage(text: str) -> ColumnElement[int]:
     is how a lexical list makes the fused order worse instead of better. Measured at the fusion
     level on the golden set (identical semantic lists, only the lexical list changing), an
     ungated OR list moved recall@5 0.993 -> 0.978 and MRR 0.864 -> 0.809 at equal weight. The
-    gate asks a chunk to cover ``min(3, n)`` question lexemes: three is enough evidence that the
-    match is about the question and not about one stopword, and a two-word question («условия
-    ДМС») must cover both words, because with fewer the gate would pass on anything.
+    gate asks a chunk to cover ``min(coverage_floor, n)`` question lexemes: three is enough
+    evidence that the match is about the question and not about one stopword, and a two-word
+    question («условия ДМС») must cover both words, because with fewer the gate would pass on
+    anything. The floor itself belongs to ``core.retrieval``: the in-memory backend applies the
+    same one, and a gate that exists twice is a gate that disagrees with itself.
     """
     question = func.tsvector_to_array(func.to_tsvector("russian", text))
     word = func.unnest(func.tsvector_to_array(ChunkRow.ts)).column_valued("word")
@@ -249,12 +251,16 @@ def _coverage(text: str) -> ColumnElement[int]:
 
 
 async def _lexical_ids(
-    session: AsyncSession, query: SearchQuery, limit: int
+    session: AsyncSession,
+    query: SearchQuery,
+    policy: RetrievalPolicy,
+    limit: int,
 ) -> tuple[ChunkId, ...]:
     ts_query = _lexical_query(query.text)
     rank = func.ts_rank_cd(ChunkRow.ts, ts_query)
     required = func.least(
-        3, func.cardinality(func.tsvector_to_array(func.to_tsvector("russian", query.text)))
+        policy.coverage_floor,
+        func.cardinality(func.tsvector_to_array(func.to_tsvector("russian", query.text))),
     )
     rows = await session.scalars(
         _filtered(query)

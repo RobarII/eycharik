@@ -51,6 +51,7 @@ from onboarding.core.models import (
     QuestionKind,
     StepKind,
 )
+from onboarding.core.retrieval import RetrievalPolicy
 from onboarding.ports import (
     DocumentRef,
     ExtractionUnavailableError,
@@ -147,8 +148,9 @@ async def _ingest(settings: Settings, args: argparse.Namespace) -> int:
             schema_path=settings.contracts_dir / "doc.schema.json",
             writer=PostgresKnowledgeWriter(container.database, container.embedder),
             embedder=container.embedder,
-            max_chars=args.max_chars,
-            overlap_chars=args.overlap_chars,
+            policy=RetrievalPolicy(
+                max_chars=args.max_chars, overlap_chars=args.overlap_chars
+            ),
             contextualizer=contextualizer,
         )
     finally:

@@ -17,6 +17,7 @@ from onboarding.app.knowledge.ingest import (
 )
 from onboarding.core.chunking import split_document
 from onboarding.core.models import Chunk, Document
+from onboarding.core.retrieval import RetrievalPolicy
 from onboarding.ports import (
     Contextualizer,
     Embedder,
@@ -45,21 +46,19 @@ async def ingest(
     schema_path: Path,
     writer: KnowledgeWriter,
     embedder: Embedder,
-    max_chars: int = 1200,
-    overlap_chars: int = 200,
+    policy: RetrievalPolicy | None = None,
     contextualizer: Contextualizer | None = None,
 ) -> IngestReport:
+    policy = policy or RetrievalPolicy()
     loaded = load_corpus(directory, schema_path)
     chunks = 0
     contextualized = 0
     for item in loaded:
-        pieces = split_document(item.document, max_chars=max_chars, overlap_chars=overlap_chars)
-        if not pieces:
-            raise ValueError(f"{item.path}: document produced no chunks")
+        pieces = _split(item.document, policy)
         if contextualizer is not None:
             pieces = await _with_context(contextualizer, item.document, pieces)
             contextualized += len(pieces)
-        embeddings = await embedder.embed([piece.embedding_text for piece in pieces])
+        embeddings = await embedder.embed([policy.embedding_view(piece) for piece in pieces])
         if len(embeddings) != len(pieces):
             raise ValueError(f"{item.path}: embedder returned a wrong number of vectors")
         await writer.replace_document(
@@ -89,11 +88,11 @@ async def ingest_document(
     schema_path: Path,
     writer: KnowledgeWriter,
     embedder: Embedder,
-    max_chars: int = 1200,
-    overlap_chars: int = 200,
+    policy: RetrievalPolicy | None = None,
     contextualizer: Contextualizer | None = None,
 ) -> IndexedDocument:
     """Index one uploaded document. Raises ``CorpusError`` when its frontmatter is invalid."""
+    policy = policy or RetrievalPolicy()
     loaded = parse_document(text, load_schema(schema_path), source=source)
     if loaded.status != "active":
         raise ValueError(f"{source}: document status is {loaded.status!r}, not 'active'")
@@ -101,8 +100,7 @@ async def ingest_document(
         loaded,
         writer=writer,
         embedder=embedder,
-        max_chars=max_chars,
-        overlap_chars=overlap_chars,
+        policy=policy,
         contextualizer=contextualizer,
     )
     return IndexedDocument(id=str(loaded.document.id), title=loaded.document.title, chunks=chunks)
@@ -113,16 +111,13 @@ async def _chunks(
     *,
     writer: KnowledgeWriter,
     embedder: Embedder,
-    max_chars: int,
-    overlap_chars: int,
+    policy: RetrievalPolicy,
     contextualizer: Contextualizer | None = None,
 ) -> int:
-    pieces = split_document(loaded.document, max_chars=max_chars, overlap_chars=overlap_chars)
-    if not pieces:
-        raise ValueError(f"{loaded.path}: document produced no chunks")
+    pieces = _split(loaded.document, policy)
     if contextualizer is not None:
         pieces = await _with_context(contextualizer, loaded.document, pieces)
-    embeddings = await embedder.embed([piece.embedding_text for piece in pieces])
+    embeddings = await embedder.embed([policy.embedding_view(piece) for piece in pieces])
     if len(embeddings) != len(pieces):
         raise ValueError(f"{loaded.path}: embedder returned a wrong number of vectors")
     await writer.replace_document(
@@ -142,6 +137,18 @@ async def _chunks(
         embeddings,
     )
     return len(pieces)
+
+
+def _split(document: Document, policy: RetrievalPolicy) -> tuple[Chunk, ...]:
+    """One window, one place: chunking reads the policy, never a literal of its own."""
+    pieces = split_document(
+        document,
+        max_chars=policy.max_chars,
+        overlap_chars=policy.overlap_chars,
+    )
+    if not pieces:
+        raise ValueError(f"{document.id}: document produced no chunks")
+    return pieces
 
 
 async def _with_context(

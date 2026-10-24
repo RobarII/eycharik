@@ -94,6 +94,7 @@ from onboarding.core.models import (
     SurveyAnswer,
     TimeoutAction,
 )
+from onboarding.core.retrieval import RetrievalPolicy
 from onboarding.core.transitions import start as start_run
 from onboarding.ports import (
     ExtractionRecord,
@@ -433,7 +434,7 @@ async def test_lexical_branch_survives_a_question_phrased_as_a_question(
     )
 
     async with database.session() as session:
-        ids = await _lexical_ids(session, query, 30)
+        ids = await _lexical_ids(session, query, RetrievalPolicy(), 30)
 
     assert ids, "the lexical branch returned nothing for a natural question"
     assert any(str(chunk_id).startswith("hr/leave-policy#") for chunk_id in ids)
@@ -462,7 +463,7 @@ async def test_the_lexical_branch_does_not_answer_with_one_shared_word(
     )
 
     async with database.session() as session:
-        ids = await _lexical_ids(session, query, 30)
+        ids = await _lexical_ids(session, query, RetrievalPolicy(), 30)
         loose = (
             (
                 await session.execute(

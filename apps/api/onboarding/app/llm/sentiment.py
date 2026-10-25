@@ -280,14 +280,14 @@ def build_sentiment(
             prompt_version=PROMPT_VERSION,
         )
     if chosen == "decisions":
-        profile = _classify_profile(settings)
-        if profile.family == "typesafe-jev" and not settings.classify_api_key.get_secret_value():
+        if not settings.classify_api_key.get_secret_value():
             raise SentimentSetupError(
                 "CLASSIFY_API_KEY is not set; the decisions provider cannot run"
             )
+        profile = _classify_profile(settings)
         classifier = build_decisions_classifier(
             client=client,
-            endpoint=f"{settings.classify_base_url.rstrip('/')}{profile.path}",
+            endpoint=f"{settings.classify_base_url.rstrip('/')}/systemone",
             api_key=settings.classify_api_key,
             profile=profile,
             rubrics=RubricLibrary(

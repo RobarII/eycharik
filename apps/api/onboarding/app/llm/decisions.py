@@ -5,9 +5,7 @@ questions, so the rubric in ``docs/prompts/sentiment-jev/`` is the prompt and th
 transports and validates. Nothing here knows a vendor: the endpoint, model, rubric, envelope, and
 price come from a ``classify`` profile (``apps/api/model-profiles/classify/<name>.yaml``), so a
 second decisions model is a new profile plus an eval run, not a branch in the composition root.
-The question shape is shared by two dialects — TypeSafe Jev over ``/systemone`` and
-``frida-decisions`` (ADR 0037) — and they differ in exactly one thing this module cares about: a
-local sidecar has no key to send.
+The shipped profiles point at TypeSafe Jev, which speaks the System One wire shape below.
 
 A malformed answer degrades to the keyword classifier, exactly like a broken chat completion does
 in ``sentiment.py``.
@@ -214,7 +212,11 @@ class DecisionsClassifier:
         )
 
     async def _ask(self, state: str) -> tuple[Any, float]:
-        headers = self._headers()
+        headers = {
+            "Authorization": f"Bearer {self._api_key.get_secret_value()}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
         try:
             payload, elapsed_s = await self._transport.call(
                 prepare=lambda: self._prepare(headers, self._body(state)),
@@ -229,15 +231,6 @@ class DecisionsClassifier:
         except TransportError as error:
             raise DecisionsUnavailableError(f"decisions request failed: {error}") from None
         return payload, elapsed_s
-
-    def _headers(self) -> dict[str, str]:
-        """Credentials follow the family: a local sidecar is not authenticated, and an empty
-        ``Authorization: Bearer`` header reads like a misconfigured one in the server's log."""
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
-        key = self._api_key.get_secret_value()
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
-        return headers
 
     async def _prepare(
         self, headers: dict[str, str], body: dict[str, object]

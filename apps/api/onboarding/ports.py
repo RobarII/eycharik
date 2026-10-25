@@ -152,13 +152,7 @@ class ClassifyProfile:
     name: str
     model: str
     rubric: str = ""
-    # The wire dialect. ``typesafe-jev`` speaks System One over ``/systemone`` and needs a key;
-    # ``frida-decisions`` speaks the FRIDA request format and can sit behind a local sidecar, so the
-    # credential follows the family, not the provider name.
-    family: Literal["typesafe-jev", "frida-decisions"] = "typesafe-jev"
-    # Path appended to ``CLASSIFY_BASE_URL``. It belongs to the model, not to the deployment: a
-    # second decisions model must be a profile, not a condition in the composition root.
-    path: str = "/systemone"
+    family: Literal["typesafe-jev"] = "typesafe-jev"
     timeout_s: float = 8.0
     max_retries: int = 2
     price_input_rub_per_1k: float = 0.0

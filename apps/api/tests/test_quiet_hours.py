@@ -34,7 +34,7 @@ def test_the_evening_edge_still_counts_as_quiet() -> None:
 
 
 def test_a_naive_moment_is_read_as_utc() -> None:
-    moment = datetime(2026, 10, 24, 23, 0)
+    moment = datetime(2026, 10, 24, 23, 0, tzinfo=UTC).replace(tzinfo=None)
 
     assert NIGHT.next_allowed(moment) == datetime(2026, 10, 25, 6, 0, tzinfo=UTC)
 

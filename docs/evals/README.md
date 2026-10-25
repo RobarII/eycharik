@@ -439,6 +439,21 @@ make eval-sentiment PROVIDER=decisions   # decisions model, needs CLASSIFY_API_K
 make eval-sentiment SPLIT=test REPEAT=3  # the locked half, three calls per case
 ```
 
+Локальная decisions-модель вместо Jev не требует ключа и не выходит за контур (ADR 0037):
+
+```bash
+scripts/frida-serve.sh start             # сайдкар на 8090, MLX, греется на старте
+CLASSIFY_PROFILE=local-frida-decisions \
+CLASSIFY_BASE_URL=http://127.0.0.1:8090/v1 \
+SENTIMENT_PROVIDER=decisions \
+make eval-sentiment PROVIDER=decisions SPLIT=test
+scripts/frida-serve.sh stop
+```
+
+Прогон на ней — [измерение](../measurements/2026-10-25-sentiment-decisions.md): тон и теги заметно
+ниже prompt-провайдера на том же сплите, поэтому умолчание не меняется, а профиль остаётся опцией
+для контура персональных данных.
+
 `--provider jev` — прежнее имя пути `decisions`; оно принимается, чтобы команда из старого
 измерения запускалась, но артефакт пишется с каноническим именем.
 

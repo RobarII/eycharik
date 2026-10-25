@@ -99,8 +99,7 @@ def _choice(value: Any, criteria: tuple[str, ...]) -> dict[str, Any]:
     if not isinstance(raw, dict) or set(raw) != set(criteria):
         raise DecisionsFormatError("sentiment probabilities must cover every option")
     probabilities = {
-        key: _unit_interval(probability, f"probability {key!r}")
-        for key, probability in raw.items()
+        key: _unit_interval(probability, f"probability {key!r}") for key, probability in raw.items()
     }
     if abs(sum(probabilities.values()) - 1.0) > _PROBABILITY_TOLERANCE:
         raise DecisionsFormatError("sentiment probabilities must sum to 1")
@@ -238,9 +237,7 @@ class DecisionsClassifier:
             headers["Authorization"] = f"Bearer {key}"
         return headers
 
-    async def _prepare(
-        self, headers: dict[str, str], body: dict[str, object]
-    ) -> PreparedRequest:
+    async def _prepare(self, headers: dict[str, str], body: dict[str, object]) -> PreparedRequest:
         return PreparedRequest(url=self._endpoint, headers=headers, body=body)
 
     def _body(self, state: str) -> dict[str, object]:

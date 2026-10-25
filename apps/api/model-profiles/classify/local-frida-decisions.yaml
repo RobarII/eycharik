@@ -4,12 +4,14 @@ description: "Локальная decisions-модель на своём желе
 note: >
   ai-forever/FRIDA-Decisions, MIT, 823M, T5-энкодер. Отвечает тем же типом вопросов, что и рубрика
   sentiment-jev: choice для тона, noul для тегов, поэтому рубрика не меняется. Ключ не нужен: модель
-  на этой машине, цена входа — ноль. Сбой сайдкара уводит в keyword-классификатор, как и сбой Jev.
+  на этой машине, цена входа — ноль. Таймаут выше, чем у Jev: холодный энкодер компилирует ядра
+  Metal, и первый вызов в 8 с не укладывается — сайдкар греется на старте, но сетевой запас должен
+  быть. Сбой сайдкара уводит в keyword-классификатор, как и сбой Jev.
 family: frida-decisions
 model: frida-decisions
 path: /decisions
 rubric: sentiment-jev@1
-timeout_s: 8.0
+timeout_s: 15.0
 max_retries: 1
 price_input_rub_per_1k: 0.0
 personal_data: true

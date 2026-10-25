@@ -115,6 +115,21 @@ def load(
     return judge
 
 
+async def warm(judge: _Judge) -> None:
+    """One tiny request before the port opens.
+
+    The first call of a process pays for Metal kernel compilation and the packing layout, and that
+    first call is a real case: it arrived eight seconds late twice in the first measured run. A
+    warm-up step moves the cost to startup, where nobody is waiting for a verdict.
+    """
+    await judge.judge(
+        {
+            "state": "разогрев",
+            "questions": {"ready": {"type": "noul", "instructions": "Это разогрев."}},
+        }
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="HTTP sidecar for ai-forever/FRIDA-Decisions")
     parser.add_argument("--model", default="ai-forever/FRIDA-Decisions")
@@ -153,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
             wait_ms=args.wait_ms,
             dtype=args.dtype,
         )
+        await warm(model.judge)
         model.backend = args.backend
 
     print(

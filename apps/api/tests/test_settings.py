@@ -102,9 +102,16 @@ def test_production_rejects_hashing_embeddings() -> None:
         Settings(_env_file=None, environment="production", embed_provider="hashing")
 
 
-def test_a_decisions_provider_without_a_key_is_refused_at_startup() -> None:
-    with pytest.raises(ValidationError, match="CLASSIFY_API_KEY"):
-        Settings(_env_file=None, sentiment_provider="decisions")
+def test_a_local_decisions_model_needs_no_classifier_key() -> None:
+    """The credential belongs to the family, so the refusal moved where the profile is read."""
+    local = Settings(
+        _env_file=None,
+        sentiment_provider="decisions",
+        classify_profile="local-frida-decisions",
+    )
+
+    assert local.sentiment_provider == "decisions"
+    assert not local.classify_api_key.get_secret_value()
 
 
 def test_the_classifier_default_resolves_at_runtime_not_in_configuration() -> None:
@@ -148,9 +155,7 @@ def test_a_negative_classify_retry_count_is_refused() -> None:
 
 
 def test_manager_token_is_supported() -> None:
-    principals = Settings(
-        _env_file=None, admin_tokens_raw="m-token:manager:ИТ"
-    ).admin_principals
+    principals = Settings(_env_file=None, admin_tokens_raw="m-token:manager:ИТ").admin_principals
 
     assert principals["m-token"].role == "manager"
     assert principals["m-token"].subject == "ИТ"

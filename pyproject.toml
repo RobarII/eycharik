@@ -85,6 +85,9 @@ ignore = ["ANN401", "PLR0913", "PLR2004", "S101", "B008", "RUF001", "RUF002", "R
 "apps/api/onboarding/cli.py" = ["T201"]
 "apps/api/onboarding/evals/**" = ["T201"]
 "scripts/**" = ["T201"]
+# The FRIDA sidecar keeps its heavy optional imports inside the loader: the product venv must not
+# need mlx, torch or the package itself to import the app factory for a test.
+"scripts/frida_serve.py" = ["T201", "PLC0415", "E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["onboarding"]

@@ -345,13 +345,7 @@ class OnboardingService:
             scenario, stored.state, transition, employee_id
         )
         if event.kind is EventKind.FILE_RECEIVED and not (event.text and is_question(event.text)):
-            await self._act(
-                (Action(kind=ActionKind.SEND, text=self._executor.file_received_text()),),
-                address,
-                employee_id,
-                effective.at.date(),
-                question=None,
-            )
+            await self._ack_file(transition, stored, event, address, employee_id)
         await self._act(
             transition.actions,
             address,
@@ -382,6 +376,29 @@ class OnboardingService:
                 return await self._refuse_demo_command(employee_id, address, command)
             return await self.reboot(employee_id, address)
         return None
+
+    async def _ack_file(
+        self,
+        transition: Transition,
+        stored: StoredRun,
+        event: Event,
+        address: Address,
+        employee_id: EmployeeId,
+    ) -> None:
+        """A file that closes the step must not be answered with "нажмите «Готово»"."""
+        moved_on = transition.state.step_id != stored.state.step_id
+        text = (
+            self._executor.file_advanced_text()
+            if moved_on
+            else self._executor.file_received_text()
+        )
+        await self._act(
+            (Action(kind=ActionKind.SEND, text=text),),
+            address,
+            employee_id,
+            self._now().date(),
+            question=None,
+        )
 
     async def _audit_movement(
         self,

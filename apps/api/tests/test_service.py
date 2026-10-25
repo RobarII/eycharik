@@ -1059,3 +1059,26 @@ async def test_a_question_at_a_survey_step_is_answered_and_the_step_waits() -> N
     assert answerer.calls == [("Какая у меня зарплата?", NOW.date())]
     assert messaging.sent[-1].text == answerer.text
     assert next(iter(runs.runs.values())).state.step_id == "day_three_survey"
+
+
+async def test_a_file_that_closes_the_step_does_not_ask_for_the_button() -> None:
+    """Live 2026-10-25: the file moved the run on, then the bot said "нажмите «Готово»"."""
+    service, runs, messaging, _, _ = build(scenario_id="onboarding_plant")
+    await runs.create(
+        replace(
+            stored_run(step_id="documents_checklist"),
+            state=replace(
+                stored_run(step_id="documents_checklist").state,
+                scenario_id="onboarding_plant",
+            ),
+        )
+    )
+
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.FILE_RECEIVED, at=NOW, text="Документы прикладываю"),
+    )
+
+    assert messaging.sent[0].text == COPY.file_advanced
+    assert "Готово" not in messaging.sent[0].text

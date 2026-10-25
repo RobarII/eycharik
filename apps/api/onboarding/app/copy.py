@@ -40,6 +40,7 @@ class Copy:
     button_hint: str = ""
     searching: str = ""
     file_received: str = ""
+    file_advanced: str = ""
     source_one: str = ""
     source_many: str = ""
     survey_progress: str = ""
@@ -126,6 +127,7 @@ def load_copy(path: Path) -> Copy:
         button_hint=_text(raw, "button_hint", path),
         searching=_text(raw, "searching", path),
         file_received=_text(raw, "file_received", path),
+        file_advanced=_text(raw, "file_advanced", path),
         source_one=_text(raw, "source_one", path),
         source_many=_text(raw, "source_many", path),
         survey_progress=_text(raw, "survey_progress", path),

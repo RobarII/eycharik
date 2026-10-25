@@ -135,6 +135,9 @@ class ActionExecutor:
     def post_run_benefits_text(self) -> str:
         return self._copy.post_run_benefits
 
+    def file_advanced_text(self) -> str:
+        return self._copy.file_advanced
+
     def file_received_text(self) -> str:
         return self._copy.file_received
 

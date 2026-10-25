@@ -179,7 +179,18 @@
           "$ref": "#/$defs/model"
         },
         "family": {
-          "const": "typesafe-jev"
+          "enum": [
+            "typesafe-jev",
+            "frida-decisions"
+          ],
+          "default": "typesafe-jev",
+          "description": "Диалект провода. `typesafe-jev` говорит System One и требует ключ; `frida-decisions` говорит формат запроса FRIDA и может стоять за локальным сайдкаром без ключа."
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9._/-]*$",
+          "default": "/systemone",
+          "description": "Путь, который добавляется к `CLASSIFY_BASE_URL`. Принадлежит модели, а не развёртыванию: вторая decisions-модель — это профиль, а не ветка в composition root."
         },
         "rubric": {
           "$ref": "#/$defs/rubric"
@@ -198,7 +209,7 @@
         "price_input_rub_per_1k": {
           "type": "number",
           "minimum": 0,
-          "description": "Jev берёт деньги только за входные токены; у профиля classify нет цены выхода."
+          "description": "Цена входа: локальная модель берёт ноль, у Jev платит только вход, цены выхода у профиля classify нет."
         },
         "personal_data": {
           "type": "boolean",

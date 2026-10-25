@@ -1,0 +1,15 @@
+name: local-frida-decisions
+role: classify
+description: "Локальная decisions-модель на своём железе: один энкодерный проход вместо генерации, в контуре по персданным (ADR 0037). Сайдкар — scripts/frida_serve.py."
+note: >
+  ai-forever/FRIDA-Decisions, MIT, 823M, T5-энкодер. Отвечает тем же типом вопросов, что и рубрика
+  sentiment-jev: choice для тона, noul для тегов, поэтому рубрика не меняется. Ключ не нужен: модель
+  на этой машине, ценность входа ноль. Сбой сайдкара уводит в keyword-классификатор, как и сбой Jev.
+family: frida-decisions
+model: frida-decisions
+path: /decisions
+rubric: sentiment-jev@1
+timeout_s: 8.0
+max_retries: 1
+price_input_rub_per_1k: 0.0
+personal_data: true

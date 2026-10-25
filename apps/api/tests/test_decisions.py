@@ -417,3 +417,72 @@ def test_the_classifier_without_an_audit_does_not_need_one() -> None:
     )
 
     assert subject.profile.rubric == "sentiment-jev@1"
+
+
+def frida_payload(*, with_usage: bool = False) -> dict[str, Any]:
+    """What the sidecar returns: a FRIDA answer, no vendor envelope, no input-token count."""
+    payload = answers(usage=None)
+    payload["model"] = "FRIDA-Decisions"
+    payload["margins"] = {"sentiment": {"positive": -3.2, "negative": 1.4}}
+    if with_usage:
+        payload["usage"] = {"state_tokens": 120, "candidates": 12, "backend": "mlx"}
+    return payload
+
+
+async def test_a_local_family_sends_no_authorization_header() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=frida_payload())
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    local = DecisionsClassifier(
+        client=http,
+        endpoint="http://127.0.0.1:8090/v1/decisions",
+        api_key=SecretStr(""),
+        profile=ClassifyProfile(
+            name="frida-test",
+            model="frida-decisions",
+            family="frida-decisions",
+            path="/decisions",
+            rubric="sentiment-jev@1",
+            price_input_rub_per_1k=0.0,
+        ),
+        rubric=rubric(),
+        clock=FrozenClock(NOW),
+        sleep=no_sleep,
+    )
+
+    signal = await local.classify("Доступ не выдали, третий день", source="survey")
+
+    assert "authorization" not in seen[0].headers
+    assert signal.sentiment is Sentiment.NEGATIVE
+    assert SignalTag.ACCESS in signal.tags
+
+
+async def test_a_local_answer_costs_nothing_and_still_audits_the_call() -> None:
+    """A self-hosted model has no input price, so the ledger says zero rather than nothing."""
+    audit = RecordingAudit()
+    http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=frida_payload()))
+    )
+    local = DecisionsClassifier(
+        client=http,
+        endpoint="http://127.0.0.1:8090/v1/decisions",
+        api_key=SecretStr(""),
+        profile=ClassifyProfile(
+            name="frida-test", model="frida-decisions", family="frida-decisions", rubric="sentiment-jev@1"
+        ),
+        rubric=rubric(),
+        audit=audit,
+        clock=FrozenClock(NOW),
+        sleep=no_sleep,
+    )
+
+    await local.classify("Доступ не выдали, третий день", source="survey")
+
+    _, fields = audit.events[0]
+    assert fields["cost_rub"] == 0.0
+    assert fields["input_tokens"] == 0
+    assert fields["provider"] == "decisions"

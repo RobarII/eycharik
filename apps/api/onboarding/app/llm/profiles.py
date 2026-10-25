@@ -299,12 +299,21 @@ def _classify(data: dict[str, Any]) -> ClassifyProfile:
         name=_text(data, "name"),
         model=_text(data, "model"),
         rubric=_text(data, "rubric"),
-        family=_family(data, ("typesafe-jev",), "typesafe-jev"),
+        family=_family(data, ("typesafe-jev", "frida-decisions"), "typesafe-jev"),
+        path=_path(data, "path", "/systemone"),
         timeout_s=_number(data, "timeout_s", _CLASSIFY.timeout_s),
         max_retries=_integer(data, "max_retries", _CLASSIFY.max_retries),
         price_input_rub_per_1k=_number(data, "price_input_rub_per_1k", 0.0),
         personal_data=_flag(data, "personal_data", default=False),
     )
+
+
+def _path(data: dict[str, Any], key: str, default: str) -> str:
+    """An endpoint path: it is joined to a base URL, so a bare word would silently change it."""
+    value = _text_default(data, key, default)
+    if not value.startswith("/") or " " in value:
+        raise ProfileError(f"{key} must start with '/' and contain no spaces, got {value!r}")
+    return value
 
 
 def _text(data: dict[str, Any], key: str) -> str:

@@ -8,7 +8,9 @@ per second to one dialog.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,7 @@ import httpx
 from pydantic import SecretStr
 
 from onboarding.app.channels.max.media import (
+    ImageAssetError,
     asset_path,
     content_type,
     image_attachment,
@@ -56,6 +59,9 @@ class Subscription:
     url: str
     update_types: tuple[str, ...]
     secret: SecretStr
+
+
+log = logging.getLogger(__name__)
 
 
 class MaxClient(Messaging):
@@ -169,6 +175,23 @@ class MaxClient(Messaging):
                 if error.code != ATTACHMENT_NOT_READY:
                     raise
         raise MaxError("MAX did not finish processing the image attachment")
+
+    async def warm_images(self, names: Iterable[str]) -> int:
+        """Upload the bundled step images before anyone asks for them.
+
+        Live 2026-10-24: the first message of a stage waited 0.8–1.4 s for the upload, and the demo
+        shows that message first. Warming moves the cost to the worker's start. A failed upload
+        is not fatal: the send path retries it lazily.
+        """
+        warmed = 0
+        for name in names:
+            try:
+                await self._image_token(name)
+            except (MaxError, ImageAssetError) as error:
+                log.warning("image warmup skipped %s: %s", name, error)
+                continue
+            warmed += 1
+        return warmed
 
     async def _image_token(self, name: str) -> str:
         async with self._image_lock:

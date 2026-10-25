@@ -15,6 +15,7 @@ escalation:
   manual: >-
     Передал вопрос HR вручную — с вами свяжется рекрутер в течение рабочего дня.
 reminder_prefix: "Напоминаем: "
+reminder_soft: "Шаг «{title}» ждёт ответа. Если уже сделали — напишите «готово», я засчитаю."
 completion: >-
   Адаптация завершена. Если останутся вопросы — я на связи, а HR поможет с личными темами.
 help: >-
@@ -49,5 +50,6 @@ source_many: "Источники: {names}"
 survey_progress: "Вопрос {index} из {total}"
 survey_ack: "Записал: {value}"
 survey_ack_open: "Записал, спасибо."
+survey_skipped: "Пропустил этот вопрос."
 stage_progress: "Шаг {index} из {total}."
 post_run_benefits: "Какие льготы и бонусы есть в компании?"

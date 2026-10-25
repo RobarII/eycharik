@@ -241,3 +241,24 @@ async def test_the_stage_notice_names_the_position() -> None:
     executor, _, _, _ = build()
 
     assert executor.stage_progress_text(3, 21) == "Шаг 3 из 21."
+
+
+async def test_a_reminder_is_one_short_line_with_a_way_out() -> None:
+    executor, messaging, _, _ = build()
+    action = Action(kind=ActionKind.SEND, text="Документы", note="reminder_soft")
+
+    await executor.execute(action, ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)))
+
+    assert messaging.sent[0].text == COPY.soft_reminder("Документы")
+    assert "готово" in messaging.sent[0].text
+
+
+async def test_a_skipped_question_is_acknowledged() -> None:
+    executor, messaging, _, _ = build()
+
+    await executor.execute(
+        Action(kind=ActionKind.SEND, text="", note="survey:skipped"),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)),
+    )
+
+    assert messaging.sent[0].text == COPY.survey_skipped

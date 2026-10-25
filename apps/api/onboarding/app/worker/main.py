@@ -9,7 +9,7 @@ import asyncio
 import logging
 import signal
 
-from onboarding.app.container import build_container
+from onboarding.app.container import build_container, warm_scenario_images
 from onboarding.app.db.retention import RetentionPurger
 from onboarding.app.settings import Settings
 from onboarding.app.worker.jobs import JobRunner
@@ -37,6 +37,8 @@ async def run_forever(settings: Settings, stop: asyncio.Event) -> None:
         container.clock,
         days=settings.data_retention_days,
     )
+    warmed = await warm_scenario_images(container)
+    log.info("scenario images warmed: %s", warmed)
     ticks = 0
     next_purge = asyncio.get_running_loop().time() + RETENTION_EVERY_S
     try:

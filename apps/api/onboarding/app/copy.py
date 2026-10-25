@@ -26,6 +26,7 @@ class Copy:
     reminder_prefix: str
     escalation_footer: str
     completion: str
+    reminder_soft: str = ""
     help: str = ""
     unknown_command: str = ""
     ask_question: str = ""
@@ -41,6 +42,7 @@ class Copy:
     survey_progress: str = ""
     survey_ack: str = ""
     survey_ack_open: str = ""
+    survey_skipped: str = ""
     stage_progress: str = ""
     post_run_benefits: str = ""
     post_run_menu: tuple[tuple[str, str], ...] = ()
@@ -74,6 +76,9 @@ class Copy:
     def reminder(self, text: str) -> str:
         return f"{self.reminder_prefix}{text}"
 
+    def soft_reminder(self, title: str) -> str:
+        return self.reminder_soft.format(title=title)
+
     def answer_hint(self, kind: str) -> str:
         """A hint for a rejected survey answer so the same question is not just repeated."""
         hints = self.invalid_answer or {}
@@ -99,6 +104,7 @@ def load_copy(path: Path) -> Copy:
     return Copy(
         escalation=dict(escalation),
         reminder_prefix=reminder_prefix,
+        reminder_soft=_text(raw, "reminder_soft", path),
         escalation_footer=footer,
         completion=completion,
         help=_text(raw, "help", path),
@@ -116,6 +122,7 @@ def load_copy(path: Path) -> Copy:
         survey_progress=_text(raw, "survey_progress", path),
         survey_ack=_text(raw, "survey_ack", path),
         survey_ack_open=_text(raw, "survey_ack_open", path),
+        survey_skipped=_text(raw, "survey_skipped", path),
         stage_progress=_text(raw, "stage_progress", path),
         post_run_benefits=_text(raw, "post_run_benefits", path),
         post_run_menu=(

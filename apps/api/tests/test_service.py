@@ -780,7 +780,7 @@ async def test_a_text_answer_to_a_running_survey_is_recorded_not_answered() -> N
     assert answerer.calls == []
     assert current.state.answers[-1].score == 9
     assert current.state.question_index == 2
-    assert "Записал: 9" in [message.text for message in messaging.sent]
+    assert "Записал: 9 из 10" in [message.text for message in messaging.sent]
     assert current.scheduled is None
 
 

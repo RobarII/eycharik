@@ -320,3 +320,28 @@ def test_a_missing_url_and_a_bad_status_are_named() -> None:
         asyncio.run(files.fetch(InboundFile(token="t")))
     with pytest.raises(FileFetchError, match="status_404"):
         asyncio.run(files.fetch(InboundFile(token="t", url="https://cdn.max.ru/f")))
+
+
+async def test_warmup_uploads_the_images_before_the_first_send(tmp_path: Path) -> None:
+    """The first message of a stage must not pay for the upload (roadmap 2.2)."""
+    (tmp_path / "welcome.jpg").write_bytes(b"jpeg bytes")
+    (tmp_path / "party.jpg").write_bytes(b"jpeg bytes")
+    uploads = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal uploads
+        if request.url.path == "/uploads":
+            return httpx.Response(200, json={"url": "https://upload.test/i", "token": "r"})
+        if request.url.host == "upload.test":
+            uploads += 1
+            return httpx.Response(200, json={"photos": {"photoIds": {"token": "media-token"}}})
+        return httpx.Response(200, json={"message": {"body": {"mid": "mid-1"}}})
+
+    client = build(httpx.MockTransport(handler), assets_dir=tmp_path)
+
+    assert await client.warm_images(["welcome.jpg", "party.jpg", "missing.jpg"]) == 2
+    assert uploads == 2
+    await client.send(
+        OutboundMessage(address=ADDRESS, text="Привет", image="welcome.jpg")
+    )
+    assert uploads == 2  # the send reused the warmed token

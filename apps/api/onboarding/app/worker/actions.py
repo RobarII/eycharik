@@ -132,20 +132,39 @@ class ActionExecutor:
     def _resolve(self, action: Action, context: ActionContext) -> str:
         """Attach the position, the hint or the acknowledgement the copy file words."""
         assert action.text is not None
-        if action.note == "reminder":
+        noted = self._noted(action, context)
+        return noted if noted is not None else self._personal(action.text, context)
+
+    def _noted(self, action: Action, context: ActionContext) -> str | None:
+        """``None`` means the note carries no decoration and the text goes out as written."""
+        note = action.note or ""
+        if note.startswith("reminder"):
+            return self._reminder_note(action, context, note)
+        if note.startswith("survey:"):
+            return self._survey_note(action, context, note)
+        return None
+
+    def _reminder_note(self, action: Action, context: ActionContext, note: str) -> str:
+        assert action.text is not None
+        if note == "reminder":
             return self._copy.reminder(self._personal(action.text, context))
-        if action.note == "survey:ack":
+        return self._copy.soft_reminder(action.text)
+
+    def _survey_note(self, action: Action, context: ActionContext, note: str) -> str | None:
+        assert action.text is not None
+        if note == "survey:skipped":
+            return self._copy.survey_skipped
+        if note == "survey:ack":
             return self._copy.survey_acknowledgement(action.text)
-        if action.note is not None and action.note.startswith("survey:ask:"):
-            _, _, index, total = action.note.split(":")
+        if note.startswith("survey:ask:"):
+            _, _, index, total = note.split(":")
             progress = self._copy.survey_question(int(index), int(total))
             return f"{progress}\n\n{self._personal(action.text, context)}"
-        if action.note is not None and action.note.startswith("survey:repeat"):
-            kind = action.note.rpartition(":")[2]
-            hint = self._copy.answer_hint(kind)
+        if note.startswith("survey:repeat"):
+            hint = self._copy.answer_hint(note.rpartition(":")[2])
             text = self._personal(action.text, context)
             return f"{text}\n\n{hint}" if hint else text
-        return self._personal(action.text, context)
+        return None
 
     def _personal(self, text: str, context: ActionContext) -> str:
         """``{name}`` is the employee's first name: a greeting with no name reads as a mailing."""

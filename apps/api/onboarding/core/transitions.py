@@ -11,6 +11,7 @@ from dataclasses import replace
 from datetime import datetime
 
 from .models import (
+    MAX_SCALE,
     Action,
     ActionKind,
     Button,
@@ -41,6 +42,7 @@ from .survey import needs_reason, parse_answer
 
 MAX_SEND_CHAIN = 32
 SURVEY_BUTTON_PREFIX = "q_"
+SURVEY_SKIP_ID = "q_skip"
 
 
 class ScenarioRunError(RuntimeError):
@@ -245,6 +247,10 @@ def _ask(question: Question, index: int, total: int) -> Action:
 
 
 def _question_keyboard(question: Question) -> Keyboard:
+    if question.kind is QuestionKind.OPEN:
+        # An open question always offers a way out: a person with nothing to add should not have
+        # to invent text to move on.
+        return ((Button(id=SURVEY_SKIP_ID, text="Пропустить"),),)
     if question.kind is not QuestionKind.CHOICE:
         return ()
     return (
@@ -282,6 +288,8 @@ def _record_reason(scenario: Scenario, state: StepState, event: Event, step: Ste
 
 def _record_answer(scenario: Scenario, state: StepState, event: Event, step: Step) -> Transition:
     question = step.questions[state.question_index]
+    if event.button_id == SURVEY_SKIP_ID:
+        return _skip_question(scenario, state, step, event)
     answer = _read_answer(question, event)
     if answer is None:
         return _repeat(state, step, question.id)
@@ -289,6 +297,19 @@ def _record_answer(scenario: Scenario, state: StepState, event: Event, step: Ste
     if needs_reason(question, answer) and question.reason_prompt is not None:
         return _ask_reason(replace(answered, pending_reason=question.id), step)
     return _continue_survey(scenario, answered, step, event)
+
+
+def _skip_question(
+    scenario: Scenario, state: StepState, step: Step, event: Event
+) -> Transition:
+    """Skipping records nothing: a missing answer is more honest than a default one."""
+    moved = _continue_survey(scenario, state, step, event)
+    return Transition(
+        state=moved.state,
+        actions=(Action(kind=ActionKind.SEND, text="", note="survey:skipped"), *moved.actions),
+        reminder=moved.reminder,
+        scheduled=moved.scheduled,
+    )
 
 
 def _ack(question: Question, answer: SurveyAnswer) -> Action:
@@ -302,7 +323,8 @@ def _ack(question: Question, answer: SurveyAnswer) -> Action:
 
 def _ack_value(question: Question, answer: SurveyAnswer) -> str:
     if answer.score is not None:
-        return str(answer.score)
+        # "8 из 10" tells the person what the number means without reading the question again.
+        return f"{answer.score} из {MAX_SCALE}"
     if answer.option_id is not None:
         for option in question.options:
             if option.id == answer.option_id:
@@ -404,12 +426,13 @@ def _on_timeout(scenario: Scenario, state: StepState, event: Event) -> Transitio
         return _idle(state, ActionKind.IGNORE)
 
     if step.timeout.action is TimeoutAction.REMIND:
+        # A reminder is a nudge, not a rerun of the whole step: the person already has that text
+        # above in the chat. One short line names the step and gives the way out.
         action = Action(
             kind=ActionKind.SEND,
-            text=_message(step, state.tone),
-            image=step.image,
+            text=step.title or step.id,
             keyboard=step.keyboard,
-            note="reminder",
+            note="reminder_soft",
         )
     else:
         action = Action(kind=ActionKind.ESCALATE, reason=EscalationReason.TIMEOUT, note=step.id)

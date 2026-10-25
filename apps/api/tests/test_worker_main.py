@@ -74,6 +74,8 @@ class FakeContainer:
     database: object = field(default_factory=object)
     dispatcher: CountingDispatcher = field(default_factory=CountingDispatcher)
     scheduler: CountingScheduler = field(default_factory=CountingScheduler)
+    senders: dict[object, object] = field(default_factory=dict)
+    catalog: object = field(default_factory=object)
 
     async def aclose(self) -> None:
         self.closed += 1

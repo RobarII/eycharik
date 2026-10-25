@@ -63,3 +63,13 @@ def test_the_plant_variant_skips_the_remote_work_question() -> None:
     plant_questions = {q.id for step in plant.steps.values() for q in step.questions}
     assert "remote_work" in office_questions
     assert "remote_work" not in plant_questions
+
+
+def test_the_catalog_lists_every_image_a_scenario_can_send() -> None:
+    """A warmup at start uploads exactly this list, so it must be complete and deduplicated."""
+    images = catalog().images()
+
+    assert images == tuple(sorted(set(images)))
+    assert "welcome.jpg" in images
+    for name in images:
+        assert (ASSETS / name).is_file(), name

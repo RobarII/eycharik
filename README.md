@@ -4,6 +4,57 @@
 кабинет рекрутёра и ответы по закрытой базе знаний компании — с цитатой или эскалацией человеку.
 Сделан для кейса «ИИ-ассистент в MAX» (ООО «Группа ПОЛИПЛАСТИК»).
 
+## Локальная развёртка
+
+Нужен Docker Compose. Для офлайн-демо `.env` не нужен: база, миграции, API, воркер и кабинет
+поднимаются с детерминированным провайдером.
+
+```bash
+make review
+```
+
+Кабинет — <http://localhost:3000>, демо-токен — `dev-hr-token`. Если `make` нет:
+
+```bash
+docker compose up -d --build
+docker compose run --rm api python -m onboarding.cli ingest
+docker compose run --rm api python -m onboarding.cli demo --reset --yes
+```
+
+### Если нужен реальный MAX или модель
+
+Скопируйте `.env.example` в `.env` и измените только нужные значения:
+
+```bash
+cp .env.example .env
+```
+
+| Переменная | Что поставить |
+|---|---|
+| `MAX_BOT_TOKEN` | токен бота из «MAX для бизнеса» |
+| `MAX_WEBHOOK_SECRET` | тот же секрет, что передаёте при подписке на вебхук |
+| `LLM_PROVIDER` | `openai` или `gigachat` вместо `extractive` |
+| `LLM_PROFILE` | профиль из `apps/api/model-profiles/answer/` |
+| `LLM_BASE_URL`, `LLM_API_KEY` | адрес и ключ выбранного провайдера |
+| `EMBED_PROVIDER`, `EMBED_PROFILE` | провайдер и профиль эмбеддингов, если не локальный `hashing` |
+| `ADMIN_TOKENS` | свои длинные токены вместо демо-токенов для любого публичного стенда |
+
+Для запуска API вне Compose используйте `DATABASE_URL` с портом `55432` (его публикует
+compose-проект). Для `make verify` нужна отдельная тестовая база:
+
+```bash
+docker compose exec -T postgres createdb -U onboarding onboarding_test
+export ONBOARDING_TEST_DATABASE=postgresql+asyncpg://onboarding:onboarding@localhost:55432/onboarding_test
+```
+
+После изменения `.env` перезапустите стек:
+
+```bash
+docker compose up -d --build
+```
+
+Живой стенд, привязка MAX-аккаунта и ручная проверка — в [docs/live-demo.md](docs/live-demo.md).
+
 ## Ссылки
 
 | Что | Где |

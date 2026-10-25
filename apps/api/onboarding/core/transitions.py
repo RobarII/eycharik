@@ -344,7 +344,12 @@ def _ask_reason(state: StepState, step: Step) -> Transition:
 
 
 def _continue_survey(
-    scenario: Scenario, state: StepState, step: Step, event: Event
+    scenario: Scenario,
+    state: StepState,
+    step: Step,
+    event: Event,
+    *,
+    acknowledge: bool = True,
 ) -> Transition:
     next_index = state.question_index + 1
     if next_index >= len(step.questions):
@@ -354,9 +359,14 @@ def _continue_survey(
         return _leave(scenario, cleared, step.next_step, event.at)
     advanced = replace(state, question_index=next_index, pending_reason=None)
     following = _ask(step.questions[next_index], next_index + 1, len(step.questions))
+    # A skipped question has nothing of its own to acknowledge; acknowledging the previous answer
+    # again would read as a duplicate (live 2026-10-25).
+    acked: tuple[Action, ...] = ()
+    if acknowledge and state.answers:
+        acked = (_ack(step.questions[next_index - 1], state.answers[-1]),)
     return Transition(
         state=advanced,
-        actions=(_ack(step.questions[next_index - 1], state.answers[-1]), following),
+        actions=(*acked, following),
         reminder=KeepReminder(),
     )
 

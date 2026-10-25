@@ -761,6 +761,7 @@ def test_an_open_question_offers_a_way_out(survey: Scenario) -> None:
 
 def test_skipping_an_open_question_records_nothing(survey: Scenario) -> None:
     state = replace(_survey_state(), answers=(), question_index=2)
+    # no previous answer means nothing to acknowledge twice
 
     skipped = advance(
         survey,
@@ -771,3 +772,19 @@ def test_skipping_an_open_question_records_nothing(survey: Scenario) -> None:
     assert skipped.state.answers == ()
     assert skipped.state.step_id == "done"
     assert [action.note for action in skipped.actions] == ["survey:skipped", None]
+
+
+
+def test_a_skip_does_not_repeat_the_previous_acknowledgement(survey: Scenario) -> None:
+    """Live 2026-10-25: skipping answered with "Записал: 8 из 10" again, as if a second answer."""
+    answered = advance(
+        survey, _survey_state(), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="8")
+    )
+    skipped = advance(
+        survey,
+        replace(answered.state, question_index=2),
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="q_skip"),
+    )
+
+    assert [action.note for action in skipped.actions] == ["survey:skipped", None]
+    assert all("Записал" not in (action.text or "") for action in skipped.actions)

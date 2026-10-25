@@ -63,7 +63,9 @@ wait_for() {
 }
 
 stop_one() {
-    local name=$1 port=$2 pidfile="$RUN_DIR/${name}.pid"
+    local name=$1
+    local port=$2
+    local pidfile="$RUN_DIR/${name}.pid"
     if [ -f "$pidfile" ]; then
         local pid
         pid=$(cat "$pidfile")

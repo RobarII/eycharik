@@ -42,7 +42,7 @@ start() {
     fi
     mkdir -p "$RUN_DIR"
     cd "$ROOT"
-    FRIDA_PKG="$FRIDA_PKG" uv run --with "$FRIDA_PKG" python scripts/frida_serve.py \
+    uv run --with "$FRIDA_PKG" python scripts/frida_serve.py \
         --backend "$FRIDA_BACKEND" --dtype "$FRIDA_DTYPE" \
         --model "$FRIDA_MODEL" --port "$FRIDA_PORT" >"$LOG" 2>&1 &
     echo $! >"$RUN_DIR/pid"

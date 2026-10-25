@@ -438,11 +438,13 @@ def _on_timeout(scenario: Scenario, state: StepState, event: Event) -> Transitio
     if step.timeout.action is TimeoutAction.REMIND:
         # A reminder is a nudge, not a rerun of the whole step: the person already has that text
         # above in the chat. One short line names the step and gives the way out.
+        # "Напишите «готово»" only holds where text is an answer; a button step needs a button.
+        note = "reminder_soft" if step.expects is Expects.MESSAGE else "reminder_soft_button"
         action = Action(
             kind=ActionKind.SEND,
             text=step.title or step.id,
             keyboard=step.keyboard,
-            note="reminder_soft",
+            note=note,
         )
     else:
         action = Action(kind=ActionKind.ESCALATE, reason=EscalationReason.TIMEOUT, note=step.id)
@@ -486,6 +488,14 @@ def _on_message(scenario: Scenario, state: StepState, event: Event) -> Transitio
         target = step.routes.get("default")
         if target is not None:
             return _leave(scenario, state, target, event.at)
+    if step.expects is Expects.BUTTON and is_confirmation(event.text):
+        # Live 2026-10-25: "готово" at the tone question went to the knowledge base and came back
+        # as "не нашёл ответа". A confirmation is not a question here; point at the buttons.
+        return Transition(
+            state=state,
+            actions=(Action(kind=ActionKind.SEND, text="", note="step:button_hint"),),
+            reminder=KeepReminder(),
+        )
     # Free text is not a button. A problem report or a question must reach the assistant, not be
     # mistaken for "готово" and skip the next month of the timeline.
     return _idle(state, ActionKind.ANSWER)

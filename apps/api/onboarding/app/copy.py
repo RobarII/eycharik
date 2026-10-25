@@ -27,6 +27,7 @@ class Copy:
     escalation_footer: str
     completion: str
     reminder_soft: str = ""
+    reminder_soft_button: str = ""
     help: str = ""
     help_demo: str = ""
     unknown_command: str = ""
@@ -36,6 +37,7 @@ class Copy:
     stage_waiting: str = ""
     invalid_answer: dict[str, str] | None = None
     not_understood: str = ""
+    button_hint: str = ""
     searching: str = ""
     file_received: str = ""
     source_one: str = ""
@@ -80,6 +82,9 @@ class Copy:
     def soft_reminder(self, title: str) -> str:
         return self.reminder_soft.format(title=title)
 
+    def soft_reminder_button(self, title: str) -> str:
+        return self.reminder_soft_button.format(title=title)
+
     def answer_hint(self, kind: str) -> str:
         """A hint for a rejected survey answer so the same question is not just repeated."""
         hints = self.invalid_answer or {}
@@ -106,6 +111,7 @@ def load_copy(path: Path) -> Copy:
         escalation=dict(escalation),
         reminder_prefix=reminder_prefix,
         reminder_soft=_text(raw, "reminder_soft", path),
+        reminder_soft_button=_text(raw, "reminder_soft_button", path),
         escalation_footer=footer,
         completion=completion,
         help=_text(raw, "help", path),
@@ -117,6 +123,7 @@ def load_copy(path: Path) -> Copy:
         stage_waiting=_text(raw, "stage_waiting", path),
         invalid_answer=_hints(raw, path),
         not_understood=_text(raw, "not_understood", path),
+        button_hint=_text(raw, "button_hint", path),
         searching=_text(raw, "searching", path),
         file_received=_text(raw, "file_received", path),
         source_one=_text(raw, "source_one", path),

@@ -142,7 +142,8 @@ def test_timeout_reminds_once_and_cancels_the_timer(scenario: Scenario, state: S
 
     assert transition.state == state
     assert [action.kind for action in transition.actions] == [ActionKind.SEND]
-    assert transition.actions[0].note == "reminder_soft"
+    # The checklist step waits for a button, so the nudge points at the buttons, not at "готово".
+    assert transition.actions[0].note == "reminder_soft_button"
     assert isinstance(transition.reminder, CancelReminder)
 
 
@@ -788,3 +789,26 @@ def test_a_skip_does_not_repeat_the_previous_acknowledgement(survey: Scenario) -
 
     assert [action.note for action in skipped.actions] == ["survey:skipped", None]
     assert all("Записал" not in (action.text or "") for action in skipped.actions)
+
+
+def test_a_confirmation_at_a_button_step_does_not_reach_the_answerer(
+    scenario: Scenario,
+) -> None:
+    """Live 2026-10-25: "готово" at the tone question came back as "не нашёл ответа"."""
+    state = StepState(
+        run_id=RunId("run-1"),
+        employee_id="employee-1",
+        scenario_id=scenario.id,
+        scenario_version=scenario.version,
+        step_id="checklist",
+        entered_at=NOW,
+    )
+
+    transition = advance(
+        scenario,
+        state,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="готово"),
+    )
+
+    assert [action.note for action in transition.actions] == ["step:button_hint"]
+    assert transition.state == state

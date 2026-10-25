@@ -262,3 +262,28 @@ async def test_a_skipped_question_is_acknowledged() -> None:
     )
 
     assert messaging.sent[0].text == COPY.survey_skipped
+
+
+async def test_a_reminder_at_a_button_step_points_at_the_buttons() -> None:
+    """The "напишите «готово»" promise is false where only a button counts (live 2026-10-25)."""
+    executor, messaging, _, _ = build()
+
+    await executor.execute(
+        Action(kind=ActionKind.SEND, text="Знакомство", note="reminder_soft_button"),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)),
+    )
+
+    assert messaging.sent[0].text == COPY.soft_reminder_button("Знакомство")
+    assert "кнопкой" in messaging.sent[0].text
+    assert "готово" not in messaging.sent[0].text
+
+
+async def test_a_confirmation_at_a_button_step_hints_at_the_buttons() -> None:
+    executor, messaging, _, _ = build()
+
+    await executor.execute(
+        Action(kind=ActionKind.SEND, text="", note="step:button_hint"),
+        ActionContext(address=ADDRESS, on_date=date(2026, 10, 20)),
+    )
+
+    assert messaging.sent[0].text == COPY.button_hint

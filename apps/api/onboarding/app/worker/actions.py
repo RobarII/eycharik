@@ -151,12 +151,16 @@ class ActionExecutor:
             return self._reminder_note(action, context, note)
         if note.startswith("survey:"):
             return self._survey_note(action, context, note)
+        if note == "step:button_hint":
+            return self._copy.button_hint
         return None
 
     def _reminder_note(self, action: Action, context: ActionContext, note: str) -> str:
         assert action.text is not None
         if note == "reminder":
             return self._copy.reminder(self._personal(action.text, context))
+        if note == "reminder_soft_button":
+            return self._copy.soft_reminder_button(action.text)
         return self._copy.soft_reminder(action.text)
 
     def _survey_note(self, action: Action, context: ActionContext, note: str) -> str | None:

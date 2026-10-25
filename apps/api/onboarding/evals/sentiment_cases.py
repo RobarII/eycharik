@@ -61,6 +61,8 @@ def load_cases(path: Path, *, split: str = "all") -> tuple[Case, ...]:
     if dupes:
         raise SentimentSetError(f"{path}: duplicate case text: {', '.join(sorted(dupes))}")
     return tuple(cases)
+
+
 def _case(item: Any, path: Path, seen: set[str]) -> Case:
     if not isinstance(item, dict):
         raise SentimentSetError(f"{path}: every case must be a mapping")
@@ -98,6 +100,8 @@ def _case(item: Any, path: Path, seen: set[str]) -> Case:
         expect_escalation=escalate,
         note=note,
     )
+
+
 def _tags(raw: Any, case_id: str, path: Path) -> tuple[SignalTag, ...]:
     if not isinstance(raw, list):
         raise SentimentSetError(f"{path}: {case_id}: tags must be a list")
@@ -116,6 +120,8 @@ def _tags(raw: Any, case_id: str, path: Path) -> tuple[SignalTag, ...]:
             "the classifier cannot return more"
         )
     return tuple(tags)
+
+
 def _duplicate_texts(cases: list[Case]) -> set[str]:
     seen: dict[str, str] = {}
     dupes: set[str] = set()

@@ -159,9 +159,7 @@ def test_rejects_a_broken_rubric(mutate: Any, tmp_path: Path) -> None:
     mutate(body)
     directory = tmp_path / "sentiment-jev"
     directory.mkdir()
-    (directory / "v1.yaml").write_text(
-        yaml.safe_dump(body, allow_unicode=True), encoding="utf-8"
-    )
+    (directory / "v1.yaml").write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
 
     with pytest.raises(RubricError):
         rubrics(tmp_path).load("sentiment-jev@1")
@@ -224,9 +222,7 @@ def test_confidence_defaults_to_the_winning_probability() -> None:
         {"answers": {}},
         answers(choice="angry"),
         answers(probabilities={"positive": 0.5, "neutral": 0.5, "negative": 0.0, "unknown": 0.0}),
-        answers(
-            probabilities={"positive": 0.5, "neutral": 0.5, "negative": 0.5, "unknown": 0.0}
-        ),
+        answers(probabilities={"positive": 0.5, "neutral": 0.5, "negative": 0.5, "unknown": 0.0}),
         answers(noul={"tag_access": 1.4}),
         answers(noul={"tag_access": "high"}),
         {"answers": {"sentiment": {"type": "noul", "noul": 0.5}}},
@@ -417,3 +413,61 @@ def test_the_classifier_without_an_audit_does_not_need_one() -> None:
     )
 
     assert subject.profile.rubric == "sentiment-jev@1"
+
+
+def frida_payload(*, with_usage: bool = False) -> dict[str, Any]:
+    """What the sidecar returns: a FRIDA answer, no vendor envelope, no input-token count."""
+    payload = answers(usage=None)
+    payload["model"] = "FRIDA-Decisions"
+    payload["margins"] = {"sentiment": {"positive": -3.2, "negative": 1.4}}
+    if with_usage:
+        payload["usage"] = {"state_tokens": 120, "candidates": 12, "backend": "mlx"}
+    return payload
+
+
+def local_classifier(handler: Any, *, audit: RecordingAudit | None = None) -> DecisionsClassifier:
+    return DecisionsClassifier(
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        endpoint="http://127.0.0.1:8090/v1/decisions",
+        api_key=SecretStr(""),
+        profile=ClassifyProfile(
+            name="frida-test",
+            model="frida-decisions",
+            family="frida-decisions",
+            path="/decisions",
+            rubric="sentiment-jev@1",
+        ),
+        rubric=rubric(),
+        audit=audit,
+        clock=FrozenClock(NOW),
+        sleep=no_sleep,
+    )
+
+
+async def test_a_local_family_sends_no_authorization_header() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=frida_payload())
+
+    signal = await local_classifier(handler).classify("Доступ не выдали", source="survey")
+
+    assert "authorization" not in seen[0].headers
+    assert signal.sentiment is Sentiment.NEGATIVE
+    assert SignalTag.ACCESS in signal.tags
+
+
+async def test_a_local_answer_costs_nothing_and_still_audits_the_call() -> None:
+    """A self-hosted model has no input price, so the ledger says zero rather than nothing."""
+    audit = RecordingAudit()
+    local = local_classifier(
+        lambda _: httpx.Response(200, json=frida_payload(with_usage=True)), audit=audit
+    )
+
+    await local.classify("Доступ не выдали", source="survey")
+
+    _, fields = audit.events[0]
+    assert fields["cost_rub"] == 0.0
+    assert fields["input_tokens"] == 0
+    assert fields["provider"] == "decisions"

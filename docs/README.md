@@ -77,6 +77,7 @@
 | [Активная версия промпта — это старший файл, а не константа](decisions/0034-prompt-version-is-the-newest-file.md) | Почему номер версии читается из каталога промптов, и как теперь выглядит откат. | `p4ulbr4dl3y` | 2026-10-24 |
 | [Задержка гейтится только на контуре, допустимом для персональных данных](decisions/0035-latency-gate-only-on-the-personal-data-contour.md) | Почему p95 демо-шлюза остаётся числом в отчёте, но не гейтом, и как профиль модели объявляет свой контур. | `p4ulbr4dl3y` | 2026-10-24 |
 | [Пересчёт артефакта вместо повторного прогона](decisions/0036-regrade-the-artifact-instead-of-rerunning.md) | Почему артефакт хранит текст ответа и сырой ответ модели, что пересчитывает --regrade, и почему пустая метрика печатается как «-», а не как ноль. | `p4ulbr4dl3y` | 2026-10-24 |
+| [Локальная decisions-модель входит вторым семейством, но не заменяет Jev](decisions/0037-local-decisions-model.md) | FRIDA-Decisions как второй диалект classify-профиля, сайдкар для Apple Silicon, и почему по измерению он остаётся опцией, а не умолчанием. | `p4ulbr4dl3y` | 2026-10-25 |
 
 ## Прогоны и восстановление
 
@@ -169,12 +170,14 @@
 - [Оценка 2026-10-24: 155 кейсов на стеке qwen3 + deepseek](measurements/2026-10-24-eval-full-qwen-stack-v2.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: 155 кейсов на стеке qwen3 + deepseek, промпт v8](measurements/2026-10-24-eval-full-qwen-stack-v3.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: итоговые числа на 158 кейсах](measurements/2026-10-24-eval-regrade-qwen-stack-final.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: дельта переранжирования bge-reranker-v2-m3 на Metal](measurements/2026-10-24-eval-rerank-bge-reranker-v2-m3-local-metal.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: прогон поиск acl matrix](measurements/2026-10-24-eval-retrieval-acl-matrix.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-bm25-off](measurements/2026-10-24-eval-retrieval-arm-bm25-off.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-bm25-on](measurements/2026-10-24-eval-retrieval-arm-bm25-on.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-contextual-on](measurements/2026-10-24-eval-retrieval-arm-contextual-on.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-plain](measurements/2026-10-24-eval-retrieval-arm-plain.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: arm-qwen3-rerank-8b](measurements/2026-10-24-eval-retrieval-arm-qwen3-rerank-8b.md) — проверен 2026-10-24
+- [Оценка 2026-10-24: поиск на bge-m3 локально на Metal](measurements/2026-10-24-eval-retrieval-bge-m3-local-metal.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: лексическая ветка OR с весом 0.5](measurements/2026-10-24-eval-retrieval-lexical-after-weighted.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: лексическая ветка с OR](measurements/2026-10-24-eval-retrieval-lexical-after.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: лексическая ветка как есть](measurements/2026-10-24-eval-retrieval-lexical-before.md) — проверен 2026-10-24
@@ -192,6 +195,7 @@
 - [Оценка 2026-10-24: бюджет токенов](measurements/2026-10-24-token-budget.md) — проверен 2026-10-24
 - [Живая проверка UX-правок в MAX](measurements/2026-10-24-ux-polish-live.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: смоук канала VK](measurements/2026-10-24-vk-channel-smoke.md) — проверен 2026-10-24
+- [Оценка риска: decisions, test](measurements/2026-10-25-sentiment-decisions.md) — проверен 2026-10-25
 
 ## Инциденты
 

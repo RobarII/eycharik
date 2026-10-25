@@ -46,6 +46,8 @@ class CaseResult:
     @property
     def matched_tags(self) -> tuple[SignalTag, ...]:
         return tuple(tag for tag in self.case.tags if tag in self.signal.tags)
+
+
 @dataclass(frozen=True, slots=True)
 class Interval:
     low: float
@@ -53,6 +55,8 @@ class Interval:
 
     def render(self) -> str:
         return f"[{self.low:.2f}, {self.high:.2f}]"
+
+
 @dataclass(frozen=True, slots=True)
 class Comparison:
     """One paired bootstrap between two runs of the same set."""
@@ -64,6 +68,8 @@ class Comparison:
     interval: Interval
     p_value: float
     paired_cases: int
+
+
 @dataclass(frozen=True, slots=True)
 class Report:
     provider: str
@@ -263,6 +269,8 @@ class Report:
         return _one_per_case(
             [result for result in self.escalation_cases if not result.level_escalates]
         )
+
+
 def degraded_beyond(report: Report, limit: float) -> bool:
     """A run is unusable when the provider, not the model, decided most of the verdicts.
 
@@ -270,6 +278,8 @@ def degraded_beyond(report: Report, limit: float) -> bool:
     outage: every call after it degrades to keywords, and the numbers stop describing the model.
     """
     return report.infra_fallback_rate > limit
+
+
 def _wilson(share: float, total: int, z: float = Z_95) -> Interval:
     """Wilson score interval: honest even when the share is near 0 or 1, and at small n."""
     if total <= 0:
@@ -280,8 +290,12 @@ def _wilson(share: float, total: int, z: float = Z_95) -> Interval:
     low = max(0.0, centre - spread / denominator)
     high = min(1.0, centre + spread / denominator)
     return Interval(low, high)
+
+
 def _f1(precision: float, recall: float) -> float:
     return 2.0 * precision * recall / (precision + recall) if precision + recall else 0.0
+
+
 def _one_per_case(results: list[CaseResult]) -> tuple[CaseResult, ...]:
     """A repeated run fails the same case once; a table with duplicates hides the count."""
     seen: set[str] = set()
@@ -292,20 +306,28 @@ def _one_per_case(results: list[CaseResult]) -> tuple[CaseResult, ...]:
         seen.add(result.case.id)
         unique.append(result)
     return tuple(unique)
+
+
 def _ratio(numerator: float, denominator: float) -> float:
     return numerator / denominator if denominator else 0.0
+
+
 def _percentile(values: list[float], quantile: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
     index = min(len(ordered) - 1, math.ceil(quantile * len(ordered)) - 1)
     return ordered[index]
+
+
 def _correctness(report: Report) -> dict[str, bool]:
     """One boolean per case id, repetitions collapsed to a majority where they disagree."""
     votes: dict[str, list[bool]] = {}
     for result in report.results:
         votes.setdefault(result.case.id, []).append(result.sentiment_ok)
     return {case_id: sum(values) * 2 >= len(values) for case_id, values in votes.items()}
+
+
 def compare_reports(
     baseline: Report,
     candidate: Report,
@@ -347,6 +369,8 @@ def compare_reports(
         p_value=_ratio(sum(delta <= 0 for delta in deltas), rounds),
         paired_cases=len(shared),
     )
+
+
 def load_artifact(path: Path) -> Report:
     """Read a run written by ``--write``. No model, no network: the comparison is free."""
     if not path.is_file():

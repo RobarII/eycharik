@@ -5,7 +5,8 @@ questions, so the rubric in ``docs/prompts/sentiment-jev/`` is the prompt and th
 transports and validates. Nothing here knows a vendor: the endpoint, model, rubric, envelope, and
 price come from a ``classify`` profile (``apps/api/model-profiles/classify/<name>.yaml``), so a
 second decisions model is a new profile plus an eval run, not a branch in the composition root.
-The shipped profiles point at TypeSafe Jev, which speaks the System One wire shape below.
+The question shape is shared by two dialects — TypeSafe Jev and ``frida-decisions`` (ADR 0037) —
+and they differ in exactly one thing this module cares about: a local sidecar has no key to send.
 
 A malformed answer degrades to the keyword classifier, exactly like a broken chat completion does
 in ``sentiment.py``.
@@ -98,8 +99,7 @@ def _choice(value: Any, criteria: tuple[str, ...]) -> dict[str, Any]:
     if not isinstance(raw, dict) or set(raw) != set(criteria):
         raise DecisionsFormatError("sentiment probabilities must cover every option")
     probabilities = {
-        key: _unit_interval(probability, f"probability {key!r}")
-        for key, probability in raw.items()
+        key: _unit_interval(probability, f"probability {key!r}") for key, probability in raw.items()
     }
     if abs(sum(probabilities.values()) - 1.0) > _PROBABILITY_TOLERANCE:
         raise DecisionsFormatError("sentiment probabilities must sum to 1")
@@ -212,11 +212,7 @@ class DecisionsClassifier:
         )
 
     async def _ask(self, state: str) -> tuple[Any, float]:
-        headers = {
-            "Authorization": f"Bearer {self._api_key.get_secret_value()}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
+        headers = self._headers()
         try:
             payload, elapsed_s = await self._transport.call(
                 prepare=lambda: self._prepare(headers, self._body(state)),
@@ -232,9 +228,16 @@ class DecisionsClassifier:
             raise DecisionsUnavailableError(f"decisions request failed: {error}") from None
         return payload, elapsed_s
 
-    async def _prepare(
-        self, headers: dict[str, str], body: dict[str, object]
-    ) -> PreparedRequest:
+    def _headers(self) -> dict[str, str]:
+        """Credentials follow the family: a local sidecar is not authenticated, and an empty
+        ``Authorization: Bearer`` header reads like a misconfigured one in the server's log."""
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        key = self._api_key.get_secret_value()
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
+
+    async def _prepare(self, headers: dict[str, str], body: dict[str, object]) -> PreparedRequest:
         return PreparedRequest(url=self._endpoint, headers=headers, body=body)
 
     def _body(self, state: str) -> dict[str, object]:

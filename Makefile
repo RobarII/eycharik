@@ -4,7 +4,7 @@ PY := uv run
 
 .DEFAULT_GOAL := check
 
-.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-ocr eval-sentiment eval-lint eval-baseline eval-acl tco run worker up down logs migrate ingest seed fmt docs docs-index admin-install admin-dev admin-build admin-check admin-e2e admin-e2e-stack security prod-config prod-up smoke deploy-remote backup restore
+.PHONY: install check verify verify-demo review doctor demo demo-live demo-data demo-data-del nuke lint types arch test test-cov test-integration eval eval-retrieval eval-rerank eval-ocr eval-sentiment eval-lint eval-baseline eval-acl tco run worker up down logs migrate ingest seed fmt docs docs-index admin-install admin-dev admin-build admin-check admin-e2e admin-e2e-stack security prod-config prod-up smoke deploy-remote backup restore
 
 COVERAGE_MIN ?= 85
 
@@ -88,6 +88,9 @@ eval:
 
 eval-retrieval:
 	$(PY) python -m onboarding.evals --retrieval-only --write $(ARGS)
+
+eval-rerank:                        # rerank on its own: no generation, needs a reranker profile
+	$(PY) python -m onboarding.evals.rerank --write $(ARGS)
 
 eval-acl:                           # every (viewer, document) pair; no provider key, no generation
 	$(PY) python -m onboarding.evals.acl --write $(ARGS)

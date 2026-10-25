@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from onboarding.app.settings import Settings
 from onboarding.core.models import Sentiment
-from onboarding.evals.artifact import commit_hash
+from onboarding.evals.artifact import commit_hash, frontmatter
 
 if TYPE_CHECKING:
     from onboarding.evals.sentiment_cases import Case
@@ -36,6 +36,13 @@ def render_markdown(
         "sentiment_accuracy": report.sentiment_accuracy_ci,
         "escalation_recall": report.escalation_recall_ci,
     }
+    head = frontmatter(
+        f"Оценка риска: {report.provider}, {report.split}",
+        f"{len(cases)} кейсов, sentiment_accuracy {report.sentiment_accuracy:.3f}, "
+        f"tag_f1 {report.tag_f1:.3f}, escalation_recall {report.escalation_recall:.3f}; "
+        "команда и коммит в шапке.",
+        on_date=datetime.now(UTC).date(),
+    )
     lines = [
         f"# Оценка риска — {report.provider}",
         "",
@@ -171,7 +178,8 @@ def render_markdown(
                 f"{failure.signal.sentiment.value} | {tags} |"
             )
     lines.append("")
-    return "\n".join(lines)
+    return head + "\n".join(lines)
+
 
 def _comparison_markdown(comparison: Comparison) -> str:
     verdict = (
@@ -191,10 +199,12 @@ def _comparison_markdown(comparison: Comparison) -> str:
         ]
     )
 
+
 def _split_counts(cases: tuple[Case, ...]) -> str:
     dev = sum(1 for case in cases if case.split == "dev")
     test = len(cases) - dev
     return f"dev {dev}, test {test}"
+
 
 def render_artifact(report: Report, *, command: str) -> str:
     header = {

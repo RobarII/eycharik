@@ -278,8 +278,7 @@ def _write(
     if getattr(args, "regrade", None) is not None:
         note = (
             "пересчёт артефакта: вызовов провайдера нет, вердикты по тексту ответа пересчитаны, "
-            "`context_fragment_coverage` в пересчёте отсутствует"
-            + (f"; {note}" if note else "")
+            "`context_fragment_coverage` в пересчёте отсутствует" + (f"; {note}" if note else "")
         )
     if settings.llm_provider == "extractive":
         note = (

@@ -63,9 +63,7 @@ def build(
 
 
 def decisions_answers(choice: str = "negative") -> dict[str, Any]:
-    rubric = RubricLibrary(PROMPTS, CONTRACTS / "jev-rubric.schema.json").load(
-        "sentiment-jev@1"
-    )
+    rubric = RubricLibrary(PROMPTS, CONTRACTS / "jev-rubric.schema.json").load("sentiment-jev@1")
     return {
         "answers": {
             "sentiment": {
@@ -128,9 +126,7 @@ def test_the_environment_can_move_the_decisions_provider_to_another_rubric(
     directory = tmp_path / "sentiment-jev"
     directory.mkdir()
     source = (PROMPTS / "sentiment-jev" / "v1.yaml").read_text(encoding="utf-8")
-    (directory / "v2.yaml").write_text(
-        source.replace("version: 1", "version: 2"), encoding="utf-8"
-    )
+    (directory / "v2.yaml").write_text(source.replace("version: 1", "version: 2"), encoding="utf-8")
 
     choice = build(
         "decisions",
@@ -231,9 +227,7 @@ def test_the_code_limit_matches_the_sentiment_contract() -> None:
 
 
 def test_the_shipped_rubric_fits_the_code_limit() -> None:
-    rubric = yaml.safe_load(
-        (PROMPTS / "sentiment-jev" / "v1.yaml").read_text(encoding="utf-8")
-    )
+    rubric = yaml.safe_load((PROMPTS / "sentiment-jev" / "v1.yaml").read_text(encoding="utf-8"))
 
     assert rubric["max_tags"] <= MAX_TAGS
 
@@ -294,16 +288,12 @@ def test_a_named_provider_pins_the_path_and_keeps_its_own_strictness() -> None:
     )
     assert (
         resolve_provider(
-            settings(
-                sentiment_provider="prompt", llm_api_key=SecretStr("k"), llm_profile="p"
-            )
+            settings(sentiment_provider="prompt", llm_api_key=SecretStr("k"), llm_profile="p")
         )
         == "prompt"
     )
     assert (
-        resolve_provider(
-            settings(sentiment_provider="decisions", classify_api_key=SecretStr("k"))
-        )
+        resolve_provider(settings(sentiment_provider="decisions", classify_api_key=SecretStr("k")))
         == "decisions"
     )
 
@@ -355,3 +345,45 @@ async def test_a_silent_prompt_provider_records_no_price_rather_than_zero() -> N
 
     _, fields = audit.events[0]
     assert fields["cost_usd"] is None
+
+
+async def test_a_local_decisions_family_needs_no_key_and_takes_its_path_from_the_profile() -> None:
+    """ADR 0037: the credential belongs to the family, the path to the model, not to this file."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=decisions_answers())
+
+    choice = build(
+        "decisions",
+        classify_profile="local-frida-decisions",
+        classify_base_url="http://127.0.0.1:8090/v1",
+        http=client(handler),
+    )
+
+    assert choice.provider == "decisions"
+    assert choice.model == "frida-decisions"
+    signal = await choice.classifier.classify(TEXT, source="survey:manager")
+
+    assert str(seen[0].url) == "http://127.0.0.1:8090/v1/decisions"
+    assert "authorization" not in seen[0].headers
+    assert signal.sentiment.value == "negative"
+
+
+async def test_the_vendor_family_still_sends_its_key_and_asks_for_its_own_path() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json=decisions_answers())
+
+    choice = build(
+        "decisions",
+        classify_api_key=SecretStr("classify"),
+        http=client(handler),
+    )
+    await choice.classifier.classify(TEXT, source="survey:manager")
+
+    assert str(seen[0].url) == "https://api.typesafe.ai/v1/systemone"
+    assert seen[0].headers["authorization"] == "Bearer classify"

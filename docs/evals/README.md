@@ -307,6 +307,27 @@ Contextual-поиск — один ingest и один прогон: `CONTEXTUAL_
 в `kb_chunks.context` и эмбеддит `context + text`; ветка затем меряет, оправдывает ли префикс своё
 место. ADR 0016 остаётся **предложенным**, пока парный интервал не исключит ноль.
 
+## Переранжирование отдельно от поиска
+
+`--retrieval-only` зовёт базу знаний напрямую, поэтому реранкер туда не попадает: прогон с
+реранком и прогон без него дают одну и ту же таблицу, и разница между ними не видна. `make
+eval-rerank` меряет ровно эту стадию: `search(30)` -> `rerank(top_n=5)`, `recall@5` и `MRR` до и
+после, латентность вызова и число переставленных кейсов.
+
+```bash
+make eval-rerank ARGS="--label bge-reranker-v2-m3"
+```
+
+Гейта нет: реранкер — улучшение, а не зависимость (ADR 0008), отказ оставляет гибридный порядок.
+`MRR` до реранка и есть этот запасной вариант; кейсы с ошибкой вызова считаются отдельно и в
+качество не входят. Кейсы без `expect_docs` пропускаются: там, где ожидать нечего, ранга нет.
+
+Локальная пара «эмбеддер + реранкер» поднимается одной командой: `scripts/local-models.sh start`
+(`stop`, `status`). Она запускает два `llama-server` из `llama.cpp` с флагами, от которых зависит
+векторное пространство и диалект: `--pooling cls --embd-normalize 2` у `bge-m3` и `--reranking` у
+реранкера. Прогон на такой паре —
+[измерение](../measurements/2026-10-24-eval-rerank-bge-reranker-v2-m3-local-metal.md).
+
 ## Сравнение двух прогонов
 
 Каждый прогон пишет два файла: Markdown-таблицу и JSONL-артефакт со строкой на кейс. Артефакт и
@@ -417,6 +438,21 @@ make eval-sentiment PROVIDER=keyword     # deterministic baseline, no key
 make eval-sentiment PROVIDER=decisions   # decisions model, needs CLASSIFY_API_KEY
 make eval-sentiment SPLIT=test REPEAT=3  # the locked half, three calls per case
 ```
+
+Локальная decisions-модель вместо Jev не требует ключа и не выходит за контур (ADR 0037):
+
+```bash
+scripts/frida-serve.sh start             # сайдкар на 8090, MLX, греется на старте
+CLASSIFY_PROFILE=local-frida-decisions \
+CLASSIFY_BASE_URL=http://127.0.0.1:8090/v1 \
+SENTIMENT_PROVIDER=decisions \
+make eval-sentiment PROVIDER=decisions SPLIT=test
+scripts/frida-serve.sh stop
+```
+
+Прогон на ней — [измерение](../measurements/2026-10-25-sentiment-decisions.md): тон и теги заметно
+ниже prompt-провайдера на том же сплите, поэтому умолчание не меняется, а профиль остаётся опцией
+для контура персональных данных.
 
 `--provider jev` — прежнее имя пути `decisions`; оно принимается, чтобы команда из старого
 измерения запускалась, но артефакт пишется с каноническим именем.

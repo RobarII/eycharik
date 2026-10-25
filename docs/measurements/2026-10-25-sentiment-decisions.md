@@ -1,6 +1,6 @@
 ---
 title: "Оценка риска: decisions, test"
-summary: "114 кейсов, sentiment_accuracy 0.684, tag_f1 0.539, гейты провалены; команда и коммит в шапке."
+summary: "114 кейсов, sentiment_accuracy 0.684, tag_f1 0.539, escalation_recall 0.412; команда и коммит в шапке."
 kind: "измерение"
 owner: "p4ulbr4dl3y"
 status: "принято"
@@ -10,7 +10,7 @@ last_verified: "2026-10-25"
 # Оценка риска — decisions
 
 - команда: `python -m onboarding.evals.sentiment --provider decisions --split test --repeat 1`
-- коммит: `f7006dd`
+- коммит: `1e861e3`
 - окружение: `local`
 - выборка: `test`
 - модель: `frida-decisions`
@@ -50,9 +50,9 @@ last_verified: "2026-10-25"
 
 | метрика | значение |
 |---|---|
-| `p50_latency_ms` | 915.7 |
-| `p95_latency_ms` | 932.6 |
-| `p99_latency_ms` | 936.3 |
+| `p50_latency_ms` | 914.4 |
+| `p95_latency_ms` | 941.1 |
+| `p99_latency_ms` | 949.8 |
 
 ## Полнота по тону
 

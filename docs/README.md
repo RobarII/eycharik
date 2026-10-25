@@ -197,6 +197,7 @@
 - [Живая проверка UX-правок в MAX](measurements/2026-10-24-ux-polish-live.md) — проверен 2026-10-24
 - [Оценка 2026-10-24: смоук канала VK](measurements/2026-10-24-vk-channel-smoke.md) — проверен 2026-10-24
 - [Оценка риска: decisions, test](measurements/2026-10-25-sentiment-decisions.md) — проверен 2026-10-25
+- [Оценка 2026-10-25: счёт с НДС, стендом и владельцем](measurements/2026-10-25-tco-scenarios.md) — проверен 2026-10-25
 
 ## Инциденты
 

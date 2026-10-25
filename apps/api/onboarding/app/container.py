@@ -217,6 +217,7 @@ def build_container(settings: Settings) -> Container:
         messaging=outbox,
         answerer=answerer,
         copy=copy,
+        demo_ids=_demo_ids(settings),
         audit=common.audit,
         questions=DatabaseQuestionLog(common.database),
     )

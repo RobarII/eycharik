@@ -28,6 +28,7 @@ class Copy:
     completion: str
     reminder_soft: str = ""
     help: str = ""
+    help_demo: str = ""
     unknown_command: str = ""
     ask_question: str = ""
     no_next_stage: str = ""
@@ -108,6 +109,7 @@ def load_copy(path: Path) -> Copy:
         escalation_footer=footer,
         completion=completion,
         help=_text(raw, "help", path),
+        help_demo=_text(raw, "help_demo", path),
         unknown_command=_text(raw, "unknown_command", path),
         ask_question=_text(raw, "ask_question", path),
         no_next_stage=_text(raw, "no_next_stage", path),

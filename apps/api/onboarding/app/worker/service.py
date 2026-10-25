@@ -12,6 +12,7 @@ from math import ceil
 from uuid import uuid4
 
 from onboarding.app.audit import NullAudit
+from onboarding.app.demo import demo_allowed
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.worker.actions import ActionContext, ActionExecutor
 from onboarding.core.models import (
@@ -203,11 +204,7 @@ class OnboardingService:
             await self._audit.record(
                 "command_handled", employee_id=str(employee_id), command=command
             )
-            text = (
-                self._executor.help_text()
-                if command == "/help"
-                else self._executor.unknown_command_text()
-            )
+            text = await self._command_reply(employee_id, command)
             await self._act(
                 (Action(kind=ActionKind.SEND, text=text),),
                 address,
@@ -392,6 +389,12 @@ class OnboardingService:
             return await self.reboot(employee_id, address)
         return None
 
+    async def _command_reply(self, employee_id: EmployeeId, command: str) -> str:
+        """``/help`` names the demo commands only for the demo account."""
+        if command == "/help":
+            return self._executor.help_text(demo=await self._demo_allowed(employee_id))
+        return self._executor.unknown_command_text()
+
     async def _guarded_next_stage(
         self, employee_id: EmployeeId, address: Address, command: str
     ) -> ServiceResult:
@@ -411,9 +414,7 @@ class OnboardingService:
 
     async def _demo_allowed(self, employee_id: EmployeeId) -> bool:
         """A pilot employee must not skip a real wait with a demo command (roadmap 1.6)."""
-        if not self._demo_ids:
-            return True
-        return str(employee_id) in {str(candidate) for candidate in self._demo_ids}
+        return demo_allowed(employee_id, self._demo_ids)
 
     async def _refuse_demo_command(
         self, employee_id: EmployeeId, address: Address, command: str
@@ -467,9 +468,7 @@ class OnboardingService:
             text = (
                 self._executor.no_next_stage_text()
                 if command == "/nextstage"
-                else self._executor.help_text()
-                if command == "/help"
-                else self._executor.unknown_command_text()
+                else await self._command_reply(employee_id, command)
             )
             await self._audit.record(
                 "command_after_completion", employee_id=str(employee_id), command=command
@@ -517,6 +516,10 @@ class OnboardingService:
             "post_run_menu", employee_id=str(employee_id), button=button_id
         )
         if button_id == "post_reboot":
+            # A stale keyboard from a demo build must not restart a pilot employee's run.
+            if not await self._demo_allowed(employee_id):
+                await self._refuse_demo_command(employee_id, address, button_id)
+                return
             await self.reboot(employee_id, address)
             return
         if button_id == "post_ask":

@@ -6,11 +6,13 @@ module only decides which of the three applies.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import date
 
 from onboarding.app.audit import NullAudit
 from onboarding.app.copy import Copy
+from onboarding.app.demo import demo_allowed
 from onboarding.app.worker.answerer import Answerer
 from onboarding.core.models import (
     Action,
@@ -42,16 +44,21 @@ class ActionExecutor:
         messaging: Sender,
         answerer: Answerer,
         copy: Copy,
+        demo_ids: Collection[object] = (),
         audit: AuditLog | None = None,
         questions: QuestionLog | None = None,
     ) -> None:
         self._messaging = messaging
         self._answerer = answerer
         self._copy = copy
+        self._demo_ids = tuple(demo_ids)
         self._audit = audit or NullAudit()
         self._questions = questions
 
-    def help_text(self) -> str:
+    def help_text(self, *, demo: bool = False) -> str:
+        """Employees never see a command they are not allowed to use."""
+        if demo and self._copy.help_demo:
+            return f"{self._copy.help}\n\n{self._copy.help_demo}"
         return self._copy.help
 
     def unknown_command_text(self) -> str:
@@ -112,7 +119,9 @@ class ActionExecutor:
                         address=context.address,
                         text=self._copy.completion,
                         image=action.image,
-                        keyboard=(_menu_buttons(self._copy),),
+                        keyboard=(
+                            _menu_buttons(self._copy, self._demo_ids, context.employee_id),
+                        ),
                     )
                 )
                 await self._audit.record(
@@ -205,8 +214,16 @@ class ActionExecutor:
         )
 
 
-def _menu_buttons(copy: Copy) -> tuple[Button, ...]:
-    return tuple(Button(id=button_id, text=text) for button_id, text in copy.post_run_menu)
+def _menu_buttons(
+    copy: Copy, demo_ids: Collection[object], employee_id: EmployeeId | None
+) -> tuple[Button, ...]:
+    """The "start over" button appears only where ``/reboot`` is allowed."""
+    demo = employee_id is None or demo_allowed(employee_id, demo_ids)
+    return tuple(
+        Button(id=button_id, text=text)
+        for button_id, text in copy.post_run_menu
+        if demo or button_id != "post_reboot"
+    )
 
 
 def _first_name(profile: EmployeeProfile | None) -> str:

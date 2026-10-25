@@ -29,12 +29,12 @@ last_verified: 2026-10-24
 | 0.4 (сделано) | Кнопки вместо угадывания слов: «Готово», «Задать вопрос» на ожидающих шагах | сейчас надо догадаться написать «отправил» или «готово» | `scenarios/*.yaml`, `core/transitions.py` | `test_scenario.py`, живой прогон |
 | 0.5 (сделано) | Подтверждение файла: «Файл получил…» вместо молчания | сейчас на файл приходит только «Следующий этап», прогресс не виден | `app/worker/service.py`, `copy.yaml` | `test_service.py`, живой прогон с файлами |
 | 0.6 (сделано) | Тихие часы: не писать с 20:00 до 09:00 по местному, переносить отправку на утро | ночное сообщение от бота — худший источник раздражения | `app/db/scheduler.py`, контракт профиля канала | `test_integration_db.py` (scheduler), живой прогон |
-| 0.7 | Мягкие напоминания: первое короткое, второе с «если не актуально — напиши /nextStage», без упрёков | 48-часовое ожидание сейчас даёт одинаковые напоминания | `scenarios/*.yaml`, `copy.yaml` | `test_transitions.py` |
-| 0.8 (сделано) | Опросы: «Вопрос 2 из 9» и подтверждение «Записал: 8» | девять оценок подряд без обратной связи утомляют | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
+| 0.7 (сделано) | Мягкие напоминания: первое короткое, второе с «если не актуально — напиши /nextStage», без упрёков | 48-часовое ожидание сейчас даёт одинаковые напоминания | `scenarios/*.yaml`, `copy.yaml` | `test_transitions.py` |
+| 0.8 (сделано) | Опросы: «Вопрос 2 из 9», «Записал: 8 из 10», «Пропустить» | девять оценок подряд без обратной связи утомляют | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
 | 0.9 (сделано) | Обращение по имени и единый тон: имя из профиля MAX, «ты/вы» во всех сообщениях, включая напоминания и эскалации | часть шагов без `informal_message`, приветствие обезличено | `scenarios/*.yaml`, `app/channels/max/ingress.py` | `test_scenario.py`, живой прогон |
 | 0.10 (сделано) | Финал адаптации: три кнопки (льготы, спросить HR, пройти заново) вместо одной строки | после `done` человек остаётся один | `copy.yaml`, `service._after_run` | `test_service.py` |
 
-Сделано: 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9, 0.10, 1.3, 1.6. Вживую проверены 0.1, 0.2,
+Сделано: 0.1–0.10, 1.3, 1.4, 1.6, 2.2. Открыт только 2.1: нужен документ в `knowledge/`. Вживую проверены 0.1, 0.2,
 0.4, 0.5, 0.8, 0.10 (`docs/measurements/2026-10-24-ux-polish-live.md`); 0.3, 0.6, 0.9 закрыты
 тестами (`test_quiet_hours.py`, `test_actions.py::test_the_greeting_carries_the_first_name`,
 `test_integration_db.py::test_a_night_reminder_waits_for_the_morning`).
@@ -49,7 +49,7 @@ last_verified: 2026-10-24
 | 1.1 | Деплой фиксов и повторный живой прогон: файл без подписи, файл с подписью-вопросом, вопрос после `done` | CI по SHA, `docs/runbooks/deploy.md` | живой диалог: `inbound_files.status=stored`, вопрос в `questions` |
 | 1.2 | Подтверждения шага не только словами: кнопка «Готово» на каждом `wait`-шаге, где ждём текст | `docs/contracts/scenario.schema.json` (поле уже есть — `keyboard`), `scenarios/*.yaml` | `pytest apps/api/tests/test_scenario.py`, живой прогон |
 | 1.3 (сделано) | «Что мне сейчас нужно сделать?» — повтор текущего шага с его кнопками | `core/transitions.py`, `docs/product/copy.yaml` | `test_service.py::test_a_question_about_the_current_stage_repeats_the_step` |
-| 1.4 | Резюме ответа опроса: «Записал: 8 из 10» одной строкой | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
+| 1.4 (сделано) | Резюме ответа опроса: «Записал: 8 из 10» одной строкой | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
 | 1.5 | После `done` — не тупик: короткое меню (льготы, кабинет, `/reboot`) | `copy.yaml`, `service._after_run` | `test_service.py::test_help_and_next_stage_work_after_completion` |
 | 1.6 (сделано) | Демо-команды `/reboot`, `/nextStage` только для id из `DEMO_EMPLOYEE_IDS` | `api/webhook`, `service.handle`, `docs/product/roles.md` | `test_app.py`, живой прогон с обычного аккаунта |
 
@@ -58,7 +58,7 @@ last_verified: 2026-10-24
 | # | задача | файлы | гейт |
 |---|---|---|---|
 | 2.1 | Мгновенный ответ на частые вопросы (столовая, пропуск, аванс, ноутбук) без похода в модель: короткий FAQ-слой поверх индекса | `app/worker/answerer.py`, `knowledge/` | `test_answerer.py`, живой замер `latency_ms` |
-| 2.2 | Предзагрузка картинок шагов на старте воркера (сейчас аплоад 0.8–1.4 с на сообщение, кеш ленивый) | `app/channels/max/media.py`, `app/worker/*` | `test_channel_smoke.py`, лог `uploads` |
+| 2.2 (сделано) | Предзагрузка картинок шагов на старте воркера (сейчас аплоад 0.8–1.4 с на сообщение, кеш ленивый) | `app/channels/max/media.py`, `app/worker/*` | `test_channel_smoke.py`, лог `uploads` |
 | 2.3 | Уведомление об этапе без спама: одно сообщение + кнопка «Напомнить сейчас» | `copy.yaml`, `core/transitions.py` | `test_transitions.py` |
 | 2.4 | Единый формат ответа: цитата → вывод → «Следующий шаг» (сейчас три абзаца вперемешку) | `docs/prompts/**`, `answer-policy.md` | `test_grounding.py`, выборочно 10 живых вопросов |
 

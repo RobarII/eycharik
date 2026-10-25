@@ -1,16 +1,16 @@
 ---
-title: "Оценка риска на локальной decisions-модели FRIDA"
-summary: "114 кейсов test, MLX bf16 на M2: sentiment_accuracy 0.684, tag_f1 0.539, escalation_recall 0.412, отказов нет."
-kind: измерение
-owner: p4ulbr4dl3y
-status: принято
-last_verified: 2026-10-25
+title: "Оценка риска: decisions, test"
+summary: "114 кейсов, sentiment_accuracy 0.684, tag_f1 0.539, гейты провалены; команда и коммит в шапке."
+kind: "измерение"
+owner: "p4ulbr4dl3y"
+status: "принято"
+last_verified: "2026-10-25"
 ---
 
 # Оценка риска — decisions
 
 - команда: `python -m onboarding.evals.sentiment --provider decisions --split test --repeat 1`
-- коммит: `3ffb380`
+- коммит: `f7006dd`
 - окружение: `local`
 - выборка: `test`
 - модель: `frida-decisions`
@@ -50,9 +50,9 @@ last_verified: 2026-10-25
 
 | метрика | значение |
 |---|---|
-| `p50_latency_ms` | 1154.5 |
-| `p95_latency_ms` | 2081.3 |
-| `p99_latency_ms` | 2237.8 |
+| `p50_latency_ms` | 915.7 |
+| `p95_latency_ms` | 932.6 |
+| `p99_latency_ms` | 936.3 |
 
 ## Полнота по тону
 

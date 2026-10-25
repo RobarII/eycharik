@@ -63,6 +63,11 @@ stop() {
         pid=$(cat "$RUN_DIR/pid")
         kill "$pid" 2>/dev/null && echo "frida-decisions stopped (pid $pid)"
         rm -f "$RUN_DIR/pid"
+        for _ in $(seq 1 30); do
+            # The port closes a moment after the signal; asking once would read as "someone else".
+            healthy || break
+            sleep 1
+        done
     else
         echo "no pidfile in $RUN_DIR; nothing to stop"
     fi

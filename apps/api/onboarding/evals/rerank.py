@@ -33,7 +33,7 @@ from onboarding.app.settings import Settings
 from onboarding.core.metrics import percentile, recall_at_k, reciprocal_rank
 from onboarding.core.models import ScoredChunk
 from onboarding.evals.__main__ import retrieval_label
-from onboarding.evals.artifact import commit_hash, stem, write_pair
+from onboarding.evals.artifact import commit_hash, frontmatter, stem, write_pair
 from onboarding.evals.runner import Case, load_cases, profile_for
 from onboarding.ports import KnowledgeBase, Reranker, SearchQuery
 
@@ -207,6 +207,13 @@ def render(
     note: str | None,
     on_date: date,
 ) -> str:
+    head = frontmatter(
+        f"Оценка {on_date.isoformat()}: дельта переранжирования",
+        f"{delta.cases} кейсов, recall@5 {_metric(delta.before_recall)} -> "
+        f"{_metric(delta.after_recall)}, mrr {_metric(delta.before_mrr)} -> "
+        f"{_metric(delta.after_mrr)}, отказов {delta.failures}.",
+        on_date=on_date,
+    )
     lines = [
         f"# Оценка {on_date.isoformat()}: дельта переранжирования",
         "",
@@ -237,7 +244,7 @@ def render(
         "Гейта нет: реранкер — улучшение, а не зависимость (ADR 0008). Отказ оставляет",
         "гибридный порядок, поэтому `mrr` до реранка и есть запасной вариант.",
     ]
-    return "\n".join(lines) + "\n"
+    return head + "\n".join(lines) + "\n"
 
 
 def _metric(value: float) -> str:

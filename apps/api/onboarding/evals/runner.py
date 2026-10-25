@@ -30,6 +30,7 @@ from onboarding.core.metrics import (
     wilson_lower_bound,
 )
 from onboarding.core.models import EmployeeId, EmployeeProfile, ScoredChunk
+from onboarding.evals.artifact import frontmatter
 from onboarding.evals.stats import PairedDelta, matched_pairs, paired_delta
 from onboarding.ports import KnowledgeBase, KnowledgeUnavailableError, SearchQuery
 
@@ -561,8 +562,7 @@ class Report:
         if self.baseline is None or not self.baseline.overall:
             return dict(GATES)
         return {
-            name: max(gate, self.baseline.overall.get(name, gate))
-            for name, gate in GATES.items()
+            name: max(gate, self.baseline.overall.get(name, gate)) for name, gate in GATES.items()
         }
 
     @property
@@ -583,9 +583,7 @@ class Report:
         above = [
             name
             for name, limit in MAXIMUMS.items()
-            if name in self.metrics
-            and name not in self.diagnostics
-            and self.metrics[name] > limit
+            if name in self.metrics and name not in self.diagnostics and self.metrics[name] > limit
         ]
         per_stratum: list[str] = []
         if self.baseline is not None:
@@ -943,6 +941,14 @@ def render_markdown(
     comparison: Sequence[PairedDelta] = (),
 ) -> str:
     status = "провалена" if report.failures else "пройдена"
+    counts = f"{len(report.results)} кейсов, {len(report.failures)} провалов"
+    where = f"поиск `{retrieval}`" if retrieval else "полный контур"
+    head = frontmatter(
+        f"Оценка {on_date.isoformat()}: {status}",
+        f"{counts}, {where}; команда и коммит в шапке.",
+        on_date=on_date,
+        status="принято" if not report.failures else "черновик",
+    )
     lines = [
         f"# Оценка {on_date.isoformat()} — {status}",
         "",
@@ -975,7 +981,7 @@ def render_markdown(
         ]
     lines += _render_strata(report)
     lines += _render_comparison(comparison)
-    return "\n".join(lines) + "\n"
+    return head + "\n".join(lines) + "\n"
 
 
 def _render_metrics(report: Report) -> list[str]:

@@ -807,7 +807,7 @@ async def test_cron_pass_delivers_a_due_reminder(database: Database) -> None:
 
     assert (queued, handled, delivered) == (1, 1, 0)
     assert messaging.sent[-1].address == MAX
-    assert messaging.sent[-1].text.startswith("Напоминаем:")
+    assert messaging.sent[-1].text.startswith("Шаг «")  # a nudge, not a rerun of the whole step
 
 
 async def test_uploaded_document_is_indexed_and_retrievable(database: Database) -> None:

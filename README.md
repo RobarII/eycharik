@@ -1,5 +1,7 @@
 # Эйчарик
-[Uploading certificate.pdf…]()
+<img width="609" height="865" alt="image" src="https://github.com/user-attachments/assets/ce27ba37-f305-4b40-96ba-d162f4f08455" />
+<img width="1117" height="362" alt="image" src="https://github.com/user-attachments/assets/f49f789a-e35a-42af-9358-8eff2f186573" />
+
 
 ИИ-ассистент адаптации сотрудников в мессенджере MAX: сценарии онбординга для новичков,
 кабинет рекрутёра и ответы по закрытой базе знаний компании — с цитатой или эскалацией человеку.

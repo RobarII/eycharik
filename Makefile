@@ -107,8 +107,8 @@ eval-ocr:                          # extraction quality; needs no database and n
 eval-sentiment:                     # PROVIDER=keyword|prompt|decisions, SPLIT=dev|test|all
 	$(PY) python -m onboarding.evals.sentiment --provider $(or $(PROVIDER),prompt) --split $(or $(SPLIT),all) --repeat $(or $(REPEAT),1) $(ARGS) --write
 
-tco:                                # TCO from prices and measured token budget; NEWCOMERS and SETUP are inputs
-	$(PY) python scripts/tco.py --newcomers $(or $(NEWCOMERS),50,100,300,600) --answers-per-newcomer $(or $(ANSWERS),20) --hr-hourly-rub $(or $(HR_HOUR),1000) $(if $(SETUP),--setup-rub $(SETUP))
+tco:                                # TCO from prices and measured token budget; NEWCOMERS, SETUP and OWNER_* are inputs
+	$(PY) python scripts/tco.py --newcomers $(or $(NEWCOMERS),50,100,300,600) --answers-per-newcomer $(or $(ANSWERS),20) --hr-hourly-rub $(or $(HR_HOUR),1000) $(if $(SETUP),--setup-rub $(SETUP)) $(if $(OWNER_FTE),--owner-fte $(OWNER_FTE)) $(if $(OWNER_RUB),--owner-rub-per-month $(OWNER_RUB))
 
 run:
 	$(PY) uvicorn onboarding.api.app:create_app --factory --reload --port 8000

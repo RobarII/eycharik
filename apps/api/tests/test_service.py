@@ -85,7 +85,7 @@ async def test_start_creates_a_run_and_sends_the_first_messages() -> None:
     assert result.handled
     assert len(runs.runs) == 1
     assert len(messaging.sent) == 1
-    assert messaging.sent[0].text.startswith("Здравствуйте! Меня зовут Корсик")
+    assert messaging.sent[0].text.startswith("Здравствуйте, Иван! Меня зовут Корсик")
     assert messaging.sent[0].keyboard[0][0].id == "tone_you"
     stored = next(iter(runs.runs.values()))
     assert stored.state.step_id == "welcome"
@@ -545,7 +545,7 @@ async def test_reboot_starts_a_fresh_run() -> None:
     assert len(runs.runs) == 2
     active = next(run for run in runs.runs.values() if run.active)
     assert active.state.step_id == "welcome"
-    assert messaging.sent[-1].text.startswith("Здравствуйте! Меня зовут Корсик")
+    assert messaging.sent[-1].text.startswith("Здравствуйте, Иван! Меня зовут Корсик")
     assert any(not run.active for run in runs.runs.values())
 
 
@@ -567,7 +567,7 @@ async def test_a_scheduled_stage_is_not_sent_before_its_due_time() -> None:
     assert stored.state.step_id == "day_before"
     assert stored.scheduled is not None
     assert len(messaging.sent) == before + 1
-    assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "Следующий этап" in messaging.sent[-1].text
     assert "через" in messaging.sent[-1].text
     assert "UTC" not in messaging.sent[-1].text
     assert "Принял" not in messaging.sent[-1].text
@@ -697,7 +697,7 @@ async def test_a_button_while_scheduled_gets_a_stage_status() -> None:
 
     assert result.handled
     assert next(iter(runs.runs.values())).state.step_id == stored.state.step_id
-    assert messaging.sent[-1].text.startswith("Следующий этап")
+    assert "Следующий этап" in messaging.sent[-1].text
     assert "через" in messaging.sent[-1].text
     assert "UTC" not in messaging.sent[-1].text
     assert "Бот работает" not in messaging.sent[-1].text
@@ -907,16 +907,16 @@ async def test_a_stale_button_while_scheduled_does_not_repeat_the_notice() -> No
     )
     # day_before is scheduled: its own button still earns a status, a button of an earlier step
     # (tone_formal) must be silent.
-    notices = len([m for m in messaging.sent if m.text.startswith("Следующ")])
+    notices = len([m for m in messaging.sent if "Следующий этап" in m.text])
 
     pressed_own = await service.handle(
         EMPLOYEE, ADDRESS, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="ready")
     )
-    after_own = len([m for m in messaging.sent if m.text.startswith("Следующ")])
+    after_own = len([m for m in messaging.sent if "Следующий этап" in m.text])
     pressed_stale = await service.handle(
         EMPLOYEE, ADDRESS, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="tone_you")
     )
-    after_stale = len([m for m in messaging.sent if m.text.startswith("Следующ")])
+    after_stale = len([m for m in messaging.sent if "Следующий этап" in m.text])
 
     assert pressed_own.handled
     assert pressed_stale.handled

@@ -23,16 +23,21 @@ last_verified: 2026-10-24
 
 | # | задача | почему | файлы | гейт |
 |---|---|---|---|---|
-| 0.1 | ~~Убрать служебные маркеры~~ сделано из ответа: `[company/workspace-rules#0]` → «Источник: Правила офиса» (1–2 источника) | в живом чате человек видит внутренние id (`[hr/remote-work#0]`, `[company/workspace-rules#0]`) — выглядит как утечка и мешает читать | `core/grounding.py`, `app/worker/render.py`, `docs/product/answer-policy.md` | `test_grounding.py`, пять живых вопросов |
-| 0.2 | Мгновенный отклик на долгий ответ: сразу «Секунду, ищу в базе…», затем правка этого сообщения готовым ответом через `edit` | тишина 4–11 с воспринимается как поломка (`avg 4471 ms`, `max 10676 ms`) | `app/worker/answerer.py`, `app/db/outbox.py`, `docs/contracts/max-api.md` | `test_integration_db.py` (edit-путь), живой замер |
-| 0.3 | Прогресс и навигация в каждом этапе: «Шаг 3 из 21 · Документы · следующий через 24 ч» + кнопка «Дальше» | человек не понимает, где он и сколько осталось | `core/transitions.py`, `docs/contracts/scenario.schema.json`, `scenarios/*.yaml` | `test_transitions.py`, живой прогон |
-| 0.4 | Кнопки вместо угадывания слов: «Готово», «Задать вопрос», «Позвать HR» на каждом ожидающем шаге | сейчас надо догадаться написать «отправил» или «готово» | `scenarios/*.yaml`, `core/transitions.py` | `test_scenario.py`, живой прогон |
-| 0.5 | Чек-лист документов с отметками: после каждого файла «Принял: паспорт. Осталось: СНИЛС, ИНН» | сейчас на файл приходит только «Следующий этап», прогресс не виден | `app/worker/service.py`, `copy.yaml` | `test_service.py`, живой прогон с файлами |
-| 0.6 | Тихие часы: не писать с 20:00 до 09:00 по местному, переносить отправку на утро | ночное сообщение от бота — худший источник раздражения | `app/db/scheduler.py`, контракт профиля канала | `test_integration_db.py` (scheduler), живой прогон |
+| 0.1 (сделано) | Убрать служебные маркеры из ответа: `[company/workspace-rules#0]` → «Источник: Правила офиса» (1–2 источника) | в живом чате человек видит внутренние id (`[hr/remote-work#0]`, `[company/workspace-rules#0]`) — выглядит как утечка и мешает читать | `core/grounding.py`, `app/worker/render.py`, `docs/product/answer-policy.md` | `test_grounding.py`, пять живых вопросов |
+| 0.2 (сделано) | Мгновенный отклик: сразу «Секунду, ищу в базе…», затем готовый ответ отдельным сообщением | тишина 4–11 с воспринимается как поломка (`avg 4471 ms`, `max 10676 ms`) | `app/worker/answerer.py`, `app/db/outbox.py`, `docs/contracts/max-api.md` | `test_integration_db.py` (edit-путь), живой замер |
+| 0.3 (сделано) | Прогресс этапа: «Шаг 3 из 21» перед объявлением и повтором |: «Шаг 3 из 21 · Документы · следующий через 24 ч» + кнопка «Дальше» | человек не понимает, где он и сколько осталось | `core/transitions.py`, `docs/contracts/scenario.schema.json`, `scenarios/*.yaml` | `test_transitions.py`, живой прогон |
+| 0.4 (сделано) | Кнопки вместо угадывания слов: «Готово», «Задать вопрос» на ожидающих шагах | сейчас надо догадаться написать «отправил» или «готово» | `scenarios/*.yaml`, `core/transitions.py` | `test_scenario.py`, живой прогон |
+| 0.5 (сделано) | Подтверждение файла: «Файл получил…» вместо молчания | сейчас на файл приходит только «Следующий этап», прогресс не виден | `app/worker/service.py`, `copy.yaml` | `test_service.py`, живой прогон с файлами |
+| 0.6 (сделано) | Тихие часы: не писать с 20:00 до 09:00 по местному, переносить отправку на утро | ночное сообщение от бота — худший источник раздражения | `app/db/scheduler.py`, контракт профиля канала | `test_integration_db.py` (scheduler), живой прогон |
 | 0.7 | Мягкие напоминания: первое короткое, второе с «если не актуально — напиши /nextStage», без упрёков | 48-часовое ожидание сейчас даёт одинаковые напоминания | `scenarios/*.yaml`, `copy.yaml` | `test_transitions.py` |
-| 0.8 | Опросы: «Вопрос 2 из 9», «Пропустить», подтверждение «Записал: 8 из 10» | девять оценок подряд без обратной связи утомляют | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
-| 0.9 | Обращение по имени и единый тон: имя из профиля MAX, «ты/вы» во всех сообщениях, включая напоминания и эскалации | часть шагов без `informal_message`, приветствие обезличено | `scenarios/*.yaml`, `app/channels/max/ingress.py` | `test_scenario.py`, живой прогон |
-| 0.10 | Финал адаптации: короткое резюме пути + три кнопки (льготы, кабинет, «спросить HR») вместо одной строки | после `done` человек остаётся один | `copy.yaml`, `service._after_run` | `test_service.py` |
+| 0.8 (сделано) | Опросы: «Вопрос 2 из 9» и подтверждение «Записал: 8» | девять оценок подряд без обратной связи утомляют | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
+| 0.9 (сделано) | Обращение по имени и единый тон: имя из профиля MAX, «ты/вы» во всех сообщениях, включая напоминания и эскалации | часть шагов без `informal_message`, приветствие обезличено | `scenarios/*.yaml`, `app/channels/max/ingress.py` | `test_scenario.py`, живой прогон |
+| 0.10 (сделано) | Финал адаптации: три кнопки (льготы, спросить HR, пройти заново) вместо одной строки | после `done` человек остаётся один | `copy.yaml`, `service._after_run` | `test_service.py` |
+
+Сделано: 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 0.9, 0.10, 1.3, 1.6. Вживую проверены 0.1, 0.2,
+0.4, 0.5, 0.8, 0.10 (`docs/measurements/2026-10-24-ux-polish-live.md`); 0.3, 0.6, 0.9 закрыты
+тестами (`test_quiet_hours.py`, `test_actions.py::test_the_greeting_carries_the_first_name`,
+`test_integration_db.py::test_a_night_reminder_waits_for_the_morning`).
 
 Правило для всех пунктов: сообщение ≤ 2 предложений, одна мысль, понятный следующий шаг. Длинные
 ответы базы знаний — только по кнопке «Подробнее».
@@ -43,10 +48,10 @@ last_verified: 2026-10-24
 |---|---|---|---|
 | 1.1 | Деплой фиксов и повторный живой прогон: файл без подписи, файл с подписью-вопросом, вопрос после `done` | CI по SHA, `docs/runbooks/deploy.md` | живой диалог: `inbound_files.status=stored`, вопрос в `questions` |
 | 1.2 | Подтверждения шага не только словами: кнопка «Готово» на каждом `wait`-шаге, где ждём текст | `docs/contracts/scenario.schema.json` (поле уже есть — `keyboard`), `scenarios/*.yaml` | `pytest apps/api/tests/test_scenario.py`, живой прогон |
-| 1.3 | «Что мне сейчас нужно сделать?» — повтор шага с прогрессом («Шаг 3 из 21») и кнопкой дальше | `core/transitions.py`, `docs/product/copy.yaml` | `test_service.py::test_a_question_about_the_current_stage_repeats_the_step` |
+| 1.3 (сделано) | «Что мне сейчас нужно сделать?» — повтор текущего шага с его кнопками | `core/transitions.py`, `docs/product/copy.yaml` | `test_service.py::test_a_question_about_the_current_stage_repeats_the_step` |
 | 1.4 | Резюме ответа опроса: «Записал: 8 из 10» одной строкой | `core/transitions.py`, `copy.yaml` | `test_transitions.py`, живой опрос |
 | 1.5 | После `done` — не тупик: короткое меню (льготы, кабинет, `/reboot`) | `copy.yaml`, `service._after_run` | `test_service.py::test_help_and_next_stage_work_after_completion` |
-| 1.6 | Ограничить демо-команды `--live`: `/reboot`, `/nextStage` только для роли демо-аккаунта | `api/webhook`, `service.handle`, `docs/product/roles.md` | `test_app.py`, живой прогон с обычного аккаунта |
+| 1.6 (сделано) | Демо-команды `/reboot`, `/nextStage` только для id из `DEMO_EMPLOYEE_IDS` | `api/webhook`, `service.handle`, `docs/product/roles.md` | `test_app.py`, живой прогон с обычного аккаунта |
 
 ## Приоритет 2 — скорость и ясность
 

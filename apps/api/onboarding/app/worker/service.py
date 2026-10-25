@@ -26,6 +26,7 @@ from onboarding.core.models import (
     RiskSignal,
     RunId,
     Scenario,
+    ScenarioError,
     ScheduledEntry,
     Step,
     StepKind,
@@ -398,6 +399,16 @@ class OnboardingService:
             return await self._refuse_demo_command(employee_id, address, command)
         return await self.next_stage(employee_id, address)
 
+    def _stage_progress(self, scenario: Scenario, step_id: str) -> str:
+        """The line that answers "где я": the copy owns the wording, the scenario owns the order."""
+        try:
+            index, total = scenario.position(step_id)
+        except ScenarioError:
+            return ""
+        if total <= 1:
+            return ""
+        return self._executor.stage_progress_text(index, total)
+
     async def _demo_allowed(self, employee_id: EmployeeId) -> bool:
         """A pilot employee must not skip a real wait with a demo command (roadmap 1.6)."""
         if not self._demo_ids:
@@ -673,6 +684,9 @@ class OnboardingService:
             if waiting
             else self._executor.stage_scheduled_text(stage, when)
         )
+        progress = self._stage_progress(scenario, scheduled.step_id)
+        if progress:
+            text = f"{progress}\n{text}"
         await self._act(
             (Action(kind=ActionKind.SEND, text=text),),
             address,

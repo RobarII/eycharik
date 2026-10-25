@@ -50,6 +50,7 @@ from onboarding.app.worker.extract import DocumentExtractor
 from onboarding.app.worker.index import DocumentIndexer
 from onboarding.app.worker.service import OnboardingService
 from onboarding.core.models import Channel
+from onboarding.core.quiet_hours import QuietHours
 from onboarding.ports import (
     LLM,
     AuditLog,
@@ -84,6 +85,21 @@ class Container(Common):
     async def aclose(self) -> None:
         await self.http.aclose()
         await Common.aclose(self)
+
+
+def _quiet_hours(settings: Settings) -> QuietHours | None:
+    raw = settings.quiet_hours_raw.strip()
+    if not raw:
+        return None
+    start, _, end = raw.replace(":", "-").replace(" ", "").partition("-")
+    try:
+        return QuietHours(
+            start_hour=int(start),
+            end_hour=int(end),
+            timezone=settings.quiet_hours_timezone,
+        )
+    except ValueError as error:
+        raise ValueError(f"QUIET_HOURS is not a window like 21-9: {error}") from None
 
 
 def _demo_ids(settings: Settings) -> frozenset[int]:
@@ -263,7 +279,7 @@ def build_container(settings: Settings) -> Container:
         service=service,
         queue=JobQueue(common.database),
         dispatcher=MessageDispatcher(common.database, senders),
-        scheduler=ReminderScheduler(common.database),
+        scheduler=ReminderScheduler(common.database, quiet=_quiet_hours(settings)),
         extractor=extractor,
         indexer=indexer,
         files=files,

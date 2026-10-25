@@ -1034,3 +1034,28 @@ async def test_a_pilot_employee_cannot_restart_the_run_with_a_stale_button() -> 
 
     assert "demo_command_refused" in audit.names()
     assert messaging.sent[-1].text == COPY.unknown_command
+
+
+async def test_a_question_at_a_survey_step_is_answered_and_the_step_waits() -> None:
+    """Live 2026-10-25: a typed question got "выберите один из вариантов кнопкой"."""
+    service, runs, messaging, _, answerer = build(scenario_id="onboarding_plant")
+    await runs.create(
+        replace(
+            stored_run(step_id="day_three_survey"),
+            state=replace(
+                stored_run(step_id="day_three_survey").state,
+                scenario_id="onboarding_plant",
+            ),
+        )
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Какая у меня зарплата?"),
+    )
+
+    assert result.handled
+    assert answerer.calls == [("Какая у меня зарплата?", NOW.date())]
+    assert messaging.sent[-1].text == answerer.text
+    assert next(iter(runs.runs.values())).state.step_id == "day_three_survey"

@@ -311,6 +311,9 @@ class OnboardingService:
         event_at = event.at if event.at.tzinfo is not None else event.at.replace(tzinfo=UTC)
         effective = event if event_at >= now else replace(event, at=now)
         transition = advance(scenario, stored.state, effective)
+        answered = await self._question_at_a_survey(transition, event, address, employee_id)
+        if answered is not None:
+            return answered
         completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
         # The person may answer from any linked messenger. The run follows them: replies and the
         # next reminder go to the address they just used (ADR 0019).
@@ -329,23 +332,14 @@ class OnboardingService:
                 scheduled=scheduled,
             )
         )
-        if moved:
-            await self._audit.record(
-                "channel_changed",
-                employee_id=str(employee_id),
-                previous_channel=stored.address.channel.value,
-                previous_chat_id=int(stored.address.chat_id),
-                channel=address.channel.value,
-                chat_id=int(address.chat_id),
-            )
-        await self._audit.record(
-            "step_transition",
-            employee_id=str(employee_id),
-            scenario=scenario.id,
-            version=scenario.version,
-            previous_step=stored.state.step_id,
-            step=transition.state.step_id,
-            event=event.kind.value,
+        await self._audit_movement(
+            scenario,
+            stored,
+            transition,
+            event=event,
+            address=address,
+            employee_id=employee_id,
+            moved=moved,
         )
         escalated = await self._assess_survey(
             scenario, stored.state, transition, employee_id
@@ -388,6 +382,60 @@ class OnboardingService:
                 return await self._refuse_demo_command(employee_id, address, command)
             return await self.reboot(employee_id, address)
         return None
+
+    async def _audit_movement(
+        self,
+        scenario: Scenario,
+        stored: StoredRun,
+        transition: Transition,
+        *,
+        event: Event,
+        address: Address,
+        employee_id: EmployeeId,
+        moved: bool,
+    ) -> None:
+        if moved:
+            await self._audit.record(
+                "channel_changed",
+                employee_id=str(employee_id),
+                previous_channel=stored.address.channel.value,
+                previous_chat_id=int(stored.address.chat_id),
+                channel=address.channel.value,
+                chat_id=int(address.chat_id),
+            )
+        await self._audit.record(
+            "step_transition",
+            employee_id=str(employee_id),
+            scenario=scenario.id,
+            version=scenario.version,
+            previous_step=stored.state.step_id,
+            step=transition.state.step_id,
+            event=event.kind.value,
+        )
+
+    async def _question_at_a_survey(
+        self,
+        transition: Transition,
+        event: Event,
+        address: Address,
+        employee_id: EmployeeId,
+    ) -> ServiceResult | None:
+        """A question typed at a survey step is answered; the step keeps waiting.
+
+        Live 2026-10-25: "Какая у меня зарплата?" was met with "выберите один из вариантов кнопкой".
+        """
+        repeats = any((a.note or "").startswith("survey:repeat") for a in transition.actions)
+        if not (repeats and event.text and is_question(event.text)):
+            return None
+        await self._audit.record("question_at_survey", employee_id=str(employee_id))
+        await self._act(
+            (Action(kind=ActionKind.ANSWER),),
+            address,
+            employee_id,
+            self._now().date(),
+            question=event.text,
+        )
+        return ServiceResult(handled=True)
 
     async def _command_reply(self, employee_id: EmployeeId, command: str) -> str:
         """``/help`` names the demo commands only for the demo account."""

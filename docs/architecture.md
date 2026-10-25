@@ -210,6 +210,13 @@ recruiter cabinet ──► admin API ──► Postgres: runs, questions, audit
 | `answer` | диалект, json mode, поле токенов, reasoning effort, temperature, лимит токенов, таймаут, повторы, цены | base URL, ключ, breaker, статические заголовки |
 | `embed` | диалект, id модели, ширина вектора, таймаут | base URL, ключ |
 | `rerank` | id модели, таймаут, дедлайн | base URL, ключ, работает ли этап вообще |
+| `classify` | семейство (`typesafe-jev` или `frida-decisions`), путь, рубрика, таймаут, цена входа | base URL, ключ (локальному семейству он не нужен) |
+
+Локальные модели не требуют отдельной ветки: llama.cpp отдаёт диалекты OpenAI и Cohere, поэтому
+`bge-m3` и `bge-reranker-v2-m3` поднимаются профилями `personal_data: true` и той же командой
+([ADR 0038](decisions/0038-local-embed-and-rerank.md)). Классификатору чужой диалект нужен, поэтому
+у `classify` есть `family` и свой `path`: FRIDA-Decisions отвечает на `POST /decisions`, а не на
+`/systemone` ([ADR 0037](decisions/0037-local-decisions-model.md)).
 
 Порядок разрешения любого значения: явное значение в окружении, затем профиль, затем
 умолчание. Невалидный или отсутствующий профиль останавливает процесс на старте, как

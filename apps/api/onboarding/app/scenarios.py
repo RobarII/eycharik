@@ -60,3 +60,16 @@ class ScenarioCatalog:
 
     def ids(self) -> tuple[str, ...]:
         return tuple(sorted({scenario_id for scenario_id, _ in self._scenarios}))
+
+    def images(self) -> tuple[str, ...]:
+        """Every bundled image a deployed scenario can send, deduplicated."""
+        return tuple(
+            sorted(
+                {
+                    step.image
+                    for scenario in self._scenarios.values()
+                    for step in scenario.steps.values()
+                    if step.image
+                }
+            )
+        )

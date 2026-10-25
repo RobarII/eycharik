@@ -26,7 +26,10 @@ class Copy:
     reminder_prefix: str
     escalation_footer: str
     completion: str
+    reminder_soft: str = ""
+    reminder_soft_button: str = ""
     help: str = ""
+    help_demo: str = ""
     unknown_command: str = ""
     ask_question: str = ""
     no_next_stage: str = ""
@@ -34,13 +37,16 @@ class Copy:
     stage_waiting: str = ""
     invalid_answer: dict[str, str] | None = None
     not_understood: str = ""
+    button_hint: str = ""
     searching: str = ""
     file_received: str = ""
+    file_advanced: str = ""
     source_one: str = ""
     source_many: str = ""
     survey_progress: str = ""
     survey_ack: str = ""
     survey_ack_open: str = ""
+    survey_skipped: str = ""
     stage_progress: str = ""
     post_run_benefits: str = ""
     post_run_menu: tuple[tuple[str, str], ...] = ()
@@ -74,6 +80,12 @@ class Copy:
     def reminder(self, text: str) -> str:
         return f"{self.reminder_prefix}{text}"
 
+    def soft_reminder(self, title: str) -> str:
+        return self.reminder_soft.format(title=title)
+
+    def soft_reminder_button(self, title: str) -> str:
+        return self.reminder_soft_button.format(title=title)
+
     def answer_hint(self, kind: str) -> str:
         """A hint for a rejected survey answer so the same question is not just repeated."""
         hints = self.invalid_answer or {}
@@ -99,9 +111,12 @@ def load_copy(path: Path) -> Copy:
     return Copy(
         escalation=dict(escalation),
         reminder_prefix=reminder_prefix,
+        reminder_soft=_text(raw, "reminder_soft", path),
+        reminder_soft_button=_text(raw, "reminder_soft_button", path),
         escalation_footer=footer,
         completion=completion,
         help=_text(raw, "help", path),
+        help_demo=_text(raw, "help_demo", path),
         unknown_command=_text(raw, "unknown_command", path),
         ask_question=_text(raw, "ask_question", path),
         no_next_stage=_text(raw, "no_next_stage", path),
@@ -109,13 +124,16 @@ def load_copy(path: Path) -> Copy:
         stage_waiting=_text(raw, "stage_waiting", path),
         invalid_answer=_hints(raw, path),
         not_understood=_text(raw, "not_understood", path),
+        button_hint=_text(raw, "button_hint", path),
         searching=_text(raw, "searching", path),
         file_received=_text(raw, "file_received", path),
+        file_advanced=_text(raw, "file_advanced", path),
         source_one=_text(raw, "source_one", path),
         source_many=_text(raw, "source_many", path),
         survey_progress=_text(raw, "survey_progress", path),
         survey_ack=_text(raw, "survey_ack", path),
         survey_ack_open=_text(raw, "survey_ack_open", path),
+        survey_skipped=_text(raw, "survey_skipped", path),
         stage_progress=_text(raw, "stage_progress", path),
         post_run_benefits=_text(raw, "post_run_benefits", path),
         post_run_menu=(

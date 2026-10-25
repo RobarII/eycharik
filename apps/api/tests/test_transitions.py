@@ -79,7 +79,7 @@ def test_images_follow_their_step_actions() -> None:
     )
 
     assert [action.image for action in started.actions] == ["welcome.jpg", "reminder.jpg"]
-    assert reminder.actions[0].image == "reminder.jpg"
+    assert reminder.actions[0].image is None  # a nudge is text, not a rerun of the picture
     assert completed.actions[0].image == "goodbye.jpg"
 
 
@@ -142,7 +142,8 @@ def test_timeout_reminds_once_and_cancels_the_timer(scenario: Scenario, state: S
 
     assert transition.state == state
     assert [action.kind for action in transition.actions] == [ActionKind.SEND]
-    assert transition.actions[0].note == "reminder"
+    # The checklist step waits for a button, so the nudge points at the buttons, not at "готово".
+    assert transition.actions[0].note == "reminder_soft_button"
     assert isinstance(transition.reminder, CancelReminder)
 
 
@@ -502,7 +503,7 @@ def test_comfortable_score_moves_to_the_next_question(survey: Scenario) -> None:
     assert transition.state.question_index == 1
     assert transition.state.pending_reason is None
     assert transition.actions[0].note == "survey:ack"
-    assert transition.actions[0].text == "9"
+    assert transition.actions[0].text == "9 из 10"
     assert transition.actions[1].note == "survey:ask:2:3"
 
 
@@ -747,3 +748,67 @@ def test_a_done_button_acknowledges_a_message_step(scenario: Scenario, state: St
 
     assert pressed.state.step_id == "done"
     assert [action.kind for action in stray.actions] == [ActionKind.IGNORE]
+
+
+def test_an_open_question_offers_a_way_out(survey: Scenario) -> None:
+    asked = advance(
+        survey,
+        replace(_survey_state(), question_index=2),
+        Event(kind=EventKind.TIMEOUT, at=NOW),
+    )
+
+    assert [button.id for button in asked.actions[0].keyboard[0]] == ["q_skip"]
+
+
+def test_skipping_an_open_question_records_nothing(survey: Scenario) -> None:
+    state = replace(_survey_state(), answers=(), question_index=2)
+    # no previous answer means nothing to acknowledge twice
+
+    skipped = advance(
+        survey,
+        state,
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="q_skip"),
+    )
+
+    assert skipped.state.answers == ()
+    assert skipped.state.step_id == "done"
+    assert [action.note for action in skipped.actions] == ["survey:skipped", None]
+
+
+
+def test_a_skip_does_not_repeat_the_previous_acknowledgement(survey: Scenario) -> None:
+    """Live 2026-10-25: skipping answered with "Записал: 8 из 10" again, as if a second answer."""
+    answered = advance(
+        survey, _survey_state(), Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="8")
+    )
+    skipped = advance(
+        survey,
+        replace(answered.state, question_index=2),
+        Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="q_skip"),
+    )
+
+    assert [action.note for action in skipped.actions] == ["survey:skipped", None]
+    assert all("Записал" not in (action.text or "") for action in skipped.actions)
+
+
+def test_a_confirmation_at_a_button_step_does_not_reach_the_answerer(
+    scenario: Scenario,
+) -> None:
+    """Live 2026-10-25: "готово" at the tone question came back as "не нашёл ответа"."""
+    state = StepState(
+        run_id=RunId("run-1"),
+        employee_id="employee-1",
+        scenario_id=scenario.id,
+        scenario_version=scenario.version,
+        step_id="checklist",
+        entered_at=NOW,
+    )
+
+    transition = advance(
+        scenario,
+        state,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="готово"),
+    )
+
+    assert [action.note for action in transition.actions] == ["step:button_hint"]
+    assert transition.state == state

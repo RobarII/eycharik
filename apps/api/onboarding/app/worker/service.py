@@ -12,6 +12,7 @@ from math import ceil
 from uuid import uuid4
 
 from onboarding.app.audit import NullAudit
+from onboarding.app.demo import demo_allowed
 from onboarding.app.scenarios import ScenarioCatalog
 from onboarding.app.worker.actions import ActionContext, ActionExecutor
 from onboarding.core.models import (
@@ -203,11 +204,7 @@ class OnboardingService:
             await self._audit.record(
                 "command_handled", employee_id=str(employee_id), command=command
             )
-            text = (
-                self._executor.help_text()
-                if command == "/help"
-                else self._executor.unknown_command_text()
-            )
+            text = await self._command_reply(employee_id, command)
             await self._act(
                 (Action(kind=ActionKind.SEND, text=text),),
                 address,
@@ -314,6 +311,9 @@ class OnboardingService:
         event_at = event.at if event.at.tzinfo is not None else event.at.replace(tzinfo=UTC)
         effective = event if event_at >= now else replace(event, at=now)
         transition = advance(scenario, stored.state, effective)
+        answered = await self._question_at_a_survey(transition, event, address, employee_id)
+        if answered is not None:
+            return answered
         completed = any(action.kind is ActionKind.COMPLETE for action in transition.actions)
         # The person may answer from any linked messenger. The run follows them: replies and the
         # next reminder go to the address they just used (ADR 0019).
@@ -332,35 +332,20 @@ class OnboardingService:
                 scheduled=scheduled,
             )
         )
-        if moved:
-            await self._audit.record(
-                "channel_changed",
-                employee_id=str(employee_id),
-                previous_channel=stored.address.channel.value,
-                previous_chat_id=int(stored.address.chat_id),
-                channel=address.channel.value,
-                chat_id=int(address.chat_id),
-            )
-        await self._audit.record(
-            "step_transition",
-            employee_id=str(employee_id),
-            scenario=scenario.id,
-            version=scenario.version,
-            previous_step=stored.state.step_id,
-            step=transition.state.step_id,
-            event=event.kind.value,
+        await self._audit_movement(
+            scenario,
+            stored,
+            transition,
+            event=event,
+            address=address,
+            employee_id=employee_id,
+            moved=moved,
         )
         escalated = await self._assess_survey(
             scenario, stored.state, transition, employee_id
         )
         if event.kind is EventKind.FILE_RECEIVED and not (event.text and is_question(event.text)):
-            await self._act(
-                (Action(kind=ActionKind.SEND, text=self._executor.file_received_text()),),
-                address,
-                employee_id,
-                effective.at.date(),
-                question=None,
-            )
+            await self._ack_file(transition, stored, event, address, employee_id)
         await self._act(
             transition.actions,
             address,
@@ -392,6 +377,89 @@ class OnboardingService:
             return await self.reboot(employee_id, address)
         return None
 
+    async def _ack_file(
+        self,
+        transition: Transition,
+        stored: StoredRun,
+        event: Event,
+        address: Address,
+        employee_id: EmployeeId,
+    ) -> None:
+        """A file that closes the step must not be answered with "нажмите «Готово»"."""
+        moved_on = transition.state.step_id != stored.state.step_id
+        text = (
+            self._executor.file_advanced_text()
+            if moved_on
+            else self._executor.file_received_text()
+        )
+        await self._act(
+            (Action(kind=ActionKind.SEND, text=text),),
+            address,
+            employee_id,
+            self._now().date(),
+            question=None,
+        )
+
+    async def _audit_movement(
+        self,
+        scenario: Scenario,
+        stored: StoredRun,
+        transition: Transition,
+        *,
+        event: Event,
+        address: Address,
+        employee_id: EmployeeId,
+        moved: bool,
+    ) -> None:
+        if moved:
+            await self._audit.record(
+                "channel_changed",
+                employee_id=str(employee_id),
+                previous_channel=stored.address.channel.value,
+                previous_chat_id=int(stored.address.chat_id),
+                channel=address.channel.value,
+                chat_id=int(address.chat_id),
+            )
+        await self._audit.record(
+            "step_transition",
+            employee_id=str(employee_id),
+            scenario=scenario.id,
+            version=scenario.version,
+            previous_step=stored.state.step_id,
+            step=transition.state.step_id,
+            event=event.kind.value,
+        )
+
+    async def _question_at_a_survey(
+        self,
+        transition: Transition,
+        event: Event,
+        address: Address,
+        employee_id: EmployeeId,
+    ) -> ServiceResult | None:
+        """A question typed at a survey step is answered; the step keeps waiting.
+
+        Live 2026-10-25: "Какая у меня зарплата?" was met with "выберите один из вариантов кнопкой".
+        """
+        repeats = any((a.note or "").startswith("survey:repeat") for a in transition.actions)
+        if not (repeats and event.text and is_question(event.text)):
+            return None
+        await self._audit.record("question_at_survey", employee_id=str(employee_id))
+        await self._act(
+            (Action(kind=ActionKind.ANSWER),),
+            address,
+            employee_id,
+            self._now().date(),
+            question=event.text,
+        )
+        return ServiceResult(handled=True)
+
+    async def _command_reply(self, employee_id: EmployeeId, command: str) -> str:
+        """``/help`` names the demo commands only for the demo account."""
+        if command == "/help":
+            return self._executor.help_text(demo=await self._demo_allowed(employee_id))
+        return self._executor.unknown_command_text()
+
     async def _guarded_next_stage(
         self, employee_id: EmployeeId, address: Address, command: str
     ) -> ServiceResult:
@@ -411,9 +479,7 @@ class OnboardingService:
 
     async def _demo_allowed(self, employee_id: EmployeeId) -> bool:
         """A pilot employee must not skip a real wait with a demo command (roadmap 1.6)."""
-        if not self._demo_ids:
-            return True
-        return str(employee_id) in {str(candidate) for candidate in self._demo_ids}
+        return demo_allowed(employee_id, self._demo_ids)
 
     async def _refuse_demo_command(
         self, employee_id: EmployeeId, address: Address, command: str
@@ -467,9 +533,7 @@ class OnboardingService:
             text = (
                 self._executor.no_next_stage_text()
                 if command == "/nextstage"
-                else self._executor.help_text()
-                if command == "/help"
-                else self._executor.unknown_command_text()
+                else await self._command_reply(employee_id, command)
             )
             await self._audit.record(
                 "command_after_completion", employee_id=str(employee_id), command=command
@@ -517,6 +581,10 @@ class OnboardingService:
             "post_run_menu", employee_id=str(employee_id), button=button_id
         )
         if button_id == "post_reboot":
+            # A stale keyboard from a demo build must not restart a pilot employee's run.
+            if not await self._demo_allowed(employee_id):
+                await self._refuse_demo_command(employee_id, address, button_id)
+                return
             await self.reboot(employee_id, address)
             return
         if button_id == "post_ask":

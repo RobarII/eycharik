@@ -511,3 +511,6 @@ def test_rejects_non_mapping_or_non_list_structures() -> None:
     with pytest.raises(ScenarioError, match="version must be an integer"):
         parse_scenario(doc_bad_int)
 
+
+
+

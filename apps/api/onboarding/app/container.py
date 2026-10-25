@@ -87,6 +87,15 @@ class Container(Common):
         await Common.aclose(self)
 
 
+async def warm_scenario_images(container: Container) -> int:
+    """Upload the step images once at start, so the first message of a stage does not wait."""
+    sender = container.senders.get(Channel.MAX)
+    warm = getattr(sender, "warm_images", None)
+    if warm is None:
+        return 0
+    return int(await warm(container.catalog.images()))
+
+
 def _quiet_hours(settings: Settings) -> QuietHours | None:
     raw = settings.quiet_hours_raw.strip()
     if not raw:
@@ -208,6 +217,7 @@ def build_container(settings: Settings) -> Container:
         messaging=outbox,
         answerer=answerer,
         copy=copy,
+        demo_ids=_demo_ids(settings),
         audit=common.audit,
         questions=DatabaseQuestionLog(common.database),
     )

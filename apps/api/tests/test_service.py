@@ -63,6 +63,7 @@ def build(
         messaging=messaging,
         answerer=answerer,  # type: ignore[arg-type]
         copy=COPY,
+        demo_ids=demo_ids,
         audit=audit,
     )
     service = OnboardingService(
@@ -157,7 +158,7 @@ async def test_help_does_not_advance_the_step() -> None:
 
     assert result.handled
     assert next(iter(runs.runs.values())).state.step_id == before
-    assert messaging.sent[-1].text == COPY.help
+    assert messaging.sent[-1].text.startswith(COPY.help)
     assert "command_handled" in audit.names()
 
 
@@ -780,7 +781,7 @@ async def test_a_text_answer_to_a_running_survey_is_recorded_not_answered() -> N
     assert answerer.calls == []
     assert current.state.answers[-1].score == 9
     assert current.state.question_index == 2
-    assert "Записал: 9" in [message.text for message in messaging.sent]
+    assert "Записал: 9 из 10" in [message.text for message in messaging.sent]
     assert current.scheduled is None
 
 
@@ -873,7 +874,7 @@ async def test_help_and_next_stage_work_after_completion() -> None:
 
     assert help_result.handled
     assert next_result.handled
-    assert messaging.sent[-2].text == COPY.help
+    assert messaging.sent[-2].text.startswith(COPY.help)
     assert messaging.sent[-1].text == COPY.no_next_stage
 
 
@@ -996,3 +997,88 @@ async def test_the_demo_stand_keeps_its_shortcuts() -> None:
     assert len(active) == 1
     assert active[0].state.step_id == "welcome"
     assert len(runs.runs) >= runs_before
+
+
+async def test_help_names_the_demo_commands_only_for_the_demo_account() -> None:
+    """An employee must not read about a command that answers "нет доступа"."""
+    service, _, messaging, _, _ = build(demo_ids=frozenset({1001, 1002}))
+
+    await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="/help")
+    )
+
+    assert messaging.sent[-1].text == COPY.help
+    assert "/nextStage" not in messaging.sent[-1].text
+
+
+async def test_the_completion_menu_hides_reboot_from_a_pilot_employee() -> None:
+    """``/reboot`` is refused there, so the button must not promise it."""
+    service, runs, messaging, _, _ = build(demo_ids=frozenset({1001, 1002}))
+    await start_at(service, runs, "week_one_check")
+
+    await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Всё понятно")
+    )
+    menu = messaging.sent[-1].keyboard
+
+    assert menu is not None
+    assert "post_reboot" not in {button.id for row in menu for button in row}
+
+
+async def test_a_pilot_employee_cannot_restart_the_run_with_a_stale_button() -> None:
+    service, _, messaging, audit, _ = build(demo_ids=frozenset({1001, 1002}))
+
+    await service.handle(
+        EMPLOYEE, ADDRESS, Event(kind=EventKind.BUTTON_PRESSED, at=NOW, button_id="post_reboot")
+    )
+
+    assert "demo_command_refused" in audit.names()
+    assert messaging.sent[-1].text == COPY.unknown_command
+
+
+async def test_a_question_at_a_survey_step_is_answered_and_the_step_waits() -> None:
+    """Live 2026-10-25: a typed question got "выберите один из вариантов кнопкой"."""
+    service, runs, messaging, _, answerer = build(scenario_id="onboarding_plant")
+    await runs.create(
+        replace(
+            stored_run(step_id="day_three_survey"),
+            state=replace(
+                stored_run(step_id="day_three_survey").state,
+                scenario_id="onboarding_plant",
+            ),
+        )
+    )
+
+    result = await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.MESSAGE_RECEIVED, at=NOW, text="Какая у меня зарплата?"),
+    )
+
+    assert result.handled
+    assert answerer.calls == [("Какая у меня зарплата?", NOW.date())]
+    assert messaging.sent[-1].text == answerer.text
+    assert next(iter(runs.runs.values())).state.step_id == "day_three_survey"
+
+
+async def test_a_file_that_closes_the_step_does_not_ask_for_the_button() -> None:
+    """Live 2026-10-25: the file moved the run on, then the bot said "нажмите «Готово»"."""
+    service, runs, messaging, _, _ = build(scenario_id="onboarding_plant")
+    await runs.create(
+        replace(
+            stored_run(step_id="documents_checklist"),
+            state=replace(
+                stored_run(step_id="documents_checklist").state,
+                scenario_id="onboarding_plant",
+            ),
+        )
+    )
+
+    await service.handle(
+        EMPLOYEE,
+        ADDRESS,
+        Event(kind=EventKind.FILE_RECEIVED, at=NOW, text="Документы прикладываю"),
+    )
+
+    assert messaging.sent[0].text == COPY.file_advanced
+    assert "Готово" not in messaging.sent[0].text
